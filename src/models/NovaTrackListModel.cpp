@@ -252,10 +252,13 @@ void NovaTrackListModel::addAudioTrack(const QString &name)
     stubSession->set_dirty();
 #endif
 
-    const int newRow = static_cast<int>(d_ptr->routes.size());
-    beginInsertRows(QModelIndex(), newRow, newRow);
+    // La vista se sincroniza con un reset completo del modelo.
+    // No se envuelve en beginInsertRows/endInsertRows: syncWithArdour() ya
+    // emite beginResetModel/endResetModel, y anidar un reset dentro de una
+    // insercion viola el contrato de QAbstractItemModel. El repetidor de QML
+    // creaba un delegate de mas por cada pista anadida (N+1 delegates para N
+    // filas), duplicando la ultima tarjeta en pantalla.
     syncWithArdour();
-    endInsertRows();
 }
 
 void NovaTrackListModel::addMidiTrack(const QString &name)
