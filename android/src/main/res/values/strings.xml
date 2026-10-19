@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">NOVA Studio</string>
+    <string name="app_name_short">NOVA</string>
+    <string name="permission_audio_rationale">NOVA Studio necesita acceso al micrófono para grabar audio</string>
+    <string name="permission_storage_rationale">NOVA Studio necesita acceso al almacenamiento para guardar proyectos y archivos de audio</string>
+    <string name="notification_audio_active">Grabación/Reproducción de audio activa</string>
+    <string name="notification_audio_title">NOVA Studio</string>
+    <string name="permission_manage_storage">Permitir acceso a todos los archivos</string>
+</resources>

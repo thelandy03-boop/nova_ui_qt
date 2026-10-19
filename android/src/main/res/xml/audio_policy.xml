@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<audioPolicyConfiguration version="1.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+    <modules>
+        <module name="primary" halVersion="3.0">
+            <attachedDevices>
+                <item>builtinspeaker</item>
+                <item>earpiece</item>
+                <item>headphone</item>
+                <item>lineout</item>
+                <item>hdmi</item>
+                <item>usb_device</item>
+                <item>usb_headset</item>
+                <item>bluetooth_a2dp</item>
+                <item>bluetooth_sco</item>
+            </attachedDevices>
+            <defaultOutputDevice>speaker</defaultOutputDevice>
+            <defaultInputDevice>builtinspeaker</defaultInputDevice>
+        </module>
+        <module name="a2dp" halVersion="3.0">
+            <attachedDevices>
+                <item>bluetooth_a2dp</item>
+            </attachedDevices>
+        </module>
+        <module name="usb" halVersion="3.0">
+            <attachedDevices>
+                <item>usb_device</item>
+                <item>usb_headset</item>
+            </attachedDevices>
+        </module>
+        <module name="r_submix" halVersion="3.0">
+            <attachedDevices>
+                <item>remote_submix</item>
+            </attachedDevices>
+        </module>
+    </modules>
+    <volumes>
+        <volume name="music" minLevel="0.0" maxLevel="1.0" defaultLevel="0.8" />
+        <volume name="voice_call" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="alarm" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="notification" minLevel="0.0" maxLevel="1.0" defaultLevel="0.7" />
+        <volume name="ring" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="system" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="call" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="dtmf" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+        <volume name="enforced_audible" minLevel="0.0" maxLevel="1.0" defaultLevel="1.0" />
+    </volumes>
+    <preProcessingModules>
+        <module name="noise_suppression" />
+        <module name="acoustic_echo_canceler" />
+        <module name="automatic_gain_control" />
+    </preProcessingModules>
+</audioPolicyConfiguration>

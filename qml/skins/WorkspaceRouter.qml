@@ -1,0 +1,22 @@
+import QtQuick
+import "../theme"
+
+Loader {
+    id: skinLoader
+    anchors.fill: parent
+
+    source: {
+        switch (Theme.activeSkin) {
+        case "logic":
+            return Qt.resolvedUrl("logic/LogicWorkspace.qml")
+        case "bandlab":
+            return Qt.resolvedUrl("bandlab/BandLabWorkspace.qml")
+        case "reaper":
+            return Qt.resolvedUrl("reaper/ReaperWorkspace.qml")
+        case "draft":
+            return Qt.resolvedUrl("draft/DraftWorkspace.qml")
+        default:
+            return Qt.resolvedUrl("logic/LogicWorkspace.qml")
+        }
+    }
+}

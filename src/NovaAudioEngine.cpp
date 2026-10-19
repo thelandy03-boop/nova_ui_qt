@@ -1,0 +1,381 @@
+#include "NovaAudioEngine.h"
+#include "core/NovaLogging.h"
+#include "core/NovaAudioDeviceManager.h"
+#include "core/NovaHardwareSanitizer.h"
+#include "core/NovaProjectManager.h"
+#include "core/platform/NovaPlatformUtils.h"
+#include "models/NovaTrackListModel.h"
+#include "models/NovaRegionModel.h"
+#include "views/NovaWaveformItem.h"
+#include <QDebug>
+#include <QFileInfo>
+#include <QDir>
+#include <cmath>
+#include <algorithm>
+
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+#pragma push_macro("emit")
+#pragma push_macro("slots")
+#pragma push_macro("signals")
+#pragma push_macro("foreach")
+#undef emit
+#undef slots
+#undef signals
+#undef foreach
+
+#include "ardour/session.h"
+#include "ardour/route.h"
+#include "ardour/meter.h"
+#include "ardour/gain_control.h"
+
+#pragma pop_macro("emit")
+#pragma pop_macro("slots")
+#pragma pop_macro("signals")
+#pragma pop_macro("foreach")
+#endif
+
+struct _VSTState;
+int vstfx_init(void*) { return 0; }
+void vstfx_exit() {}
+void vstfx_destroy_editor(_VSTState*) {}
+
+NovaAudioEngine::NovaAudioEngine(QObject *parent)
+    : QObject(parent)
+{
+    m_trackModel = new NovaTrackListModel(this);
+    m_regionModel = new NovaRegionModel(this);
+
+    // Conexión del transporte a la UI (60 FPS tick)
+    connect(&m_transport, &NovaTransportController::isPlayingChanged, this, &NovaAudioEngine::isPlayingChanged);
+    connect(&m_transport, &NovaTransportController::timecodeChanged, this, &NovaAudioEngine::timecodeChanged);
+    connect(&m_transport, &NovaTransportController::bbtChanged, this, &NovaAudioEngine::bbtChanged);
+    connect(&m_transport, &NovaTransportController::positionChanged, this, &NovaAudioEngine::positionChanged);
+    connect(&m_transport, &NovaTransportController::positionChanged, this, &NovaAudioEngine::masterPeaksChanged); 
+    connect(&m_transport, &NovaTransportController::bpmChanged, this, &NovaAudioEngine::bpmChanged);
+    connect(&m_transport, &NovaTransportController::loopEnabledChanged, this, &NovaAudioEngine::loopEnabledChanged);
+    connect(&m_transport, &NovaTransportController::loopRangeChanged, this, &NovaAudioEngine::loopRangeChanged);
+
+    // Conectar el grabador de pistas
+    connect(&m_recorder, &NovaRecordManager::isRecordingChanged, this, &NovaAudioEngine::isRecordingChanged);
+}
+
+NovaAudioEngine::~NovaAudioEngine()
+{
+    qCDebug(novaCore) << "Destruyendo NovaAudioEngine... Cierre seguro de recursos.";
+    if (m_regionModel) m_regionModel->waitForImports();
+    m_transport.setSession(nullptr);
+}
+
+bool NovaAudioEngine::initEngine()
+{
+    // 🛡️ Sanitización preventiva de hardware al arrancar
+    NovaHardwareSanitizer::sanitize();
+
+    // Inicializar el subsistema del administrador de proyectos
+    bool ok = m_sessionManager.initSession();
+    if (!ok) {
+        qCCritical(novaCore) << "Fallo fatal al arrancar m_sessionManager.";
+        return false;
+    }
+
+    connectSessionSignals();
+
+    // 🆕 Auto-crear proyecto por defecto si no hay recientes
+    if (m_sessionManager.session() == nullptr) {
+        QString defaultName = "Untitled";
+        QString defaultDir = NovaPlatformUtils::getProjectsDirectory();
+        qCDebug(novaCore) << "🆕 Auto-creando proyecto por defecto:" << defaultName;
+        newProject(defaultName, defaultDir);
+    }
+
+    return true;
+}
+
+void NovaAudioEngine::connectSessionSignals()
+{
+    auto session = m_sessionManager.session();
+    m_transport.setSession(session);
+    m_recorder.setSession(session);
+    m_recorder.setRegionModel(m_regionModel);
+    m_recorder.setTransportController(&m_transport);
+    m_trackModel->setSession(session);
+    m_regionModel->setSession(session);
+    m_deviceManager.setEngine(m_sessionManager.engine());
+
+    // Conectar el renderizador global de formas de onda
+    NovaWaveformItem::setSession(session);
+
+    // Notificar cambios del proyecto a la interfaz
+    Q_EMIT currentProjectChanged();
+    Q_EMIT isDirtyChanged();
+    Q_EMIT tracksChanged();
+    Q_EMIT regionsChanged();
+    Q_EMIT recentProjectsChanged();
+}
+
+// Controles de Transporte
+void NovaAudioEngine::play() { m_transport.play(); }
+void NovaAudioEngine::pause() { m_transport.stop(); }
+void NovaAudioEngine::stop() { m_transport.stop(); }
+void NovaAudioEngine::togglePlay() { m_transport.togglePlay(); }
+void NovaAudioEngine::toggleRecord() { m_recorder.toggleRecord(); }
+void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
+void NovaAudioEngine::locateBeat(double beat) { m_transport.locateBeat(beat); }
+void NovaAudioEngine::setBpm(double bpm) { m_transport.setBpm(bpm); }
+
+void NovaAudioEngine::setLoopEnabled(bool enabled) { m_transport.setLoopEnabled(enabled); }
+void NovaAudioEngine::setLoopRange(double startBeat, double endBeat) { m_transport.setLoopRange(startBeat, endBeat); }
+
+// ✂️ HERRAMIENTA SPLIT: Dividir clip en el punto exacto del Playhead
+bool NovaAudioEngine::splitAtPlayhead(int targetRegionIndex)
+{
+    if (!m_regionModel) return false;
+
+    double playheadBeat = m_transport.currentBeat();
+
+    // 1. Si se le pasó un índice explícito, cortar esa región específica
+    if (targetRegionIndex >= 0) {
+        return m_regionModel->splitRegion(targetRegionIndex, playheadBeat);
+    }
+
+    // 2. Si no se especificó índice, buscar automáticamente la región bajo el Playhead
+    bool anySplit = false;
+    int count = m_regionModel->rowCount();
+
+    for (int i = 0; i < count; ++i) {
+        QModelIndex idx = m_regionModel->index(i, 0);
+        double startBeat = m_regionModel->data(idx, NovaRegionModel::StartBeatRole).toDouble();
+        double lengthBeats = m_regionModel->data(idx, NovaRegionModel::LengthBeatsRole).toDouble();
+        double endBeat = startBeat + lengthBeats;
+
+        if (playheadBeat > startBeat + 0.01 && playheadBeat < endBeat - 0.01) {
+            qCDebug(novaCore) << "✂️ [Split] Cortando clip en índice" << i << "en beat:" << playheadBeat;
+            if (m_regionModel->splitRegion(i, playheadBeat)) {
+                anySplit = true;
+                break; // Dividir el primer clip que coincida
+            }
+        }
+    }
+
+    if (anySplit) {
+        Q_EMIT isDirtyChanged();
+        Q_EMIT regionsChanged();
+    } else {
+        qCDebug(novaCore) << "✂️ [Split] No hay ningún clip posicionado sobre el Playhead en beat:" << playheadBeat;
+    }
+
+    return anySplit;
+}
+
+// 💾 GUARDAR EL PROYECTO ACTUAL (DESDE BOTÓN O CTRL + S)
+bool NovaAudioEngine::saveProject()
+{
+    bool ok = NovaProjectManager::saveProject(m_sessionManager.session());
+    if (ok) {
+        Q_EMIT isDirtyChanged();
+        Q_EMIT recentProjectsChanged();
+    }
+    return ok;
+}
+
+// 📂 CARGAR UN PROYECTO EXISTENTE DESDE DISCO
+bool NovaAudioEngine::openProject(const QString &path)
+{
+    qCDebug(novaCore) << "🔊 Solicitada apertura del proyecto en:" << path;
+    m_sessionManager.closeCurrentSession();
+    
+    auto session = NovaProjectManager::openProject(m_sessionManager.engine(), path);
+    m_sessionManager.setSession(session);
+    
+    if (session) {
+        connectSessionSignals();
+        return true;
+    }
+    return false;
+}
+
+// 🆕 CREAR UN NUEVO PROYECTO LIMPIO INDEPENDIENTE
+bool NovaAudioEngine::newProject(const QString &name, const QString &parentDir)
+{
+    qCDebug(novaCore) << "🔊 Creando nuevo proyecto comercial:" << name << "en:" << parentDir;
+    m_sessionManager.closeCurrentSession();
+    
+    auto session = NovaProjectManager::createProject(m_sessionManager.engine(), name, parentDir);
+    m_sessionManager.setSession(session);
+    
+    if (session) {
+        connectSessionSignals();
+        return true;
+    }
+    return false;
+}
+
+// 🚪 CERRAR EL PROYECTO ACTIVO Y LIBERAR RECURSOS
+void NovaAudioEngine::closeProject()
+{
+    qCDebug(novaCore) << "🚪 Liberando proyecto y retornando a la Start Screen...";
+    m_transport.setSession(nullptr);
+    m_recorder.setSession(nullptr);
+    m_trackModel->setSession(nullptr);
+    m_regionModel->setSession(nullptr);
+    m_sessionManager.closeCurrentSession();
+
+    Q_EMIT currentProjectChanged();
+    Q_EMIT isDirtyChanged();
+    Q_EMIT tracksChanged();
+    Q_EMIT regionsChanged();
+    Q_EMIT recentProjectsChanged();
+}
+
+// 🛑 APAGADO COMPLETO DE LA APLICACIÓN (para "Descartar y Salir")
+Q_INVOKABLE void NovaAudioEngine::quitApplication()
+{
+    qCDebug(novaCore) << "🛑 Apagado completo solicitado - cerrando motor de audio y saliendo...";
+    
+    // Detener transporte si está reproduciendo
+    m_transport.stop();
+    m_transport.setSession(nullptr);
+    
+    // Detener grabador
+    m_recorder.setSession(nullptr);
+    
+    // Limpiar modelos
+    m_trackModel->setSession(nullptr);
+    m_regionModel->setSession(nullptr);
+    
+    // Cerrar sesión y motor de audio
+    m_sessionManager.closeCurrentSession();
+    m_sessionManager.shutdownAudioEngine();
+    
+    // Forzar salida del event loop de Qt
+    QCoreApplication::exit(0);
+}
+
+// 🗑️ DESCARTAR CAMBIOS Y ELIMINAR PROYECTO NO GUARDADO
+void NovaAudioEngine::discardProject()
+{
+    qCDebug(novaCore) << "🗑️ Descartando proyecto activo sin guardar...";
+    if (m_sessionManager.session()) {
+        NovaProjectManager::discardUnsavedProject(m_sessionManager.session());
+    }
+    closeProject();
+}
+
+// 🗑️ ELIMINAR PROYECTO DEL HISTORIAL DE RECIENTES
+void NovaAudioEngine::removeRecentProject(const QString &path)
+{
+    NovaProjectManager::removeProjectFromRecent(path);
+    Q_EMIT recentProjectsChanged();
+}
+
+bool NovaAudioEngine::isDirty() const
+{
+    return NovaProjectManager::isDirty(m_sessionManager.session());
+}
+
+QVariantList NovaAudioEngine::recentProjects() const
+{
+    return NovaProjectManager::getRecentProjects();
+}
+
+QString NovaAudioEngine::currentProjectName() const
+{
+    auto session = m_sessionManager.session();
+    if (!session) return QStringLiteral("No Project");
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    return QString::fromStdString(static_cast<ARDOUR::Session*>(session)->name());
+#else
+    return QStringLiteral("No Project");
+#endif
+}
+
+QString NovaAudioEngine::currentProjectPath() const
+{
+    auto session = m_sessionManager.session();
+    if (!session) return QString();
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    return QString::fromStdString(static_cast<ARDOUR::Session*>(session)->path());
+#else
+    return QString();
+#endif
+}
+
+float NovaAudioEngine::masterPeakLeft() const
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    return 0.0f;
+#else
+    auto session = m_sessionManager.session();
+    if (!session) return 0.0f;
+
+    auto master = static_cast<ARDOUR::Session*>(session)->master_out();
+    if (!master) return 0.0f;
+
+    auto meter = master->peak_meter();
+    if (!meter) return 0.0f;
+
+    float val = meter->meter_level(0, ARDOUR::MeterPeak);
+    if (std::isnan(val) || std::isinf(val) || val < 0.0f) return 0.0f;
+    return val;
+#endif
+}
+
+float NovaAudioEngine::masterPeakRight() const
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    return 0.0f;
+#else
+    auto session = m_sessionManager.session();
+    if (!session) return 0.0f;
+
+    auto master = static_cast<ARDOUR::Session*>(session)->master_out();
+    if (!master) return 0.0f;
+
+    auto meter = master->peak_meter();
+    if (!meter) return 0.0f;
+
+    float val = meter->meter_level(1, ARDOUR::MeterPeak);
+    if (std::isnan(val) || std::isinf(val) || val < 0.0f) return 0.0f;
+    return val;
+#endif
+}
+
+float NovaAudioEngine::masterVolumeDb() const
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    return 0.0f;
+#else
+    auto session = m_sessionManager.session();
+    if (!session) return 0.0f;
+
+    auto master = static_cast<ARDOUR::Session*>(session)->master_out();
+    if (!master) return 0.0f;
+
+    auto gc = master->gain_control();
+    if (!gc) return 0.0f;
+
+    float coeff = static_cast<float>(gc->get_value());
+    if (coeff <= 0.0000001f) return -192.0f;
+    return 20.0f * std::log10(coeff);
+#endif
+}
+
+void NovaAudioEngine::setMasterVolumeDb(float dB)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    auto session = m_sessionManager.session();
+    if (!session) return;
+
+    auto master = static_cast<ARDOUR::Session*>(session)->master_out();
+    if (!master) return;
+
+    auto gc = master->gain_control();
+    if (gc) {
+        float coeff = (dB <= -192.0f) ? 0.0f : std::pow(10.0f, dB / 20.0f);
+        gc->set_value(coeff, PBD::Controllable::NoGroup);
+        Q_EMIT masterVolumeDbChanged();
+    }
+#else
+    Q_UNUSED(dB);
+#endif
+}
