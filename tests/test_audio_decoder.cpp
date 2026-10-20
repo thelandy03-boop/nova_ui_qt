@@ -23,13 +23,19 @@
 static int g_failures = 0;
 static int g_checks = 0;
 
-#define CHECK(cond, msg)                                                       \
-    do {                                                                       \
-        ++g_checks;                                                            \
-        if (!(cond)) {                                                         \
-            ++g_failures;                                                      \
-            std::printf("  FALLO: %s  (%s:%d)\n", (msg), __FILE__, __LINE__);  \
-        }                                                                      \
+// Cada comprobacion lleva su nombre, para que la salida diga que se ha
+// comprobado. Los nombres de las ocho comprobaciones del enunciado se
+// respetan tal cual.
+#define CHECK_NAMED(nombre, cond, msg)                                          \
+    do {                                                                        \
+        ++g_checks;                                                             \
+        if (cond) {                                                             \
+            std::printf("  [ok] %s\n", (nombre));                               \
+        } else {                                                                \
+            ++g_failures;                                                       \
+            std::printf("  [FALLO] %s: %s  (%s:%d)\n", (nombre), (msg),         \
+                        __FILE__, __LINE__);                                    \
+        }                                                                       \
     } while (0)
 
 namespace {
@@ -122,6 +128,24 @@ void anadirU32(std::vector<unsigned char>& bytes, unsigned int valor)
     bytes.push_back(static_cast<unsigned char>((valor >> 24) & 0xFFu));
 }
 
+// Escribe un WAV ya montado en disco (corrigiendo el tamano del RIFF).
+void escribirWav(const std::filesystem::path& destino,
+                 std::vector<unsigned char>& fichero)
+{
+    const unsigned int tamano = static_cast<unsigned int>(fichero.size() - 8);
+    fichero[4] = static_cast<unsigned char>(tamano & 0xFFu);
+    fichero[5] = static_cast<unsigned char>((tamano >> 8) & 0xFFu);
+    fichero[6] = static_cast<unsigned char>((tamano >> 16) & 0xFFu);
+    fichero[7] = static_cast<unsigned char>((tamano >> 24) & 0xFFu);
+
+    std::ofstream salida(destino.string(), std::ios::binary | std::ios::trunc);
+    if (salida) {
+        salida.write(reinterpret_cast<const char*>(fichero.data()),
+                     static_cast<std::streamsize>(fichero.size()));
+    }
+    salida.close();
+}
+
 // Escribe un WAV de prueba (un seno de 440 Hz con pico 0,5) con el formato
 // de muestra que se le pida, para comprobar los tipos que admite el lector.
 std::filesystem::path escribirWavTemporal(int tag, int bits, bool extensible)
@@ -181,19 +205,34 @@ std::filesystem::path escribirWavTemporal(int tag, int bits, bool extensible)
     anadirU32(fichero, static_cast<unsigned int>(datos.size()));
     fichero.insert(fichero.end(), datos.begin(), datos.end());
 
-    const unsigned int tamano = static_cast<unsigned int>(fichero.size() - 8);
-    fichero[4] = static_cast<unsigned char>(tamano & 0xFFu);
-    fichero[5] = static_cast<unsigned char>((tamano >> 8) & 0xFFu);
-    fichero[6] = static_cast<unsigned char>((tamano >> 16) & 0xFFu);
-    fichero[7] = static_cast<unsigned char>((tamano >> 24) & 0xFFu);
+    escribirWav(destino, fichero);
+    return destino;
+}
 
-    std::ofstream salida(destino.string(), std::ios::binary | std::ios::trunc);
-    if (salida) {
-        salida.write(reinterpret_cast<const char*>(fichero.data()),
-                     static_cast<std::streamsize>(fichero.size()));
-    }
-    salida.close();
+// Escribe un WAV cuya cabecera declara un chunk 'data' mucho mas grande que
+// el fichero. Es un fichero roto: el motor no debe fiarse de ese tamano
+// (reservar memoria para el lo mataria) sino fallar con un error.
+std::filesystem::path escribirWavConTamanoMentiroso()
+{
+    const std::filesystem::path destino =
+        std::filesystem::temp_directory_path() / "nova_audio_wav_mentiroso.wav";
 
+    std::vector<unsigned char> fichero;
+    fichero.insert(fichero.end(), "RIFF", "RIFF" + 4);
+    anadirU32(fichero, 36);
+    fichero.insert(fichero.end(), "WAVE", "WAVE" + 4);
+    fichero.insert(fichero.end(), "fmt ", "fmt " + 4);
+    anadirU32(fichero, 16);
+    anadirU16(fichero, 1);   // PCM
+    anadirU16(fichero, 1);   // canales
+    anadirU32(fichero, 44100);
+    anadirU32(fichero, 88200);
+    anadirU16(fichero, 2);   // alineacion del bloque
+    anadirU16(fichero, 16);  // bits por muestra
+    fichero.insert(fichero.end(), "data", "data" + 4);
+    anadirU32(fichero, 0x7FFFF000u); // casi 2 GiB de datos que no existen
+
+    escribirWav(destino, fichero);
     return destino;
 }
 
@@ -212,12 +251,11 @@ int main()
         const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-mono.wav"),
                                          audio, &error);
 
-        CHECK(ok, "el WAV del fixture debe decodificarse sin errores");
-        CHECK(error.isEmpty(), "al decodificar bien el error debe quedar vacio");
-        CHECK(audio.sampleRate == 44100, "el WAV debe decodificarse a 44100 Hz");
-        CHECK(audio.channels == 1, "el WAV debe decodificarse en mono");
-        CHECK(audio.frameCount() >= 44090 && audio.frameCount() <= 44110,
-              "el WAV debe tener 44100 fotogramas (con un margen de 10)");
+        CHECK_NAMED("wav_se_decodifica_completo",
+                    ok && error.isEmpty() && audio.sampleRate == 44100
+                        && audio.channels == 1 && audio.frameCount() >= 44090
+                        && audio.frameCount() <= 44110,
+                    "el WAV debe decodificarse entero: 44100 Hz, mono, 44100 fotogramas y sin error");
     }
 
     // ------------------------------------------------------------------
@@ -229,8 +267,8 @@ int main()
         decodeAudioFile(rutaFixture("tono-1s-44100-mono.wav"), audio, &error);
 
         const float pico = picoAbsoluto(audio.samples);
-        CHECK(pico >= 0.45f && pico <= 0.55f,
-              "el pico del WAV debe estar entre 0,45 y 0,55");
+        CHECK_NAMED("wav_preserva_la_amplitud", pico >= 0.45f && pico <= 0.55f,
+                    "el pico del WAV debe estar entre 0,45 y 0,55");
     }
 
     // ------------------------------------------------------------------
@@ -245,9 +283,9 @@ int main()
             bool extensible;
         };
         const Variante variantes[] = {
-            {"PCM de 24 bits", 1, 24, false},
-            {"coma flotante de 32 bits", 3, 32, false},
-            {"WAVE_FORMAT_EXTENSIBLE", 1, 16, true},
+            {"wav_pcm_de_24_bits", 1, 24, false},
+            {"wav_float_de_32_bits", 3, 32, false},
+            {"wav_extensible", 1, 16, true},
         };
 
         for (const Variante& variante : variantes) {
@@ -258,13 +296,11 @@ int main()
             QString error;
             const bool ok = decodeAudioFile(QString::fromStdString(fichero.string()),
                                              audio, &error);
-
-            CHECK(ok, "el WAV de prueba debe decodificarse sin errores");
-            CHECK(audio.frameCount() == 4410,
-                  "el WAV de prueba debe tener todos sus fotogramas");
             const float pico = picoAbsoluto(audio.samples);
-            CHECK(pico >= 0.45f && pico <= 0.55f,
-                  "el pico del WAV de prueba debe estar entre 0,45 y 0,55");
+
+            CHECK_NAMED(variante.nombre,
+                        ok && audio.frameCount() == 4410 && pico >= 0.45f && pico <= 0.55f,
+                        "el WAV de prueba debe decodificarse con todos sus fotogramas y su amplitud");
 
             std::filesystem::remove(fichero);
         }
@@ -279,10 +315,9 @@ int main()
         const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-mono.mp3"),
                                          audio, &error);
 
-        CHECK(ok, "el MP3 del fixture debe decodificarse sin errores");
-        CHECK(error.isEmpty(), "al decodificar bien el error debe quedar vacio");
-        CHECK(audio.sampleRate == 44100, "el MP3 debe decodificarse a 44100 Hz");
-        CHECK(audio.channels == 1, "el MP3 debe decodificarse en mono");
+        CHECK_NAMED("mp3_se_decodifica_completo",
+                    ok && error.isEmpty() && audio.sampleRate == 44100 && audio.channels == 1,
+                    "el MP3 debe decodificarse entero: 44100 Hz, mono y sin error");
     }
 
     // ------------------------------------------------------------------
@@ -295,8 +330,9 @@ int main()
         decodeAudioFile(rutaFixture("tono-1s-44100-mono.mp3"), audio, &error);
 
         const qint64 fotogramas = audio.frameCount();
-        CHECK(fotogramas >= 43218 && fotogramas <= 44982,
-              "el MP3 debe durar lo mismo que el WAV (44100 +/- 2 %), sin contar el tag ID3");
+        CHECK_NAMED("mp3_con_tag_id3_da_duracion_real",
+                    fotogramas >= 43218 && fotogramas <= 44982,
+                    "el MP3 debe durar lo mismo que el WAV (44100 +/- 2 %), sin contar el tag ID3");
     }
 
     // ------------------------------------------------------------------
@@ -309,8 +345,8 @@ int main()
         decodeAudioFile(rutaFixture("tono-1s-44100-mono.mp3"), audio, &error);
 
         const float pico = picoAbsoluto(audio.samples);
-        CHECK(pico >= 0.40f && pico <= 0.55f,
-              "el pico del MP3 debe estar entre 0,40 y 0,55");
+        CHECK_NAMED("mp3_preserva_la_amplitud", pico >= 0.40f && pico <= 0.55f,
+                    "el pico del MP3 debe estar entre 0,40 y 0,55");
     }
 
     // ------------------------------------------------------------------
@@ -323,24 +359,22 @@ int main()
         const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-estereo.mp3"),
                                          audio, &error);
 
-        CHECK(ok, "el MP3 en estereo debe decodificarse sin errores");
-        CHECK(audio.channels == 2, "el MP3 en estereo debe tener 2 canales");
-        CHECK(audio.frameCount() >= 43218 && audio.frameCount() <= 44982,
-              "el MP3 en estereo debe durar 44100 fotogramas (+/- 2 %)");
-        CHECK(picoCanal(audio.samples, 0, 2) >= 0.40f
-                  && picoCanal(audio.samples, 0, 2) <= 0.55f,
-              "el canal izquierdo debe conservar su amplitud");
-        CHECK(picoCanal(audio.samples, 1, 2) >= 0.30f
-                  && picoCanal(audio.samples, 1, 2) <= 0.45f,
-              "el canal derecho debe conservar su amplitud");
+        CHECK_NAMED("mp3_estereo_se_decodifica_completo",
+                    ok && audio.channels == 2 && audio.frameCount() >= 43218
+                        && audio.frameCount() <= 44982,
+                    "el MP3 en estereo debe decodificarse entero: 2 canales y 44100 fotogramas (+/- 2 %)");
+        CHECK_NAMED("mp3_estereo_conserva_la_amplitud",
+                    picoCanal(audio.samples, 0, 2) >= 0.40f && picoCanal(audio.samples, 0, 2) <= 0.55f
+                        && picoCanal(audio.samples, 1, 2) >= 0.30f && picoCanal(audio.samples, 1, 2) <= 0.45f,
+                    "cada canal del MP3 en estereo debe conservar su amplitud");
 
         // 440 Hz y 880 Hz en 1 s son 880 y 1760 cruces por cero.
         const int crucesIzquierdo = crucesPorCero(audio.samples, 0, 2);
         const int crucesDerecho = crucesPorCero(audio.samples, 1, 2);
-        CHECK(crucesIzquierdo > 700 && crucesIzquierdo < 1050,
-              "el canal izquierdo debe tener unos 880 cruces por cero (440 Hz)");
-        CHECK(crucesDerecho > 1400 && crucesDerecho < 2100,
-              "el canal derecho debe tener unos 1760 cruces por cero (880 Hz)");
+        CHECK_NAMED("mp3_estereo_intercala_los_canales",
+                    crucesIzquierdo > 700 && crucesIzquierdo < 1050
+                        && crucesDerecho > 1400 && crucesDerecho < 2100,
+                    "los canales deben ir intercalados: 880 cruces en el izquierdo y 1760 en el derecho");
     }
 
     // ------------------------------------------------------------------
@@ -352,8 +386,8 @@ int main()
         const bool ok = decodeAudioFile(rutaFixture("no-existe-este-fichero.wav"),
                                          audio, &error);
 
-        CHECK(!ok, "un fichero inexistente no puede decodificarse");
-        CHECK(!error.isEmpty(), "un fichero inexistente debe explicar el error");
+        CHECK_NAMED("archivo_inexistente_devuelve_error", !ok && !error.isEmpty(),
+                    "un fichero inexistente no puede decodificarse y debe explicar el error");
     }
 
     // ------------------------------------------------------------------
@@ -365,8 +399,8 @@ int main()
         const bool ok = decodeAudioFile(rutaFixture("no-es-audio.txt"),
                                          audio, &error);
 
-        CHECK(!ok, "un fichero de texto no puede decodificarse como audio");
-        CHECK(!error.isEmpty(), "un fichero que no es audio debe explicar el error");
+        CHECK_NAMED("archivo_no_audio_devuelve_error", !ok && !error.isEmpty(),
+                    "un fichero de texto no puede decodificarse como audio y debe explicar el error");
     }
 
     // ------------------------------------------------------------------
@@ -382,12 +416,51 @@ int main()
         const bool ok = decodeAudioFile(QString::fromStdString(truncado.string()),
                                          audio, &error);
 
-        CHECK(!ok, "un MP3 truncado debe devolver error, no un audio a medias");
-        CHECK(!error.isEmpty(), "un MP3 truncado debe explicar el error");
-        CHECK(!(ok && audio.frameCount() == 0),
-              "nunca se debe devolver exito con cero fotogramas");
+        CHECK_NAMED("mp3_truncado_no_provoca_crash",
+                    !ok && !error.isEmpty() && !(ok && audio.frameCount() == 0),
+                    "un MP3 truncado debe devolver error, no un audio a medias, y nunca exito sin fotogramas");
 
         std::filesystem::remove(truncado);
+    }
+
+    // ------------------------------------------------------------------
+    // 11. Un MP3 cortado justo en un borde de frame: tampoco hay bytes
+    //     sueltos al final, pero el fichero esta incompleto y se nota
+    // ------------------------------------------------------------------
+    {
+        // 722 bytes = la etiqueta ID3 (97) + el frame Xing (208) + 2 frames
+        // de audio: el corte cae justo en un borde de frame.
+        const std::filesystem::path truncado = escribirTemporalMp3(722);
+
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(QString::fromStdString(truncado.string()),
+                                         audio, &error);
+
+        CHECK_NAMED("mp3_truncado_en_borde_de_frame_devuelve_error",
+                    !ok && !error.isEmpty(),
+                    "un MP3 cortado en un borde de frame debe devolver error, no un audio a medias");
+
+        std::filesystem::remove(truncado);
+    }
+
+    // ------------------------------------------------------------------
+    // 12. Un WAV que declara mas datos de los que tiene: error, no la muerte
+    //     del proceso por pedir memoria para un tamano inventado
+    // ------------------------------------------------------------------
+    {
+        const std::filesystem::path fichero = escribirWavConTamanoMentiroso();
+
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(QString::fromStdString(fichero.string()),
+                                         audio, &error);
+
+        CHECK_NAMED("wav_con_tamano_de_datos_mentiroso_devuelve_error",
+                    !ok && !error.isEmpty(),
+                    "un WAV que declara mas datos de los que tiene debe fallar con un error, no reventar");
+
+        std::filesystem::remove(fichero);
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

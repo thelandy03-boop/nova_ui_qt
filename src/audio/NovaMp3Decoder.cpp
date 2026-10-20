@@ -38,11 +38,12 @@ const int kRetardoDecodificador = 529;
 // Tamano de la etiqueta ID3v1 que algunos codificadores dejan al final.
 const int kTamanoId3v1 = 128;
 
-// Retardo y relleno que declara la etiqueta LAME, en muestras.
-struct DatosGapless {
-    bool hayDatos = false;
-    int retardo = 0; // muestras de retardo del codificador
-    int relleno = 0; // muestras de relleno al final
+// Lo que declara la cabecera Xing/Info del primer frame.
+struct DatosXing {
+    int frames = -1;     // frames de audio que declara (sin contar la cabecera)
+    bool hayLame = false; // viene con la etiqueta LAME
+    int retardo = 0;     // muestras de retardo del codificador
+    int relleno = 0;     // muestras de relleno al final
 };
 
 bool fallar(QString* error, const QString& mensaje)
@@ -97,13 +98,20 @@ int posicionCabeceraXing(const char* frame, int bytes)
     return posicion;
 }
 
-// Lee el retardo y el relleno de la etiqueta LAME que cuelga de la cabecera
-// Xing/Info. Devuelve false si no hay una etiqueta LAME utilizable.
-bool leerGaplessLame(const char* frame, int bytes, int posicionXing, DatosGapless& datos)
+// Lee la cabecera Xing/Info del primer frame: cuantos frames de audio
+// declara el fichero y, si viene con la etiqueta LAME, el retardo del
+// codificador y el relleno final.
+//
+// El numero de frames no cuenta la propia cabecera Xing (asi lo escriben
+// LAME y el resto de codificadores), y sirve para saber si al fichero le
+// faltan frames: si el corte cae justo en un borde de frame no queda ningun
+// byte suelto al final, pero el recuento lo delata.
+void leerCabeceraXing(const char* frame, int bytes, int posicionXing, DatosXing& datos)
 {
     const quint32 banderas = leerU32Be(frame + posicionXing + 4);
     int p = posicionXing + 8;
     if (banderas & 0x01) {
+        datos.frames = static_cast<int>(leerU32Be(frame + p));
         p += 4;   // numero de frames
     }
     if (banderas & 0x02) {
@@ -119,13 +127,13 @@ bool leerGaplessLame(const char* frame, int bytes, int posicionXing, DatosGaples
     // A partir de aqui va la version del codificador (9 bytes). El retardo
     // del codificador y el relleno final estan 21 bytes mas adelante.
     if (p + 24 > bytes) {
-        return false;
+        return;
     }
     const bool esLame = std::memcmp(frame + p, "LAME", 4) == 0
                      || std::memcmp(frame + p, "Lavf", 4) == 0
                      || std::memcmp(frame + p, "Lavc", 4) == 0;
     if (!esLame) {
-        return false;
+        return;
     }
 
     const int retardo = (static_cast<unsigned char>(frame[p + 21]) << 4)
@@ -133,13 +141,12 @@ bool leerGaplessLame(const char* frame, int bytes, int posicionXing, DatosGaples
     const int relleno = ((static_cast<unsigned char>(frame[p + 22]) & 0x0F) << 8)
                       | static_cast<unsigned char>(frame[p + 23]);
     if (retardo > 3000 || relleno > 3000) {
-        return false; // valores sin sentido: no es una etiqueta LAME valida
+        return; // valores sin sentido: no es una etiqueta LAME valida
     }
 
-    datos.hayDatos = true;
+    datos.hayLame = true;
     datos.retardo = retardo;
     datos.relleno = relleno;
-    return true;
 }
 
 // Bytes sueltos al final del fichero. Se toleran solo si son relleno de ceros
@@ -194,9 +201,10 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
     nova_mp3dec_init(&decodificador);
 
     std::vector<float> muestras;
-    DatosGapless gapless;
+    DatosXing xing;
     int canales = 0;
     int tasa = 0;
+    int framesDecodificados = 0; // frames de audio (sin la cabecera Xing)
     bool primero = true;
 
     const char* puntero = bytes;
@@ -226,7 +234,7 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
             const int posicionXing = posicionCabeceraXing(frame, bytesFrame);
             if (posicionXing >= 0) {
                 esCabecera = true;
-                leerGaplessLame(frame, bytesFrame, posicionXing, gapless);
+                leerCabeceraXing(frame, bytesFrame, posicionXing, xing);
             }
         } else if (info.channels != canales || info.hz != tasa) {
             return fallar(error, QStringLiteral("'%1' cambia de formato a mitad del flujo (%2 Hz y %3 canales -> %4 Hz y %5 canales)")
@@ -234,6 +242,7 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
         }
 
         if (!esCabecera) {
+            ++framesDecodificados;
             const size_t total = static_cast<size_t>(muestrasPorCanal)
                                * static_cast<size_t>(info.channels);
             muestras.insert(muestras.end(), pcm, pcm + total);
@@ -247,6 +256,19 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
         return fallar(error, QStringLiteral("'%1' esta truncado: los %2 bytes del final no forman un frame completo")
                       .arg(path).arg(restante));
     }
+
+    // La cabecera Xing/Info dice cuantos frames de audio tiene el fichero.
+    // Si nos faltan, el fichero esta cortado aunque el corte haya caido justo
+    // en un borde de frame (en ese caso no queda ningun byte suelto al final).
+    // El recuento solo se fia si es plausible: un frame de MPEG ocupa siempre
+    // mas de 16 bytes, asi que un numero disparatado no puede ser real.
+    const bool recuentoFiable = xing.frames > 0
+                              && static_cast<qint64>(xing.frames) * 16 <= fin;
+    if (recuentoFiable && framesDecodificados < xing.frames) {
+        return fallar(error, QStringLiteral("'%1' esta truncado: la cabecera declara %2 frames y solo se han decodificado %3")
+                      .arg(path).arg(xing.frames).arg(framesDecodificados));
+    }
+
     if (muestras.empty()) {
         return fallar(error, QStringLiteral("'%1' no contiene frames de audio validos").arg(path));
     }
@@ -257,10 +279,10 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
     // y el relleno se cuentan por canal, y las muestras estan intercaladas.
     qint64 inicio = 0;
     qint64 final = static_cast<qint64>(muestras.size());
-    if (gapless.hayDatos) {
+    if (xing.hayLame) {
         const qint64 porCanal = canales > 0 ? canales : 1;
-        const qint64 retardo = (gapless.retardo + kRetardoDecodificador) * porCanal;
-        const qint64 relleno = std::max<qint64>(0, gapless.relleno - kRetardoDecodificador) * porCanal;
+        const qint64 retardo = (xing.retardo + kRetardoDecodificador) * porCanal;
+        const qint64 relleno = std::max<qint64>(0, xing.relleno - kRetardoDecodificador) * porCanal;
         inicio = std::min<qint64>(retardo, final);
         final = std::max(inicio, final - relleno);
     }
@@ -268,10 +290,15 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
         return fallar(error, QStringLiteral("'%1' no contiene audio utilizable despues de quitar el retardo y el relleno").arg(path));
     }
 
+    // El recorte se hace en el sitio: copiar el buffer entero duplicaria la
+    // memoria justo en el momento de mayor consumo (una pista larga de
+    // stereo son varios GiB de muestras).
+    muestras.erase(muestras.begin(), muestras.begin() + static_cast<std::ptrdiff_t>(inicio));
+    muestras.resize(static_cast<size_t>(final - inicio));
+
     out.sampleRate = tasa;
     out.channels = canales;
-    out.samples.assign(muestras.begin() + static_cast<std::ptrdiff_t>(inicio),
-                        muestras.begin() + static_cast<std::ptrdiff_t>(final));
+    out.samples = std::move(muestras);
     return true;
 }
 

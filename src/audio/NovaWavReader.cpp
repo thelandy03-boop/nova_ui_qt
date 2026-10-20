@@ -231,6 +231,20 @@ bool decodeWavFile(const QString& path, NovaDecodedAudio& out, QString* error)
 
     const qint64 bytesPorMuestra = formato.bitsPorMuestra / 8;
     const qint64 bytesPorFotograma = bytesPorMuestra * formato.canales;
+
+    // El chunk 'data' no puede declarar mas bytes de los que tiene el
+    // fichero. Si lo hace, el fichero esta roto: no se debe fiar del tamano
+    // declarado (reservar memoria para el seria pedirle al sistema una
+    // cantidad absurda y el proceso moriria con bad_alloc).
+    const qint64 tamanoFichero = archivo.size();
+    if (tamanoFichero > 0) {
+        const qint64 disponibles = tamanoFichero - inicioDatos;
+        if (tamanoDatos > disponibles) {
+            return fallar(error, QStringLiteral("'%1' esta truncado: el chunk 'data' declara %2 bytes pero el fichero solo tiene %3")
+                          .arg(path).arg(tamanoDatos).arg(disponibles));
+        }
+    }
+
     if (tamanoDatos % bytesPorFotograma != 0) {
         return fallar(error, QStringLiteral("'%1' es inconsistente: el chunk 'data' mide %2 bytes, que no es multiplo del fotograma (%3 bytes)")
                       .arg(path).arg(tamanoDatos).arg(bytesPorFotograma));
