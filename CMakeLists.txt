@@ -125,6 +125,14 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/views/NovaWaveformRenderer.cpp
     src/views/NovaWaveformRenderer.h
     src/core/NovaSimdPeaks.cpp
+    src/audio/NovaDecodedAudio.h
+    src/audio/NovaAudioDecoder.h
+    src/audio/NovaAudioDecoder.cpp
+    src/audio/NovaWavReader.h
+    src/audio/NovaWavReader.cpp
+    src/audio/NovaMp3Decoder.h
+    src/audio/NovaMp3Decoder.cpp
+    third_party/minimp3/minimp3.h
 )
 
 # Common Qt libraries for all platforms
@@ -263,6 +271,19 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     )
     target_include_directories(test_simd_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME simd_peaks COMMAND test_simd_peaks)
+
+    # El decodificador de audio (WAV propio + MP3 con minimp3). Usa QString,
+    # por eso enlaza Qt6::Core.
+    add_executable(test_audio_decoder
+        tests/test_audio_decoder.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+    )
+    target_link_libraries(test_audio_decoder PRIVATE Qt6::Core)
+    target_include_directories(test_audio_decoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_decoder PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_decoder COMMAND test_audio_decoder)
 
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).
