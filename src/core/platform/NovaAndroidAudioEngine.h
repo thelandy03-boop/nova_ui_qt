@@ -18,6 +18,9 @@
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
 
+// El reproductor del fichero cargado: lo sirve el callback de Oboe.
+#include "audio/NovaAudioPlayer.h"
+
 #define LOG_TAG "NovaAndroidAudio"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -68,6 +71,18 @@ public:
     bool openInputStream(int channelCount = 2);
     bool openOutputStream(int channelCount = 2);
     void closeStreams();
+
+    // Reproducción de un fichero (spike): decodifica el audio y lo deja
+    // listo para que el callback de Oboe lo sirva por la salida.
+    //
+    // El stream de salida se abre con los canales del fichero: el
+    // reproductor escribe muestras intercaladas con esos canales, y un
+    // fichero mono en un stream estéreo sonaría mal.
+    //
+    // @param path  Ruta del fichero a reproducir.
+    // @param error Mensaje con el motivo del fallo (puede ser nullptr).
+    // @return true si el fichero se ha cargado y se puede reproducir.
+    bool loadFile(const QString& path, QString* error);
 
     // Recording/Playback control
     void setRecording(bool enabled);
@@ -149,6 +164,19 @@ private:
     std::shared_ptr<oboe::AudioStream> m_outputStream;
     std::unique_ptr<InputStreamCallback> m_inputCallback;
     std::unique_ptr<OutputStreamCallback> m_outputCallback;
+
+    // Reproductor del fichero cargado: el callback de salida le pide los
+    // fotogramas y los escribe en el buffer del driver.
+    NovaAudioPlayer m_player;
+
+    // Canales con los que se abrió el stream de salida (los del fichero
+    // cargado, o 2 por defecto si todavía no hay ninguno).
+    int m_canalSalida = 2;
+
+    // Canales del fichero cargado (0 si no hay fichero). Lo lee el callback
+    // de salida: es atómico porque lo cambia el hilo de la interfaz y lo
+    // lee el hilo de audio.
+    std::atomic<int> m_canalesFichero{0};
 #endif
 
     ARDOUR::Session* m_session = nullptr;
@@ -178,6 +206,26 @@ private:
         const float* samples,
         size_t frames,
         int channels);
+
+    // Crea los ring buffers de entrada con los canales del stream de
+    // entrada (los usa el grabador).
+    void crearBuffersEntrada(int canales);
+
+    // Crea los ring buffers de salida con los canales del stream: si no
+    // coinciden, al leer un bloque se escribirían más muestras de las que
+    // caben en el buffer del driver.
+    void crearBuffersSalida(int canales);
+
+    // Abre (o reabre) el stream de salida con el número de canales dado.
+    bool abrirStreamSalida(int canales, QString* error);
+
+    // Vuelve a abrir el stream de salida con los canales que tenía y lo
+    // deja como estaba (arrancado o parado). Se usa cuando una operación
+    // falla a mitad y el motor tiene que quedarse como estaba.
+    void restaurarStreamSalida(bool estabaEnMarcha);
+
+    // Número máximo de tracks con ring buffer propio.
+    static constexpr int kMaxTracks = 32;
 };
 
 #endif // NOVAAUDIOENGINE_ANDROID_H

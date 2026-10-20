@@ -16,6 +16,9 @@
 // ARDOUR includes for Android (using stubs)
 #include "NovaAndroidStubs.h"
 
+#include "audio/NovaAudioDecoder.h"
+#include "core/NovaLogging.h"
+
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
@@ -143,7 +146,11 @@ NovaAndroidAudioEngine::~NovaAndroidAudioEngine() {
 bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
 #if defined(Q_OS_ANDROID)
     m_sampleRate = sampleRate;
-    
+
+    // El reproductor entrega el audio a la tasa del stream (48.000 Hz en el
+    // móvil), así que remuestrea el fichero si viene a otra tasa.
+    m_player.setOutputSampleRate(sampleRate);
+
     // Get optimal frames per burst from Oboe
     if (framesPerBurst == 0) {
         // We'll query this after opening streams
@@ -153,27 +160,14 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
     }
 
     // Open output stream first (lower latency requirement)
-    // Note: Oboe builder setters return AudioStreamBuilder* (pointer), hence -> chaining
-    oboe::AudioStreamBuilder outputBuilder;
-    outputBuilder.setDirection(oboe::Direction::Output);
-    outputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
-    outputBuilder.setSharingMode(oboe::SharingMode::Exclusive);
-    outputBuilder.setFormat(oboe::AudioFormat::Float);
-    outputBuilder.setChannelCount(2);
-    outputBuilder.setSampleRate(sampleRate);
-    outputBuilder.setCallback(m_outputCallback.get());
-
-    oboe::Result result = outputBuilder.openStream(m_outputStream);
-    if (result != oboe::Result::OK) {
-        LOGE("Failed to open output stream: %s", oboe::convertToText(result));
+    // El stream se abre con los canales del fichero cargado (si ya hay uno);
+    // si no hay fichero, con 2 por defecto.
+    QString error;
+    if (!abrirStreamSalida(m_canalSalida, &error)) {
+        LOGE("No se pudo inicializar la salida de audio: %s", qPrintable(error));
         Q_EMIT audioInitialized(false);
         return false;
     }
-
-    m_framesPerBurst = m_outputStream->getFramesPerBurst();
-    m_framesPerBurst = std::max(m_framesPerBurst, 64);
-    LOGD("Output stream opened: %d Hz, %d frames/burst, %d channels", 
-         m_outputStream->getSampleRate(), m_framesPerBurst, m_outputStream->getChannelCount());
 
     // Open input stream
     oboe::AudioStreamBuilder inputBuilder;
@@ -186,7 +180,7 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
     inputBuilder.setFramesPerCallback(m_framesPerBurst);
     inputBuilder.setCallback(m_inputCallback.get());
 
-    result = inputBuilder.openStream(m_inputStream);
+    oboe::Result result = inputBuilder.openStream(m_inputStream);
     if (result != oboe::Result::OK) {
         LOGE("Failed to open input stream: %s", oboe::convertToText(result));
         m_outputStream->close();
@@ -198,21 +192,8 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
          m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
 
     // Initialize ring buffers
-    int maxTracks = 32; // configurable
-    int outputChannels = m_outputStream->getChannelCount();
-    int inputChannels = m_inputStream->getChannelCount();
-    size_t bufferCapacity = static_cast<size_t>(m_framesPerBurst) * 4; // 4 bursts worth
-
-    {
-        std::lock_guard<std::mutex> lock(m_bufferMutex);
-        m_inputBuffers.clear();
-        m_outputBuffers.clear();
-        
-        for (int i = 0; i < maxTracks; ++i) {
-            m_inputBuffers.push_back(std::make_unique<RingBuffer>(bufferCapacity, inputChannels));
-            m_outputBuffers.push_back(std::make_unique<RingBuffer>(bufferCapacity, outputChannels));
-        }
-    }
+    crearBuffersEntrada(m_inputStream->getChannelCount());
+    crearBuffersSalida(m_outputStream->getChannelCount());
 
     // Start disk writer thread
     m_diskWriterRunning = true;
@@ -230,6 +211,65 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
 #endif
 }
 
+bool NovaAndroidAudioEngine::abrirStreamSalida(int canales, QString* error) {
+#if defined(Q_OS_ANDROID)
+    // Note: Oboe builder setters return AudioStreamBuilder* (pointer), hence -> chaining
+    oboe::AudioStreamBuilder outputBuilder;
+    outputBuilder.setDirection(oboe::Direction::Output);
+    outputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
+    outputBuilder.setSharingMode(oboe::SharingMode::Exclusive);
+    outputBuilder.setFormat(oboe::AudioFormat::Float);
+    outputBuilder.setChannelCount(canales);
+    outputBuilder.setSampleRate(m_sampleRate);
+    outputBuilder.setCallback(m_outputCallback.get());
+
+    std::shared_ptr<oboe::AudioStream> stream;
+    const oboe::Result result = outputBuilder.openStream(stream);
+    if (result != oboe::Result::OK) {
+        LOGE("Failed to open output stream: %s", oboe::convertToText(result));
+        if (error) {
+            *error = QStringLiteral("no se pudo abrir la salida de audio con %1 canales: %2")
+                         .arg(canales)
+                         .arg(QString::fromUtf8(oboe::convertToText(result)));
+        }
+        return false;
+    }
+
+    m_outputStream = stream;
+    m_canalSalida = canales;
+    m_framesPerBurst = std::max(m_outputStream->getFramesPerBurst(), 64);
+
+    LOGD("Output stream opened: %d Hz, %d frames/burst, %d channels",
+         m_outputStream->getSampleRate(), m_framesPerBurst, m_outputStream->getChannelCount());
+
+    return true;
+#else
+    Q_UNUSED(canales);
+    Q_UNUSED(error);
+    return false;
+#endif
+}
+
+void NovaAndroidAudioEngine::crearBuffersEntrada(int canales) {
+    const size_t bufferCapacity = static_cast<size_t>(m_framesPerBurst) * 4; // 4 bursts worth
+
+    std::lock_guard<std::mutex> lock(m_bufferMutex);
+    m_inputBuffers.clear();
+    for (int i = 0; i < kMaxTracks; ++i) {
+        m_inputBuffers.push_back(std::make_unique<RingBuffer>(bufferCapacity, canales));
+    }
+}
+
+void NovaAndroidAudioEngine::crearBuffersSalida(int canales) {
+    const size_t bufferCapacity = static_cast<size_t>(m_framesPerBurst) * 4; // 4 bursts worth
+
+    std::lock_guard<std::mutex> lock(m_bufferMutex);
+    m_outputBuffers.clear();
+    for (int i = 0; i < kMaxTracks; ++i) {
+        m_outputBuffers.push_back(std::make_unique<RingBuffer>(bufferCapacity, canales));
+    }
+}
+
 void NovaAndroidAudioEngine::shutdown() {
 #if defined(Q_OS_ANDROID)
     stop();
@@ -240,8 +280,12 @@ void NovaAndroidAudioEngine::shutdown() {
         m_diskWriterThread.join();
     }
 
+    // Oboe exige cerrar los streams ANTES de destruir el motor (y sus
+    // callbacks): si no, crash al salir. No reordenar estas tres líneas.
     closeStreams();
-    
+    m_outputCallback.reset();
+    m_inputCallback.reset();
+
     {
         std::lock_guard<std::mutex> lock(m_bufferMutex);
         m_inputBuffers.clear();
@@ -249,6 +293,8 @@ void NovaAndroidAudioEngine::shutdown() {
     }
     
     m_session = nullptr;
+
+    qCDebug(novaCore) << "🛑 Spike: streams cerrados";
 #endif
 }
 
@@ -272,6 +318,12 @@ bool NovaAndroidAudioEngine::start() {
     m_isPlaying = true;
     m_isRecording = true;
     m_currentFrame = 0;
+
+    // Si ya hay un fichero cargado, el transporte lo pone en marcha desde el
+    // principio: el reproductor y el contador del motor van a la par.
+    m_player.reset();
+    m_player.play();
+
     Q_EMIT playbackStateChanged(true);
     Q_EMIT recordingStateChanged(true);
     return true;
@@ -284,17 +336,18 @@ void NovaAndroidAudioEngine::stop() {
 #if defined(Q_OS_ANDROID)
     m_isPlaying = false;
     m_isRecording = false;
+    m_player.stop();
     
+    // stop() para el transporte, no libera el dispositivo: los streams se
+    // quedan abiertos (pero parados) para poder volver a arrancar. El
+    // dispositivo se cierra en closeStreams(), que es lo que hace shutdown()
+    // antes de destruir el motor.
     if (m_outputStream) {
         m_outputStream->requestStop();
-        m_outputStream->close();
-        m_outputStream.reset();
     }
     
     if (m_inputStream) {
         m_inputStream->requestStop();
-        m_inputStream->close();
-        m_inputStream.reset();
     }
     
     Q_EMIT playbackStateChanged(false);
@@ -344,7 +397,118 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
 
 void NovaAndroidAudioEngine::setPlaying(bool enabled) {
     m_isPlaying.store(enabled);
+#if defined(Q_OS_ANDROID)
+    // El fichero cargado sigue al transporte del motor: al ponerlo en
+    // marcha arranca el reproductor, y al pararlo se detiene.
+    if (enabled) {
+        m_player.play();
+        // El stream de salida tiene que estar en marcha para que suene.
+        if (m_outputStream) {
+            const oboe::StreamState estado = m_outputStream->getState();
+            if (estado != oboe::StreamState::Started && estado != oboe::StreamState::Starting) {
+                m_outputStream->requestStart();
+            }
+        }
+    } else {
+        m_player.stop();
+    }
+#endif
     Q_EMIT playbackStateChanged(enabled);
+}
+
+bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
+#if defined(Q_OS_ANDROID)
+    NovaDecodedAudio audio;
+    if (!decodeAudioFile(path, audio, error)) {
+        return false;
+    }
+
+    // El reproductor no es seguro entre hilos (el llamante lo usa desde el
+    // hilo de audio), así que el stream de salida se cierra mientras se
+    // cambia el audio: mientras está cerrado, su callback no corre y no hay
+    // carrera con el hilo de la interfaz.
+    const bool habiaStream = (m_outputStream != nullptr);
+    const bool estabaEnMarcha =
+        habiaStream && (m_outputStream->getState() == oboe::StreamState::Started);
+
+    if (habiaStream) {
+        m_outputStream->requestStop();
+        m_outputStream->close();
+        m_outputStream.reset();
+    }
+
+    // Con el stream cerrado se puede tocar el reproductor sin carrera.
+    if (!m_player.load(audio, error)) {
+        if (habiaStream) {
+            restaurarStreamSalida(estabaEnMarcha);
+        }
+        return false;
+    }
+    m_player.setOutputSampleRate(m_sampleRate);
+    m_canalesFichero = audio.channels;
+
+    // Un fichero nuevo empieza en el principio: el cabezal de reproducción
+    // vuelve a cero con el.
+    m_currentFrame = 0;
+
+    // Si el transporte ya está en marcha, el fichero suena desde el
+    // principio; si no, espera a que lo pongan en marcha.
+    if (m_isPlaying.load()) {
+        m_player.play();
+    }
+
+    if (habiaStream) {
+        // El stream se abre con los canales del fichero: el reproductor
+        // escribe las muestras intercaladas con esos canales, y un fichero
+        // mono en un stream estéreo sonaría mal.
+        if (!abrirStreamSalida(audio.channels, error)) {
+            // Se deja el motor como estaba, con los canales anteriores. El
+            // fichero no sonará (su callback ve que los canales no
+            // coinciden), pero el motor sigue vivo.
+            restaurarStreamSalida(estabaEnMarcha);
+            return false;
+        }
+
+        // Los ring buffers de salida se recrean con los canales nuevos.
+        crearBuffersSalida(m_outputStream->getChannelCount());
+
+        if (estabaEnMarcha) {
+            m_outputStream->requestStart();
+        }
+    } else {
+        // El motor todavía no está inicializado: initialize() abrirá el
+        // stream con estos canales.
+        m_canalSalida = audio.channels;
+    }
+
+    qCDebug(novaCore) << "🔊 Spike: cargado" << path << audio.sampleRate << "Hz,"
+                       << audio.channels << "canales," << audio.frameCount() << "muestras";
+    return true;
+#else
+    Q_UNUSED(path);
+    Q_UNUSED(error);
+    return false;
+#endif
+}
+
+void NovaAndroidAudioEngine::restaurarStreamSalida(bool estabaEnMarcha) {
+#if defined(Q_OS_ANDROID)
+    // Vuelve a abrir el stream de salida con los canales que tenía y lo
+    // deja como estaba (arrancado o parado).
+    QString error;
+    if (!abrirStreamSalida(m_canalSalida, &error)) {
+        LOGE("No se pudo reabrir el stream de salida: %s", qPrintable(error));
+        return;
+    }
+
+    crearBuffersSalida(m_outputStream->getChannelCount());
+
+    if (estabaEnMarcha) {
+        m_outputStream->requestStart();
+    }
+#else
+    Q_UNUSED(estabaEnMarcha);
+#endif
 }
 
 NovaAndroidAudioEngine::RingBuffer* NovaAndroidAudioEngine::getInputBuffer(int trackIndex) {
@@ -547,7 +711,7 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::InputStreamCallback::onAudioRea
     int channels = stream->getChannelCount();
     
     // Write to all armed track input buffers
-    for (int i = 0; i < 32; ++i) { // max tracks
+    for (int i = 0; i < kMaxTracks; ++i) { // max tracks
         auto* ringBuf = m_engine->getInputBuffer(i);
         if (ringBuf) {
             ringBuf->write(inputBuffer, numFrames);
@@ -568,20 +732,58 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
     
     float* outputBuffer = static_cast<float*>(audioData);
     int channels = stream->getChannelCount();
+    const int muestras = numFrames * channels;
+
+    if (numFrames <= 0 || channels <= 0) {
+        return oboe::DataCallbackResult::Continue;
+    }
     
     // Clear output buffer first
-    std::fill(outputBuffer, outputBuffer + (numFrames * channels), 0.0f);
+    std::fill(outputBuffer, outputBuffer + muestras, 0.0f);
     
-    // Read from track output buffers and mix
-    // For simplicity, we'll read from track 0 output buffer
-    // Real implementation would mix all tracks with gain/pan
-    auto* track0Output = m_engine->getOutputBuffer(0);
-    if (track0Output) {
-        track0Output->read(outputBuffer, numFrames);
+    int emitidos = 0;
+    
+    if (m_engine->m_player.isPlaying()) {
+        if (m_engine->m_canalesFichero.load(std::memory_order_relaxed) == channels) {
+            // El reproductor entrega el fichero ya remuestreado a la tasa del
+            // stream, con los canales del fichero (que son los del stream).
+            int escritos = m_engine->m_player.renderFrames(outputBuffer, numFrames);
+            if (escritos < 0) {
+                escritos = 0;
+            }
+            if (escritos > numFrames) {
+                escritos = numFrames;
+            }
+            // renderFrames() deja intacto el resto del buffer: la cola se
+            // rellena con ceros, o el driver emitiría muestras sin
+            // inicializar en el último bloque del fichero.
+            if (escritos < numFrames) {
+                std::fill(outputBuffer + static_cast<size_t>(escritos) * static_cast<size_t>(channels),
+                          outputBuffer + muestras, 0.0f);
+            }
+            emitidos = escritos;
+        }
+        // Si los canales del fichero no son los del stream, el bloque sale
+        // mudo: escribir el audio intercalado del fichero desbordaría el
+        // buffer del driver.
+    } else {
+        // Read from track output buffers and mix
+        // For simplicity, we'll read from track 0 output buffer
+        // Real implementation would mix all tracks with gain/pan
+        // (se conserva para el mixer de la Fase 1)
+        auto* track0Output = m_engine->getOutputBuffer(0);
+        if (track0Output && track0Output->channels() == channels) {
+            emitidos = static_cast<int>(track0Output->read(outputBuffer, numFrames));
+        }
     }
     
     // Update frame counter
-    m_engine->m_currentFrame.fetch_add(numFrames, std::memory_order_relaxed);
+    // El contador avanza con los fotogramas realmente escritos: los del
+    // fichero (el playhead marca su posición) o los que trae el ring
+    // buffer. Así el playhead nunca se adelanta al audio.
+    if (emitidos > 0) {
+        m_engine->m_currentFrame.fetch_add(emitidos, std::memory_order_relaxed);
+    }
     
     return oboe::DataCallbackResult::Continue;
 }
