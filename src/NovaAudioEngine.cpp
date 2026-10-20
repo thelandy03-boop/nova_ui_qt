@@ -186,6 +186,11 @@ bool NovaAudioEngine::saveProject()
 bool NovaAudioEngine::openProject(const QString &path)
 {
     qCDebug(novaCore) << "🔊 Solicitada apertura del proyecto en:" << path;
+    // Desacoplar los modelos ANTES de cerrar la sesión: los hilos de cálculo
+    // de picos leen de la sesión y no pueden quedarse con una sesión ya
+    // destruida (petaba al abrir/cerrar proyecto).
+    m_trackModel->setSession(nullptr);
+    m_regionModel->setSession(nullptr);
     m_sessionManager.closeCurrentSession();
     
     auto session = NovaProjectManager::openProject(m_sessionManager.engine(), path);
@@ -207,6 +212,9 @@ bool NovaAudioEngine::newProject(const QString &name, const QString &parentDir)
 bool NovaAudioEngine::newProjectInternal(const QString &name, const QString &parentDir, bool isScratch)
 {
     qCDebug(novaCore) << "🔊 Creando nuevo proyecto comercial:" << name << "en:" << parentDir;
+    // Desacoplar los modelos antes de cerrar la sesión (ver openProject).
+    m_trackModel->setSession(nullptr);
+    m_regionModel->setSession(nullptr);
     m_sessionManager.closeCurrentSession();
 
     auto session = NovaProjectManager::createProject(m_sessionManager.engine(), name, parentDir, isScratch);

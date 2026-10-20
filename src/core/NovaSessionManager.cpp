@@ -186,11 +186,15 @@ void NovaSessionManager::shutdownAudioEngine()
     if (d_ptr->engine) {
         qCDebug(novaCore) << "🛑 Deteniendo motor de audio Ardour...";
         static_cast<ARDOUR::AudioEngine*>(d_ptr->engine)->stop();
-        delete static_cast<ARDOUR::AudioEngine*>(d_ptr->engine);
         d_ptr->engine = nullptr;
         m_engine = nullptr;
+
+        // 🔒 ARDOUR::cleanup() destruye el motor, los analizadores, el
+        // SourceFactory (y sus hilos de picos) y la configuracion en el ORDEN
+        // correcto. Si no se llama, los destructores estaticos se ejecutan en
+        // orden aleatorio al salir y la app se queda COLGADA en
+        // pthread_cond_destroy() (o peta con SIGSEGV).
+        ARDOUR::cleanup();
     }
-    // ARDOUR::cleanup() may not exist - comment out for now
-    // ARDOUR::cleanup();
 #endif
 }

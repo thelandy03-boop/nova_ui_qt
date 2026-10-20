@@ -176,7 +176,10 @@ Item {
             // Ventana temporal: donde se coloca la forma de onda dentro del clip
             startBeat: root.startBeat
             lengthBeats: root.lengthBeats
-            pixelsPerBeat: root.barWidth
+            // Píxeles POR BEAT (4 pulsos por compás), no el ancho de compás:
+            // con el ancho de compás la onda se dibujaba 4x más ancha que el
+            // clip y quedaba fuera de la vista.
+            pixelsPerBeat: root.barWidth / 4.0
             visible: true
         }
 

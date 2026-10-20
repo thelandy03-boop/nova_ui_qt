@@ -31,6 +31,7 @@ public:
     ~NovaWaveformItem() override;
 
     QQuickFramebufferObject::Renderer *createRenderer() const override;
+    void releaseResources() override;
 
     int regionIndex() const { return m_regionIndex; }
     void setRegionIndex(int index);
@@ -82,6 +83,10 @@ signals:
 
 private:
     int m_regionIndex = -1;
+    // Puntero al renderer: necesario para liberar los recursos de OpenGL
+    // cuando Qt avisa de que va a perder el contexto (releaseResources()).
+    // createRenderer() es const, de ahi el mutable.
+    mutable class NovaWaveformRenderer *m_renderer = nullptr;
     QString m_regionId;
     QColor m_peakColor = Qt::white;
     QColor m_rmsColor = QColor(255, 255, 255, 128);

@@ -106,13 +106,35 @@ NovaWaveformRenderer::NovaWaveformRenderer() {
 }
 
 NovaWaveformRenderer::~NovaWaveformRenderer() {
+    // 🔒 NADA de OpenGL aquí. Los recursos GL SOLO se pueden liberar con el
+    // contexto vivo: al salir de la app el contexto ya puede estar
+    // destruido y llamar a glDeleteBuffers()/glDeleteVertexArrays() ahí
+    // provocaba un SIGSEGV dentro de QSGNode::destroy() (limpieza del scene
+    // graph). El sitio correcto es releaseGLResources(), al que Qt llama con
+    // el contexto todavía disponible.
+    //
+    // El FBO tampoco se destruye aquí: su textura la referencia el nodo de
+    // la escena graph, que se destruye DESPUÉS. Borrarlo aquí dejaba la
+    // textura liberada dos veces → crash al cerrar la vista.
+    // (La textura la libera el nodo; aquí solo queda el objeto FBO.)
+}
+
+void NovaWaveformRenderer::releaseGLResources()
+{
+    // Liberar aquí los recursos de OpenGL (contexto vivo) y dejar que
+    // initGL() los vuelva a crear si el item vuelve a pintarse.
     if (m_glFuncs) {
-        if (m_vbo) m_glFuncs->glDeleteBuffers(1, &m_vbo);
-        if (m_vao && glDeleteVertexArrays_) glDeleteVertexArrays_(1, &m_vao);
-        if (m_ebo) m_glFuncs->glDeleteBuffers(1, &m_ebo);
+        if (m_vbo) { m_glFuncs->glDeleteBuffers(1, &m_vbo); m_vbo = 0; }
+        if (m_ebo) { m_glFuncs->glDeleteBuffers(1, &m_ebo); m_ebo = 0; }
+        if (m_vao && glDeleteVertexArrays_) { glDeleteVertexArrays_(1, &m_vao); m_vao = 0; }
     }
+
     delete m_program;
-    delete m_fbo;
+    m_program = nullptr;
+
+    // El FBO NO se borra aqui: su textura sigue referenciada por el nodo de
+    // la escena graph, que se destruye despues (doble liberacion -> crash).
+    m_glInitialized = false;
 }
 
 void NovaWaveformRenderer::initGL() {
@@ -179,9 +201,26 @@ void NovaWaveformRenderer::rebuildGeometry() {
     float centerY = m_height * 0.5f;
     float maxAmp = m_height * 0.44f;
 
+    // 📏 Normalización de la vista: un clip muy silencioso (p.ej. un MP3 a
+    // -40 dB) daría una envolvente de menos de un píxel y no se vería nada.
+    // Se escala hasta el máximo del clip (como la vista de forma de onda de
+    // FL Studio) con un tope para no amplificar el ruido de fondo.
+    float maxPeak = 0.0f;
+    for (const auto &p : peaks) {
+        maxPeak = std::max(maxPeak, std::max(std::fabs(p.min), std::fabs(p.max)));
+    }
+    float viewGain = 1.0f;
+    if (maxPeak > 0.0001f) {
+        viewGain = std::min(1.0f / maxPeak, 100.0f);
+    }
+    gain *= viewGain;
+
     const double totalBeats = m_endBeat - m_startBeat;
     const double pxPerBeatSafe = (m_pixelsPerBeat > 0.0) ? m_pixelsPerBeat : 100.0;
-    const double totalPx = totalBeats * pxPerBeatSafe;
+    // El ancho real del item manda: así los picos se reparten exactamente
+    // sobre el clip, aunque su ancho tenga un mínimo (clips muy cortos).
+    const double totalPx = (m_width > 0) ? static_cast<double>(m_width)
+                                         : totalBeats * pxPerBeatSafe;
 
     m_vertices.reserve(count * 4 * 3 + 12); // 4 vertices per peak (quad), 3 floats each
     m_indices.reserve(count * 6 + 6);

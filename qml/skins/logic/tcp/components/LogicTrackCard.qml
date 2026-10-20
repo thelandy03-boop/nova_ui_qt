@@ -266,8 +266,7 @@ Rectangle {
     }
 
     // 📂 DIÁLOGO SELECTOR DE ARCHIVOS DE AUDIO
-    FileDialog {
-        id: fileDialog
+    FileDialog {        id: fileDialog
         title: "Seleccionar archivo de audio para " + model.trackName
         nameFilters: ["Archivos de Audio (*.wav *.flac *.mp3 *.ogg *.aiff)"]
         onAccepted: {

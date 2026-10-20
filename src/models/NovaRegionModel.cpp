@@ -250,15 +250,17 @@ void NovaRegionModel::requestRegionPeaks(const QString &regionId,
     }
 
     std::thread worker([this, regionId, audioRegion, sampleRate, channels, peakFilePath]() {
-        qCDebug(novaModel) << "📈 Calculando picos de" << regionId.toStdString() << "...";
         PeakData data = buildRegionPeaks(audioRegion, sampleRate, channels);
-        qCDebug(novaModel) << "📈 Picos terminados:" << data.peaks.size() << "detalle /"
-                           << data.overview.size() << "overview";
 
         if (!data.peaks.empty()) {
             savePeakFile(peakFilePath, data);
             NovaWaveformCache::setPeaks(regionId, data);
-            qCDebug(novaModel) << "📈 Picos publicados en cache para" << regionId.toStdString();
+            qCDebug(novaModel) << "📈 Picos listos para" << regionId.toStdString()
+                               << "(" << data.peaks.size() << " detalle /"
+                               << data.overview.size() << "overview)";
+        } else {
+            qCWarning(novaModel) << "📈 No se pudieron calcular los picos de"
+                                 << regionId.toStdString() << "(la forma de onda quedará plana)";
         }
 
         {
@@ -342,6 +344,11 @@ void NovaRegionModel::setSession(void *session)
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
     if (m_session == ardourSession) return;
+
+    // 🛡️ Los hilos de cálculo de picos leen de las fuentes de la sesión: si
+    // la sesión se va, hay que esperarlos ANTES de que se destruya (si no,
+    // leen memoria liberada y la app peta al salir).
+    waitForPeakJobs();
 
     if (m_sessionConnections) m_sessionConnections->drop_connections();
 

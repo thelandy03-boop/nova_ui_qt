@@ -21,6 +21,9 @@ class NovaWaveformRenderer : public QQuickFramebufferObject::Renderer {
 public:
     NovaWaveformRenderer();
     ~NovaWaveformRenderer() override;
+    // Liberar los recursos de OpenGL con el contexto todavia vivo.
+    // Lo llama el item desde QQuickFramebufferObject::releaseResources().
+    void releaseGLResources();
 
     void render() override;
     QOpenGLFramebufferObject *createFramebufferObject(const QSize &size) override;

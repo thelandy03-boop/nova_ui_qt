@@ -12,7 +12,21 @@ NovaWaveformItem::~NovaWaveformItem() {
 }
 
 QQuickFramebufferObject::Renderer *NovaWaveformItem::createRenderer() const {
-    return new NovaWaveformRenderer();
+    auto *r = new NovaWaveformRenderer();
+    m_renderer = r;
+    return r;
+}
+
+void NovaWaveformItem::releaseResources()
+{
+    // 🔒 Qt avisa aqui cuando va a perder el contexto de OpenGL: es el
+    // UNICO momento seguro para liberar buffers/VAO/programa. Si se libera
+    // en el destructor del renderer, el contexto puede estar ya destruido y
+    // la app peta con SIGSEGV al salir (dentro de QSGNode::destroy()).
+    if (m_renderer) {
+        m_renderer->releaseGLResources();
+    }
+    QQuickFramebufferObject::releaseResources();
 }
 
 void NovaWaveformItem::setRegionIndex(int index) {
