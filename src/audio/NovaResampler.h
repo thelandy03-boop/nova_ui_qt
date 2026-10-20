@@ -19,6 +19,12 @@
  *
  * Si la tasa de entrada y la de salida son iguales, el remuestreador hace
  * una copia exacta de las muestras.
+ *
+ * **Invariante:** el índice de la primera muestra pendiente nunca pasa del
+ * final del buffer. Con razones de remuestreo altas (un fichero de 192 kHz
+ * con una salida de 48 kHz) la posición puede avanzar más allá de la última
+ * muestra disponible, así que lo consumido se acota a lo que hay: si no, la
+ * compactación borraría muestras de más y se saldría del buffer.
  */
 class NovaResampler {
 public:

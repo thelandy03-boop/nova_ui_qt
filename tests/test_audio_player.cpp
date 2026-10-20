@@ -102,6 +102,60 @@ int crucesPorCero(const std::vector<float>& muestras, int canal, int canales)
     return cruces;
 }
 
+// Audio sintético de `segundos` a la tasa indicada: un tono de 440 Hz.
+// Se usa para probar los ficheros de alta resolución (192 kHz, 176,4 kHz),
+// que no hay en los fixtures.
+NovaDecodedAudio tonoSintetico(int tasa, int canales, double segundos)
+{
+    NovaDecodedAudio audio;
+    audio.sampleRate = tasa;
+    audio.channels = canales;
+
+    const qint64 fotogramas = static_cast<qint64>(static_cast<double>(tasa) * segundos);
+    audio.samples.assign(static_cast<size_t>(fotogramas) * static_cast<size_t>(canales), 0.0f);
+    for (qint64 f = 0; f < fotogramas; ++f) {
+        const float valor = 0.5f * std::sin(2.0f * 3.14159265358979f * 440.0f
+                                           * static_cast<float>(f) / static_cast<float>(tasa));
+        for (int c = 0; c < canales; ++c) {
+            audio.samples[static_cast<size_t>(f) * static_cast<size_t>(canales)
+                          + static_cast<size_t>(c)] = valor;
+        }
+    }
+    return audio;
+}
+
+// Reproduce un audio entero en bloques de `bloque` fotogramas y devuelve
+// cuántos fotogramas se han escrito en total.
+qint64 reproducirEntero(NovaDecodedAudio& audio, int tasaSalida, int bloque,
+                         std::vector<float>* salidaCompleta = nullptr)
+{
+    NovaAudioPlayer reproductor;
+    QString error;
+    reproductor.load(audio, &error);
+    reproductor.setOutputSampleRate(tasaSalida);
+    reproductor.play();
+
+    // El bloque del llamante son fotogramas (no muestras): el buffer tiene
+    // que caber para todos sus canales.
+    const int canales = audio.channels > 0 ? audio.channels : 1;
+    std::vector<float> bloqueSalida(static_cast<size_t>(bloque) * static_cast<size_t>(canales),
+                                    0.0f);
+    qint64 escritos = 0;
+    while (true) {
+        const int n = reproductor.renderFrames(bloqueSalida.data(), bloque);
+        if (n <= 0) {
+            break;
+        }
+        if (salidaCompleta) {
+            salidaCompleta->insert(salidaCompleta->end(), bloqueSalida.begin(),
+                                    bloqueSalida.begin()
+                                        + static_cast<size_t>(n) * static_cast<size_t>(canales));
+        }
+        escritos += n;
+    }
+    return escritos;
+}
+
 } // namespace
 
 int main()
@@ -400,6 +454,103 @@ int main()
                     decodificado && escritos == 512 && std::fabs(salida[1] - esperado) < 0.0001f,
                     "la salida en el fotograma 1 debe ser la interpolación entre las dos primeras "
                     "muestras de entrada en la razón 44100/48000");
+    }
+
+    // ------------------------------------------------------------------
+    // 12. Una razón de remuestreo alta (192 kHz -> 48 kHz, razón 4) no
+    //     puede desbordar el buffer del remuestreador: el índice de lo
+    //     consumido se salía del buffer y la compactación escribía fuera
+    //     del heap (visto con ASan). Se prueba con varios tamaños de
+    //     bloque, en mono y en estéreo.
+    // ------------------------------------------------------------------
+    {
+        const int bloques[] = {32, 64, 128, 256, 512, 1024};
+        bool ok = true;
+        for (int bloque : bloques) {
+            for (int canales : {1, 2}) {
+                NovaDecodedAudio audio = tonoSintetico(192000, canales, 1.0);
+                const qint64 escritos = reproducirEntero(audio, 48000, bloque);
+                const qint64 esperado =
+                    fotogramasDeSalida(audio.frameCount(), 192000, 48000);
+                if (escritos != esperado) {
+                    ok = false;
+                }
+            }
+        }
+
+        CHECK_NAMED("razon_alta_no_desborda_el_buffer",
+                    ok,
+                    "un fichero de 192 kHz con salida a 48 kHz (razón 4) se tiene que reproducir "
+                    "entero, con cualquier tamaño de bloque, sin desbordar el buffer");
+    }
+
+    // ------------------------------------------------------------------
+    // 13. Lo mismo con 176,4 kHz -> 44,1 kHz (también razón 4) y con una
+    //     razón no entera (192 kHz -> 44,1 kHz, razón 4,35).
+    // ------------------------------------------------------------------
+    {
+        bool ok = true;
+        for (int bloque : {64, 512, 1024}) {
+            for (int canales : {1, 2}) {
+                NovaDecodedAudio audio1764 = tonoSintetico(176400, canales, 1.0);
+                if (reproducirEntero(audio1764, 44100, bloque)
+                    != fotogramasDeSalida(audio1764.frameCount(), 176400, 44100)) {
+                    ok = false;
+                }
+
+                NovaDecodedAudio audio192 = tonoSintetico(192000, canales, 1.0);
+                if (reproducirEntero(audio192, 44100, bloque)
+                    != fotogramasDeSalida(audio192.frameCount(), 192000, 44100)) {
+                    ok = false;
+                }
+            }
+        }
+
+        CHECK_NAMED("razon_alta_no_desborda_el_buffer_con_1764",
+                    ok,
+                    "un fichero de 176,4 kHz con salida a 44,1 kHz (y uno de 192 kHz con salida "
+                    "a 44,1 kHz) se tienen que reproducir enteros, sin desbordar el buffer");
+    }
+
+    // ------------------------------------------------------------------
+    // 14. Con una razón entera (192 kHz -> 48 kHz) la salida es exactamente
+    //     una decimación: la salida n es la muestra de entrada 4n. Si el
+    //     remuestreador perdiera la sincronía (por ejemplo por acotar mal
+    //     lo consumido), esta comprobación lo detectaría.
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio = tonoSintetico(192000, 1, 0.5);
+
+        std::vector<float> enUnBloque;
+        reproducirEntero(audio, 48000, 24000, &enUnBloque);
+
+        std::vector<float> enBloques;
+        reproducirEntero(audio, 48000, 64, &enBloques);
+
+        float maxDiferencia = 0.0f;
+        const size_t comunes = std::min(enUnBloque.size(), enBloques.size());
+        for (size_t i = 0; i < comunes; ++i) {
+            maxDiferencia = std::max(maxDiferencia, std::fabs(enUnBloque[i] - enBloques[i]));
+        }
+
+        // La salida n tiene que ser la entrada 4n (la razón es un entero
+        // justo: no hay interpolación que hacer).
+        bool decimacionExacta = true;
+        for (size_t n = 0; n < enBloques.size(); ++n) {
+            const size_t indiceEntrada = n * 4;
+            if (indiceEntrada >= audio.samples.size()) {
+                break;
+            }
+            if (std::fabs(enBloques[n] - audio.samples[indiceEntrada]) > 0.000001f) {
+                decimacionExacta = false;
+            }
+        }
+
+        CHECK_NAMED("la_razon_alta_decima_exactamente",
+                    enUnBloque.size() == enBloques.size() && !enUnBloque.empty()
+                        && maxDiferencia < 0.000001f && decimacionExacta,
+                    "con razón 4 la salida tiene que ser la entrada decimada (la n vale la 4n) y "
+                    "da igual si se pide en un bloque o en muchos");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

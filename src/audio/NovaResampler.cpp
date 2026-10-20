@@ -1,5 +1,6 @@
 #include "audio/NovaResampler.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -59,8 +60,14 @@ int NovaResampler::process(const float* in, int inFrames, float* out, int outCap
         return 0;
     }
 
+    // Fotogramas de entrada que quedan por convertir. `m_inicio` nunca puede
+    // pasar del final del buffer (es una invariante del remuestreador), así
+    // que la resta no puede desbordar.
+    const size_t disponibles = (m_inicio <= m_buffer.size())
+                                   ? (m_buffer.size() - m_inicio)
+                                   : 0;
     const qint64 pendientes =
-        static_cast<qint64>((m_buffer.size() - m_inicio) / static_cast<size_t>(m_canales));
+        static_cast<qint64>(disponibles / static_cast<size_t>(m_canales));
 
     int escritos = 0;
     while (escritos < outCapacity) {
@@ -89,7 +96,16 @@ int NovaResampler::process(const float* in, int inFrames, float* out, int outCap
     // Se descarta lo ya convertido. Se conserva el fotograma entero donde cae
     // la posición, porque hace falta como muestra anterior para la siguiente
     // interpolación (si no, aparecería un clic en la unión de dos bloques).
-    const qint64 consumido = static_cast<qint64>(std::floor(m_pos));
+    //
+    // Lo que se puede descartar está ACOTADO por lo que hay en el buffer: con
+    // una razón de remuestreo alta (por ejemplo un fichero de 192 kHz con una
+    // salida de 48 kHz) la posición puede avanzar más allá de la última
+    // muestra disponible, y descartar de más dejaría `m_inicio` más allá del
+    // final del buffer (desbordamiento de heap al compactar). Como mucho se
+    // descarta la última muestra, que es la que hace falta como "anterior".
+    const qint64 maxConsumible = std::max<qint64>(0, pendientes - 1);
+    const qint64 consumido =
+        std::min(static_cast<qint64>(std::floor(m_pos)), maxConsumible);
     if (consumido > 0) {
         m_inicio += static_cast<size_t>(consumido) * static_cast<size_t>(m_canales);
         m_pos -= static_cast<double>(consumido);
@@ -100,6 +116,11 @@ int NovaResampler::process(const float* in, int inFrames, float* out, int outCap
 
 void NovaResampler::compactar()
 {
+    // Invariante: el índice de la primera muestra pendiente nunca puede
+    // pasar del final del buffer. Si se rompe, el erase de abajo se sale de
+    // rango (desbordamiento de heap).
+    Q_ASSERT(m_inicio <= m_buffer.size());
+
     // Las muestras ya convertidas se quedan en el vector hasta que ocupan
     // una parte apreciable de él; entonces se quitan de golpe, para no
     // mover memoria en cada llamada.
