@@ -76,6 +76,7 @@ Medido sobre el código hoy:
 - **QML sin ramas Android:** `grep Q_OS_ANDROID qml/` → **0 resultados**. La UI es la misma en escritorio y móvil (hoy, layout de escritorio, no táctil).
 - **94 bloques `#if Q_OS_ANDROID`** repartidos en 12 ficheros de `src/` → condicionales dispersos que hay que ir cerrando.
 - **APK:** `apks/NovaStudio-arm64-v8a.apk`, 34 MB, 80 librerías nativas, manifest `com.novastudio.nova`. Compila y empaqueta (arreglado en el commit `363ed47`).
+- **Windows también va contra los stubs:** `CMakeLists.txt:45` → `if(NOT ANDROID AND NOT WIN32)` para enlazar Ardour. O sea: **el build de Windows (`build_windows.sh` → `exes/NovaStudio-Win64.exe`, 13,6 MB) NO usa Ardour**, igual que Android. Windows es, hoy, un tercer "caparazón" sin motor. **PENDIENTE DE DECISIÓN DEL USUARIO** (§16).
 - **Tests:** 3 tests en `ctest`, todos en verde.
 
 ---
@@ -117,13 +118,15 @@ Es un esbozo: el constructor ajusta firmas y tipos. Lo que no se negocia es **el
 // src/core/NovaEngine.h
 namespace nova {
 
-// Un clip de audio: una porción de un archivo dentro de la línea de tiempo.
-struct NovaClip {
-    QString sourcePath;      // ruta absoluta al archivo de audio
-    qint64   offsetSamples;  // offset dentro del archivo
-    qint64   lengthSamples;  // duración
-    float    gain;           // ganancia lineal (1.0 = unity)
-    qint64   startSamples;   // posición en la línea de tiempo de la sesión
+// Una fuente de audio: un canal de una región.
+// En Ardour una región estéreo son DOS fuentes mono (no un archivo estéreo),
+// y así se modela aquí también (§9).
+struct NovaSource {
+    QString path;           // ruta absoluta al archivo de audio
+    int     channel;        // 0 = izquierdo, 1 = derecho, -1 = mono
+    qint64  offsetSamples;  // offset dentro del archivo
+    qint64  lengthSamples;  // duración
+    float   gain;           // ganancia lineal (1.0 = unity)
 };
 
 struct NovaRegion {
@@ -131,7 +134,10 @@ struct NovaRegion {
     QString name;
     qint64  positionSamples;
     qint64  lengthSamples;
-    QVector<NovaClip> clips;  // 1 clip por región (modelo DiskStream de Ardour)
+    float   gainDb = 0.0f;      // ganancia de la región
+    float   fadeInBeats = 0.0f; // fades expressed in beats
+    float   fadeOutBeats = 0.0f;
+    QVector<NovaSource> sources; // 1 (mono) o 2 (estéreo)
 };
 
 struct NovaTrack {
@@ -155,12 +161,18 @@ struct NovaTransportState {
     int    beatsPerBar = 4;
 };
 
-// Picos para la onda (el mismo dato que ya consume NovaWaveformRenderer).
+// Picos para la onda. El formato debe ser el que ya consume el renderizador:
+// un pico = {min, max, rms} (el renderizador pinta min/max y la rms aparte).
+struct NovaPeak {
+    float min = 0.0f;
+    float max = 0.0f;
+    float rms = 0.0f;
+};
 struct NovaPeakBuffer {
     QString sourcePath;
     qint64  offsetSamples;
     qint64  lengthSamples;
-    QVector<float> peaks;   // min/max alternados, 2 floats por pico
+    QVector<NovaPeak> peaks;
 };
 
 class NovaEngine : public QObject {
@@ -179,19 +191,34 @@ public:
 
     // ── pistas ─────────────────────────────────────────────────────
     virtual QVector<NovaTrack> tracks() const = 0;
+    virtual bool addAudioTrack(QString* error) = 0;
+    virtual bool removeTrack(int index, QString* error) = 0;
     virtual void setTrackGain(int index, float gain) = 0;
     virtual void setTrackPan(int index, float pan) = 0;
     virtual void setTrackMute(int index, bool mute) = 0;
     virtual void setTrackSolo(int index, bool solo) = 0;
     virtual void setTrackRecordEnable(int index, bool enabled) = 0;
 
-    // ── edición (móvil: implementada; escritorio: opcional en v1) ───
-    virtual bool moveClip(int trackIndex, const QString& clipId,
-                          qint64 newStartSamples, QString* error) = 0;
-    virtual bool splitClip(int trackIndex, const QString& clipId,
-                           qint64 atSamples, QString* error) = 0;
-    virtual bool setClipGain(int trackIndex, const QString& clipId,
-                             float gain, QString* error) = 0;
+    // ── edición de regiones ───────────────────────────────────────
+    // (La skin logic llama hoy a TODAS estas: moveRegion, resizeRegion,
+    //  removeRegion, splitRegion, setClipGainDb, setFadeInBeats,
+    //  setFadeOutBeats, normalizeClip. Si la interfaz no las cubre,
+    //  el escritorio deja de editar → §3/§4 lo prohíben.)
+    virtual bool moveRegion(int trackIndex, const QString& regionId,
+                            qint64 newPosition, QString* error) = 0;
+    virtual bool resizeRegion(int trackIndex, const QString& regionId,
+                              qint64 newLength, QString* error) = 0;
+    virtual bool removeRegion(int trackIndex, const QString& regionId,
+                              QString* error) = 0;
+    virtual bool splitRegion(int trackIndex, const QString& regionId,
+                             qint64 atSamples, QString* error) = 0;
+    virtual bool setRegionGainDb(int trackIndex, const QString& regionId,
+                                 float gainDb, QString* error) = 0;
+    virtual bool setRegionFades(int trackIndex, const QString& regionId,
+                                float fadeInBeats, float fadeOutBeats,
+                                QString* error) = 0;
+    virtual bool normalizeRegion(int trackIndex, const QString& regionId,
+                                 QString* error) = 0;
 
     // ── transporte ─────────────────────────────────────────────────
     virtual void play() = 0;
@@ -217,6 +244,8 @@ signals:
 }
 ```
 
+**Nota sobre el alcance de la interfaz:** la lista de arriba **no es opcional ni minimalista**: recoge todo lo que la skin `logic` (la única en uso) llama hoy a los modelos. Si `ArdourEngine` no implementa una de esas, el escritorio pierde esa función y el proyecto viola sus propios anti-objetivos (§4).
+
 **Regla de oro:** los modelos (`NovaRegionModel`, `NovaTrackListModel`) **no saben nada** del motor que hay debajo. Donde hoy hay `m_session->...` o `ARDOUR::...`, mañana hay `m_engine->...`. La skin QML tampoco cambia.
 
 ### 7.3 Reparto por fichero
@@ -224,7 +253,7 @@ signals:
 | Fichero | Acción | Notas |
 |---|---|---|
 | `src/core/NovaEngine.h` / `.cpp` | **NUEVO** | Interfaz + estructuras + un `createEngine()` que devuelve la implementación correcta según plataforma. |
-| `src/core/platform/ArdourEngine.h` / `.cpp` | **NUEVO** | Adaptador sobre `ARDOUR::Session*`. Traduce `NovaTrack`↔`ARDOUR::Route`, `NovaRegion`↔`ARDOUR::Region`. |
+| `src/core/platform/ArdourEngine.h` / `.cpp` | **NUEVO** | Adaptador sobre `ARDOUR::Session*`. Traduce `NovaTrack`↔`ARDOUR::Route`, `NovaRegion`↔`ARDOUR::Region`. **≈ 900-1.400 líneas**: no es un envoltorio trivial, porque debe reimplementar sobre Ardour el import sin recodificar, el split real de región, los fades, el normalize y la lectura de picos con cambio de tasa, que hoy viven en `NovaRegionModel` y en `NovaTrackListModel`. |
 | `src/core/platform/AndroidEngine.h` / `.cpp` | **NUEVO** | Motor propio con Oboe. Reutiliza el ring buffer y el grabador de `NovaAndroidAudioEngine`. |
 | `src/models/NovaRegionModel.cpp` | **MODIFICAR** | Quitar el uso directo de Ardour (52 refs). Import y picos pasan por el motor. |
 | `src/models/NovaTrackListModel.cpp` | **MODIFICAR** | Quitar el uso directo de Ardour (32 refs). M/S/REC leen del motor. |
@@ -275,8 +304,9 @@ signals:
 
 - La lógica de picos **ya existe y funciona** en escritorio (`NovaRegionModel::buildRegionPeaks` + `requestRegionPeaks`, con conversión de tasa de muestreo). Se **extrae** a un servicio común que usa el motor.
 - Se calcula **en un hilo aparte**, nunca en el hilo GUI.
+- **Formato de pico: `{min, max, rms}`** (tres floats), que es lo que ya consume el renderizador (`NovaWaveformRenderer` pinta min/max y la rms con su propio color). Si `requestPeaks` devolviera "2 floats por pico", habría que tocar el renderizador → no se toca.
+- El motor móvil puede **reutilizar los picos precalculados** de la carpeta `peaks/` de la sesión (formato NPK2 de Ardour) cuando existan, y calcularlos solo si faltan.
 - El renderizador (`NovaWaveformRenderer`) ya tiene variante de shader para OpenGL ES 3 ✓ → no hay que tocarlo.
-- Formato: 2 floats por pico (min, max), como hoy.
 
 ### 8.5 Grabación
 
@@ -295,18 +325,21 @@ signals:
 
 ## 9. Leer sesiones de Ardour en el móvil
 
-### 9.1 Formato (verificado en el código de Ardour)
+### 9.1 Formato (verificado contra sesiones reales del usuario)
 
-- Carpeta de sesión: contiene el **XML de la sesión** (fichero `.session`).
-- En el XML: pistas, y **playlists con nodos `<Region>`** — el nodo de región se crea en `libs/ardour/region.cc:1414` (`XMLNode *node = new XMLNode ("Region")`).
-- Directorios dentro de la sesión (`libs/ardour/directory_names.cc`):
-  - `interchange/` → raíz de las fuentes
-    - `interchange/audiofiles/` → **el audio importado** (`sound_path()` = `sources_root()/audiofiles`; `session_directory.cc`)
-    - `interchange/midifiles/`
-  - `peaks/` → picos precalculados (¡se pueden reutilizar en móvil!)
+Verificado leyendo el código de Ardour **y** las sesiones reales en `~/Documentos/NovaProjects/` (`Proyecto 2/3/4/5`, `DefaultSession`):
+
+- **Fichero de sesión:** `<carpeta-de-sesión>/<nombre>.ardour` — XML, `version="7003"` (Ardour 9.8). **No** es `.session`.
+- **Directorios dentro de la sesión** (`libs/ardour/directory_names.cc`):
+  - `interchange/<nombre-de-sesión>/audiofiles/` → **el audio importado**. OJO: el subdirectorio lleva el **nombre de la sesión**, no es `interchange/audiofiles/` a secas.
+  - `interchange/<nombre-de-sesión>/midifiles/`
+  - `peaks/` → picos precalculados (¡reutilizables en móvil!)
   - `export/`, `backup/`, `routestates/`, `plugin_metadata/`, `surfaces/`
-- **Ojo:** `sound_path()` devuelve `sounds/` (formato antiguo) si ese directorio existe; si no, `interchange/audiofiles/`. El parser debe soportar ambos.
-- Las fuentes de cada región apuntan a archivos con rutas **relativas a la carpeta de sesión** (o absolutas, si el archivo se movió).
+- **El XML NO guarda rutas**: cada `<Source>` guarda solo el **basename** (`name="audio%L.wav"`), y se resuelve con el *search path* de la sesión. La región enlaza con sus fuentes por `source-0`/`source-1` + `channels`; la playlist enlaza con la ruta vía `orig-track-id`.
+- **Una región estéreo = DOS fuentes mono** (archivos `%L`/`%R` sueltos, 48 kHz / 32-bit float en las sesiones del usuario). El modelo de datos del motor tiene que soportarlo (§7.2: `NovaRegion::sources`).
+- **El XML no guarda rutas absolutas**, así que el parser tiene que reconstruir la búsqueda: basename → `interchange/<sesión>/audiofiles/`, luego `peaks/`, luego la carpeta de fuentes configurada en la sesión, y como último recurso el **nombre de archivo** (para audios externos que el usuario movió de sitio).
+
+**Consecuencia de diseño:** el motor trabaja con **rutas absolutas** (no URIs). Eso condiciona el modelo de acceso a archivos en Android (§10).
 
 ### 9.2 Alcance de la lectura (v1)
 
@@ -332,8 +365,10 @@ Y **validarlo contra una sesión real** (hay proyectos del usuario en `~/Documen
 
 | Tema | Decisión |
 |---|---|
+| **Almacenamiento / acceso a archivos** | **PENDIENTE DE DECISIÓN DEL USUARIO** (ver §16). El motor trabaja con **rutas absolutas** (§9.1), así que hacen falta rutas de verdad, no URIs. Opción A: `MANAGE_EXTERNAL_STORAGE` ("todos los archivos") → rutas reales, Simple, pero Google Play lo restringe. Opción B: SAF (`ACTION_OPEN_DOCUMENT_TREE`) → URIs, obliga a una capa de IO propia para libsndfile/minimp3 y a no poder escribir junto a la sesión. Opción C: **copiar la sesión al almacenamiento privado de la app** al abrirla y trabajar ahí (simple, pero copia de GB y el proyecto deja de ser visible fuera de la app). La skin ya declara `MANAGE_EXTERNAL_STORAGE`; el manifest habrá que ajustarlo a lo que se decida. |
+| **Tasa de muestreo / remuestreo** | Las sesiones del usuario son de **48 kHz**; muchos móviles tienen 44,1 kHz nativo. Decisión: el motor **pide 48 kHz** a Oboe y, si el dispositivo no lo da, **remuestrea en el motor** (lineal o cúbica). Sin esto, el móvil suena afinado una octava por debajo en la mitad de los teléfonos. |
 | **Permisos** | `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `WAKE_LOCK`, `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE` (ya en el manifest). |
-| **Almacenamiento** | Scoped storage: `READ/WRITE_EXTERNAL_STORAGE` + `MANAGE_EXTERNAL_STORAGE` (ya en el manifest, con `tools:ignore`). Hay que comprobar que en Android 11+ el selector de archivos (`ACTION_OPEN_DOCUMENT_TREE`) da acceso persistente a la carpeta elegida; **preferible a `MANAGE_EXTERNAL_STORAGE`** porque no requiere permiso especial ni impide la distribución en Play. |
+| **Almacenamiento (redundante, se unifica arriba)** | Scoped storage: `READ/WRITE_EXTERNAL_STORAGE` + `MANAGE_EXTERNAL_STORAGE` (ya en el manifest, con `tools:ignore`). Si se elige SAF en lugar de `MANAGE_EXTERNAL_STORAGE`, hay que quitar el permiso especial y usar el selector de carpetas (`ACTION_OPEN_DOCUMENT_TREE`), que da acceso persistente a la carpeta elegida. |
 | **Servicio en primer plano** | `AudioForegroundService` ya existe en `android/app/src/main/java/com/novastudio/nova/AudioForegroundService.java`; hay que declarar `foregroundServiceType="microphone|mediaPlayback"` en el manifest y que el servicio sobreviva al "Doze". |
 | **Doze / background** | Con la pantalla apagada, Android puede pausar el proceso. `WAKE_LOCK` + servicio en primer plano + `setKeepScreenOn` en la actividad. |
 | **Audio route** | Oboe debe reaccionar a los cambios de ruta (auriculares Bluetooth, USB). A probar: enchufar/desenchuchar el jack → cambia el número de frames. |
@@ -478,19 +513,32 @@ adb logcat | grep -i nova               # logs de la app
 
 ## 16. Decisiones
 
-**Del usuario:**
+### 16.1 Pendientes de decisión del usuario (bloquean el plan)
+
+1. **¿El escritorio debe poder abrir lo que se editó en el móvil?** (ida y vuelta). Si sí → hay que añadir a la app de escritorio un importador de proyectos NOVA (`project.json` → sesión Ardour), porque el escritorio solo sabe leer sesiones de Ardour. Si no → la continuidad es de una sola dirección y lo editado en el móvil solo sale como WAV.
+2. **Modelo de acceso a archivos en Android**: `MANAGE_EXTERNAL_STORAGE` (rutas reales) / SAF (URIs) / copia al almacenamiento privado de la app (§10). Depende también de si el APK se publica en Google Play.
+3. **¿Windows sigue siendo objetivo?** Si sí → hace falta una tercera implementación de `NovaEngine` (motor WASAPI) o los stubs se quedan; si no → se declara fuera de alcance a propósito (y no por accidente de compilación).
+4. **¿Hay un móvil Android disponible para probar?** (modelo, versión de Android, tasa nativa). Sin dispositivo, las fases 0-2 no se cierran.
+
+### 16.2 Decisiones del usuario
+
 - El objetivo es **superior a BandLab** (no "tener app en Android").
 - Se acepta que el móvil use un **motor propio** y que el escritorio **no se toque**.
 - La skin en uso es **`logic`**; las demás se conservan pero no se tocan.
 - Se acepta la definición del eje: **continuidad con el escritorio + edición real + sin cuenta/nube**.
 
-**Mías (se pueden corregir en la revisión):**
+### 16.3 Decisiones mías (se pueden corregir en la revisión)
+
 1. Interfaz `nova::NovaEngine` como costura; `ArdourEngine` y `AndroidEngine` como implementaciones.
 2. El móvil **no escribe** sesiones de Ardour: usa un formato propio (`project.json`) solo cuando haya edición que guardar.
 3. Fases en el orden 0→1→2→3→4, con la continuidad (fase 3) antes que el formato propio (dentro de la fase 2).
 4. Decodificador MP3: minimp3 (dominio público) antes que mpg123 o ffmpeg.
-5. Sin plugin en móvil: es definitivo, no "más adelante".
+5. Sin plugins en móvil: es definitivo, no "más adelante".
 6. La interfaz táctil es fase 4, no fase 0 (primero el motor).
+7. La interfaz `NovaEngine` debe cubrir **todo** lo que la skin `logic` llama hoy a los modelos (§7.2); si no, el escritorio pierde funciones y el proyecto viola sus anti-objetivos.
+8. Los picos se expresan como `{min, max, rms}` para no tocar el renderizador (§8.4).
+9. El motor pide 48 kHz al dispositivo y remuestrea si no puede (§10).
+10. Las **reglas de sesión verificadas** (§9.1) mandan sobre cualquier suposición: `.ardour` (no `.session`), `interchange/<sesión>/audiofiles/`, basenames sin ruta, región estéreo = 2 fuentes mono.
 
 ---
 
