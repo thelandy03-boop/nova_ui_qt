@@ -81,14 +81,13 @@ bool NovaAudioEngine::initEngine()
 
     connectSessionSignals();
 
-    // 🆕 Auto-crear proyecto por defecto si no hay recientes
+    // 🆕 Auto-crear proyecto temporal si no hay ninguno abierto.
+    // Vive en su propia carpeta (NovaStudio_TempSession) para no ensuciar la
+    // lista de proyectos del usuario ni dejar carpetas "Untitled 2" sueltas.
     if (m_sessionManager.session() == nullptr) {
-        const QString defaultDir = NovaPlatformUtils::getProjectsDirectory();
-        // Si "Untitled" ya existe guardado, se usa "Untitled 2": nunca se pisa
-        // un proyecto que el usuario ya haya guardado.
-        const QString defaultName = NovaProjectPolicy::uniqueProjectName(defaultDir, QStringLiteral("Untitled"));
-        qCDebug(novaCore) << "🆕 Auto-creando proyecto por defecto:" << defaultName;
-        newProject(defaultName, defaultDir);
+        const QString scratchDir = NovaProjectManager::scratchDirectory();
+        qCDebug(novaCore) << "🆕 Auto-creando proyecto temporal en:" << scratchDir;
+        newProjectInternal(QStringLiteral("Untitled"), scratchDir, /*isScratch=*/true);
     }
 
     return true;
@@ -200,10 +199,26 @@ bool NovaAudioEngine::openProject(const QString &path)
 // 🆕 CREAR UN NUEVO PROYECTO LIMPIO INDEPENDIENTE
 bool NovaAudioEngine::newProject(const QString &name, const QString &parentDir)
 {
+    return newProjectInternal(name, parentDir, /*isScratch=*/false);
+}
+
+bool NovaAudioEngine::newProjectInternal(const QString &name, const QString &parentDir, bool isScratch)
+{
     qCDebug(novaCore) << "🔊 Creando nuevo proyecto comercial:" << name << "en:" << parentDir;
     m_sessionManager.closeCurrentSession();
-    
-    auto session = NovaProjectManager::createProject(m_sessionManager.engine(), name, parentDir);
+
+    auto session = NovaProjectManager::createProject(m_sessionManager.engine(), name, parentDir, isScratch);
+
+    if (!session && !isScratch) {
+        // El nombre pedido esta ocupado por un proyecto guardado: se prueba
+        // con el siguiente libre en vez de fallar en silencio.
+        const QString uniqueName = NovaProjectPolicy::uniqueProjectName(parentDir, name);
+        if (uniqueName != name) {
+            qCDebug(novaCore) << "ℹ️ El nombre esta ocupado, se usara:" << uniqueName;
+            session = NovaProjectManager::createProject(m_sessionManager.engine(), uniqueName, parentDir, isScratch);
+        }
+    }
+
     m_sessionManager.setSession(session);
 
     if (session) {

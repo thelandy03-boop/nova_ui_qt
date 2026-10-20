@@ -85,7 +85,8 @@ bool NovaProjectManager::isDirty(void *session)
 #endif
 }
 
-void* NovaProjectManager::createProject(void *engine, const QString &projectName, const QString &parentDir)
+void* NovaProjectManager::createProject(void *engine, const QString &projectName, const QString &parentDir,
+                                        bool isScratch)
 {
     if (!engine || projectName.isEmpty()) return nullptr;
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
@@ -97,16 +98,24 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
     try {
         // 🛡️ Nunca sobrescribir un proyecto que ya tiene datos del usuario
         // (sesion guardada o audio importado): se rechaza en vez de borrar.
-        QString reason;
-        if (!NovaProjectPolicy::canCreateProjectIn(sessionDir, &reason)) {
-            qCCritical(novaCore) << "❌ No se puede crear el proyecto:" << reason;
-            return nullptr;
+        // La carpeta temporal de la app es nuestra y si se puede reutilizar.
+        if (!isScratch) {
+            QString reason;
+            if (!NovaProjectPolicy::canCreateProjectIn(sessionDir, &reason)) {
+                qCCritical(novaCore) << "❌ No se puede crear el proyecto:" << reason;
+                return nullptr;
+            }
         }
 
         if (QDir(sessionDir).exists()) {
-            // Restos de un proyecto nunca guardado: se limpia y se reutiliza.
-            qCDebug(novaCore) << "🧹 Limpiando carpeta residual (sin sesion guardada):" << sessionDir;
-            QDir(sessionDir).removeRecursively();
+            if (isScratch && NovaProjectPolicy::hasImportedMedia(sessionDir)) {
+                // El usuario importo audio en la carpeta temporal: se conserva.
+                qCDebug(novaCore) << "ℹ️ La carpeta temporal contiene audio importado, se conserva:" << sessionDir;
+            } else {
+                // Restos de un proyecto nunca guardado: se limpia y se reutiliza.
+                qCDebug(novaCore) << "🧹 Limpiando carpeta residual (sin sesion guardada):" << sessionDir;
+                QDir(sessionDir).removeRecursively();
+            }
         }
         QDir().mkpath(targetParentDir);
 
@@ -254,6 +263,11 @@ void NovaProjectManager::removeProjectFromRecent(const QString &path)
 
     settings.setValue("recentProjects", newList);
     qCDebug(novaCore) << "🗑️ Proyecto eliminado del historial de recientes:" << cleanTarget;
+}
+
+QString NovaProjectManager::scratchDirectory()
+{
+    return NovaPlatformUtils::getProjectsDirectory() + QStringLiteral("/NovaStudio_TempSession");
 }
 
 QString NovaProjectManager::discardableProjectPath(void *session)

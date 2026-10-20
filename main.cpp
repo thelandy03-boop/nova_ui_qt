@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QWindow>
 #include <QLoggingCategory>
+#include <QLockFile>
+#include <QStandardPaths>
 
 #include "src/NovaAudioEngine.h"
 #include "src/views/NovaWaveformItem.h"
@@ -33,9 +35,31 @@ int main(int argc, char *argv[])
     // 🎨 Registrar tipo nativo de formas de onda
     qmlRegisterType<NovaWaveformItem>("NovaStudio", 1, 0, "NovaWaveformItem");
 
-    // Instancia del Motor de Audio Nova / Ardour Bridge
+    // 🔒 Una sola instancia a la vez.
+    // El motor de audio se conecta al servidor JACK de PipeWire, que es
+    // exclusivo: si otra instancia ya lo tiene, el cliente JACK falla y la
+    // app muere con un error de heap. Se avisa y se sale limpiamente.
+    const QString lockPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                 .filePath(QStringLiteral("nova_ui_qt.lock"));
+    QLockFile instanceLock(lockPath);
+    instanceLock.setStaleLockTime(0); // Solo se considera caduca si el proceso murio
+    if (!instanceLock.tryLock(0)) {
+        qint64 otherPid = 0;
+        QString otherHost;
+        QString otherApp;
+        instanceLock.getLockInfo(&otherPid, &otherHost, &otherApp);
+        qCritical() << "❌ Ya hay otra instancia de NOVA Studio en ejecucion (PID" << otherPid << ").";
+        qCritical() << "   Ciérrala antes de arrancar otra: el servidor de audio no admite dos apps a la vez.";
+        return 2;
+    }
+
+    // Instancia de audio Nova / Ardour Bridge
     NovaAudioEngine audioEngine;
-    audioEngine.initEngine();
+    if (!audioEngine.initEngine()) {
+        qCritical() << "❌ No se pudo inicializar el motor de audio.";
+        qCritical() << "   Revisa que PipeWire/JACK este en marcha (pw-jack) y que no haya otra app usando el audio.";
+        return 3;
+    }
 
     QQmlApplicationEngine engine;
 

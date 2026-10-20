@@ -23,8 +23,14 @@ public:
     static bool saveProject(void *session);
     static bool isDirty(void *session);
 
-    static void *createProject(void *engine, const QString &projectName, const QString &parentDir);
+    static void *createProject(void *engine, const QString &projectName, const QString &parentDir,
+                                bool isScratch = false);
     static void *openProject(void *engine, const QString &sessionPath);
+
+    // Carpeta de trabajo de la app: el proyecto temporal que se abre al
+    // arrancar. Vive aparte para no ensuciar la lista de proyectos del
+    // usuario ni accumular carpetas "Untitled 2", "Untitled 3"...
+    static QString scratchDirectory();
 
     static QVariantList getRecentProjects();
     static void addProjectToRecent(const QString &name, const QString &path);

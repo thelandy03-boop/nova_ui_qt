@@ -137,6 +137,7 @@ private:
     NovaRegionModel *m_regionModel = nullptr;
 
     void connectSessionSignals();
+    bool newProjectInternal(const QString &name, const QString &parentDir, bool isScratch);
 };
 
 #endif // NOVAAUDIOENGINE_H
