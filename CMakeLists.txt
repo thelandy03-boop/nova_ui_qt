@@ -26,8 +26,16 @@ if(ANDROID)
     find_library(ANDROID_SYS_LIB android)
 endif()
 
-get_filename_component(ARDOUR_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" ABSOLUTE)
-get_filename_component(ARDOUR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+# Rutas del motor Ardour. Por defecto, el repositorio padre del checkout
+# actual; se pueden sobreescribir con -DARDOUR_BUILD_DIR=... y
+# -DARDOUR_SRC_DIR=... para compilar la app fuera de ese arbol (worktrees,
+# builds alternos). Sin esos flags el comportamiento es el de siempre.
+if(NOT ARDOUR_BUILD_DIR)
+    get_filename_component(ARDOUR_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" ABSOLUTE)
+endif()
+if(NOT ARDOUR_SRC_DIR)
+    get_filename_component(ARDOUR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+endif()
 
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
