@@ -33,20 +33,14 @@ NovaSpikeController::NovaSpikeController(QObject* parent)
     // El controlador es el dueño del motor de audio: en Android no lo
     // instancia nadie más (la sesión de Ardour usa su stub).
     m_engine = std::make_unique<NovaAndroidAudioEngine>();
-    if (!m_engine->initialize(kTasaMotor)) {
-        // Sin motor no hay sonido: el estado lo dice, para que se vea por
-        // que no suena en vez de parecer que el fichero está mal.
-        qCWarning(novaCore) << "🔊 Spike: el motor de audio no se ha podido inicializar";
-        actualizarEstado(QStringLiteral("el motor de audio no se ha podido inicializar"));
-    } else {
-        m_motorListo = true;
-        m_engine->start();
-        if (!m_engine->openOutputStream(2)) {
-            // Aviso, no error: hay dispositivos que abren la salida con un
-            // solo canal y siguen sonando.
-            qCWarning(novaCore) << "🔊 Spike: la salida de audio no tiene dos canales";
-        }
+
+    if (prepararMotor()) {
         actualizarEstado(QStringLiteral("listo"));
+    } else {
+        // Sin motor no hay sonido, pero los picos de un fichero se pueden
+        // calcular igual: el estado lo dice para que no parezca un fallo del
+        // fichero.
+        actualizarEstado(QStringLiteral("el motor de audio no está listo: se puede ver la onda, pero no suena"));
     }
 
     // El reloj no decide la posición: solo avisa de que hay que volver a
@@ -55,6 +49,37 @@ NovaSpikeController::NovaSpikeController(QObject* parent)
     connect(&m_temporizador, &QTimer::timeout,
             this, &NovaSpikeController::actualizarPosicion);
     m_temporizador.start();
+}
+
+bool NovaSpikeController::prepararMotor()
+{
+    if (!m_engine) {
+        return false;
+    }
+    if (m_motorListo) {
+        return true;
+    }
+
+    // Se reintenta en cada carga: al arrancar, el permiso de micro se pide
+    // después de crear la interfaz, y el motor puede quedarse sin salida
+    // hasta que se conceda. Con el reintento, el primer toque de "Reproducir"
+    // ya funciona.
+    if (!m_engine->initialize(kTasaMotor)) {
+        qCWarning(novaCore) << "🔊 Spike: el motor de audio no se ha podido inicializar";
+        return false;
+    }
+    if (!m_engine->start()) {
+        qCWarning(novaCore) << "🔊 Spike: el motor de audio no se ha podido arrancar";
+        return false;
+    }
+    if (!m_engine->openOutputStream(2)) {
+        // Aviso, no error: hay dispositivos que abren la salida con un
+        // solo canal y siguen sonando.
+        qCWarning(novaCore) << "🔊 Spike: la salida de audio no tiene dos canales";
+    }
+
+    m_motorListo = true;
+    return true;
 }
 
 NovaSpikeController::~NovaSpikeController()
@@ -69,12 +94,13 @@ NovaSpikeController::~NovaSpikeController()
 
 bool NovaSpikeController::loadAndPlay(const QString& path)
 {
-    if (!m_engine || !m_motorListo) {
+    if (!m_engine) {
         actualizarEstado(QStringLiteral("el motor de audio no está disponible"));
         return false;
     }
 
-    // 1. Decodificar: sin audio no hay ni picos ni sonido.
+    // 1. Decodificar. Los picos NO necesitan ningún dispositivo de audio,
+    //    así que esto se hace siempre, motor listo o no.
     NovaDecodedAudio audio;
     QString error;
     if (!decodeAudioFile(path, audio, &error)) {
@@ -94,8 +120,21 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
                             ? static_cast<double>(audio.frameCount()) / audio.sampleRate
                             : 0.0);
 
-    // 4. Cargar el fichero en el motor y ponerlo en marcha.
+    // 4. Motor de audio: si no estaba listo se reintenta (a lo mejor ya se ha
+    //    concedido el permiso). Sin motor no hay sonido, pero la onda que se
+    //    acaba de publicar es real y se puede ver.
+    if (!prepararMotor()) {
+        actualizarEstado(QStringLiteral("la onda está lista, pero el motor de audio no está listo: no suena"));
+        return false;
+    }
+
+    // 5. Cargar el fichero en el motor y ponerlo en marcha.
     if (!m_engine->loadFile(path, &error)) {
+        // El fichero no se ha podido cargar: la onda y la duración que
+        // acabamos de publicar describen un fichero que no está en marcha,
+        // así que se quitan (si no, el cabezal se mediría contra un
+        // fichero que no suena).
+        limpiarOndaPublicada();
         actualizarEstado(error.isEmpty()
                              ? QStringLiteral("no se ha podido cargar el fichero en el motor de audio")
                              : error);
@@ -107,6 +146,12 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
                        << picos.peaks.size() << "picos";
     actualizarEstado(QStringLiteral("sonando"));
     return true;
+}
+
+void NovaSpikeController::limpiarOndaPublicada()
+{
+    NovaWaveformCache::removePeaks(QString::fromLatin1(kRegionId));
+    actualizarDuracion(0.0);
 }
 
 void NovaSpikeController::stop()
@@ -133,6 +178,14 @@ double NovaSpikeController::positionSeconds() const
 
 void NovaSpikeController::actualizarPosicion()
 {
+    // Solo se avisa cuando la posición cambia de verdad: si no está sonando
+    // nada, el reloj no tiene nada que contar (y el QML no se refresca 20
+    // veces por segundo sin motivo).
+    const double posicion = positionSeconds();
+    if (posicion == m_ultimaPosicion) {
+        return;
+    }
+    m_ultimaPosicion = posicion;
     Q_EMIT positionChanged();
 }
 

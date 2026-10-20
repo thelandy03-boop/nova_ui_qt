@@ -9,8 +9,11 @@
 #include "audio/NovaAudioDecoder.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <future>
+#include <thread>
 #include <vector>
 
 // Ruta de los fixtures; la define CMake al compilar este test.
@@ -67,6 +70,22 @@ bool todosCero(const std::vector<PeakPoint>& picos)
         }
     }
     return true;
+}
+
+// Número de bins vacíos (sin muestras: sus picos valen 0, 0, 0).
+//
+// Un bin sin muestras es un bin que el cálculo no ha rellenado: con el paso
+// en fotogramas, en un fichero estéreo (muestras intercaladas) la mitad de
+// los bins se quedan vacíos.
+int binsEnCero(const std::vector<PeakPoint>& picos)
+{
+    int vacios = 0;
+    for (const PeakPoint& p : picos) {
+        if (p.min == 0.0f && p.max == 0.0f && p.rms == 0.0f) {
+            ++vacios;
+        }
+    }
+    return vacios;
 }
 
 // Audio de 1 s con medio segundo de silencio y después un tono de 440 Hz
@@ -148,6 +167,47 @@ int main()
                     !data.peaks.empty() && data.peaks[0].max == 0.0f && hayTonoDespues,
                     "el primer pico debe ser el silencio inicial (max 0) y después "
                     "debe aparecer el tono (max mayor que 0,4)");
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Un fichero estéreo: las muestras van intercaladas (L R L R ...), así
+    //    que el paso de los bins se cuenta en MUESTRAS. Con el paso en
+    //    fotogramas solo se llenaría la mitad de los bins y la otra mitad
+    //    saldría como silencio.
+    //
+    //    El cálculo va en un hilo con reloj: con el paso equivocado el
+    //    helper de picos se queda en un bucle infinito (el índice del bin se
+    //    recorta, el del trozo no, y el trozo nunca avanza), y el test se
+    //    quedaría colgado en vez de fallar.
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-estereo.mp3"),
+                                         audio, &error);
+
+        auto promesa = std::make_shared<std::promise<PeakData>>();
+        std::future<PeakData> resultado = promesa->get_future();
+        std::thread([promesa, audio]() {
+            promesa->set_value(buildPeakData(audio, 64, 8));
+        }).detach();
+
+        bool calculoTerminado = false;
+        PeakData data;
+        if (resultado.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+            data = resultado.get();
+            calculoTerminado = true;
+        }
+
+        const int vacios = binsEnCero(data.peaks);
+        const float pico = picoDeLosPicos(data.peaks);
+
+        CHECK_NAMED("picos_de_un_estereo_llenan_todos_los_bins",
+                    ok && audio.channels == 2 && calculoTerminado && !data.peaks.empty()
+                        && vacios == 0 && pico >= 0.45f && pico <= 0.55f,
+                    "en un fichero estéreo todos los bins deben tener muestras "
+                    "(con el paso en fotogramas solo se llenaría la mitad y el "
+                    "cálculo se queda colgado)");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

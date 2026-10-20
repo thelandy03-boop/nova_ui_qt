@@ -23,7 +23,7 @@ Window {
     // El controlador: tiene el motor de audio, publica los picos y lleva la
     // posición del cabezal.
     SpikeController {
-        id: spike
+        id: spikeController
     }
 
     Column {
@@ -85,9 +85,9 @@ Window {
                 color: "#f7768e"
                 // Sin fichero cargado no hay duración que usar: división por
                 // cero evitada.
-                visible: spike.durationSeconds > 0
-                x: (spike.durationSeconds > 0)
-                   ? (spike.positionSeconds / spike.durationSeconds) * zonaOnda.width
+                visible: spikeController.durationSeconds > 0
+                x: (spikeController.durationSeconds > 0)
+                   ? (spikeController.positionSeconds / spikeController.durationSeconds) * zonaOnda.width
                    : 0
             }
         }
@@ -108,7 +108,7 @@ Window {
             Button {
                 text: "Reproducir"
                 onClicked: {
-                    spike.loadAndPlay(campoRuta.text)
+                    spikeController.loadAndPlay(campoRuta.text)
                     // El item de la onda se recrea para que el renderizador
                     // lea los picos del fichero nuevo.
                     cargadorOnda.active = false
@@ -118,14 +118,14 @@ Window {
 
             Button {
                 text: "Parar"
-                onClicked: spike.stop()
+                onClicked: spikeController.stop()
             }
         }
 
         // ── Estado ───────────────────────────────────────────────────
         Text {
             width: parent.width
-            text: spike.status
+            text: spikeController.status
             color: "#c0c0c0"
             font.pixelSize: 14
             elide: Text.ElideRight
@@ -133,8 +133,8 @@ Window {
 
         Text {
             width: parent.width
-            text: "Cabezal: " + spike.positionSeconds.toFixed(2) + " s de "
-                  + spike.durationSeconds.toFixed(2) + " s"
+            text: "Cabezal: " + spikeController.positionSeconds.toFixed(2) + " s de "
+                  + spikeController.durationSeconds.toFixed(2) + " s"
             color: "#808080"
             font.pixelSize: 12
         }

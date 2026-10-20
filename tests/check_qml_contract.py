@@ -21,6 +21,9 @@ OBJECTS = {
     "AudioEngine.tracks": SRC / "models" / "NovaTrackListModel.h",
     "AudioEngine.regions": SRC / "models" / "NovaRegionModel.h",
     "AudioEngine.deviceManager": SRC / "core" / "NovaAudioDeviceManager.h",
+    # El controlador del spike de Android (pagina qml/spike/SpikePage.qml):
+    # motor de audio, picos y posicion del cabezal.
+    "spikeController": SRC / "core" / "platform" / "NovaSpikeController.h",
 }
 
 # Metodos que heredan de QAbstractItemModel y por tanto existen en el modelo.

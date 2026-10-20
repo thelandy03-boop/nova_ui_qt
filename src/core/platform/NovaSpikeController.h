@@ -63,6 +63,20 @@ signals:
     void statusChanged();
 
 private:
+    /**
+     * Deja el motor de audio listo para reproducir (initialize + start).
+     *
+     * Se reintenta en cada carga: al arrancar, el permiso de micro se pide
+     * después de crear la interfaz, y el motor puede quedarse sin salida
+     * hasta que se conceda.
+     *
+     * @return true si el motor está listo para reproducir.
+     */
+    bool prepararMotor();
+
+    /** Quita de la caché la onda publicada y pone la duración a cero. */
+    void limpiarOndaPublicada();
+
     /** Refresca la posición del cabezal (la del motor, no la del reloj). */
     void actualizarPosicion();
 
@@ -78,6 +92,9 @@ private:
     // true si el motor de audio se ha podido inicializar (sin motor no hay
     // sonido, y el estado lo dice).
     bool m_motorListo = false;
+
+    // Última posición avisada: solo se emite positionChanged cuando cambia.
+    double m_ultimaPosicion = 0.0;
 
     // Reloj de refresco de la posición (el motor lleva la posición real).
     QTimer m_temporizador;

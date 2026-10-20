@@ -216,7 +216,14 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
         return false;
     }
 
-    // Open input stream
+    // ── Entrada de audio (micro): OPCIONAL ───────────────────────────────
+    // El micro NO es imprescindible para reproducir: si no se puede abrir
+    // (permiso sin conceder, dispositivo ocupado...) se sigue sin grabar,
+    // pero la salida de audio -que es lo que usa el spike- queda abierta.
+    //
+    // Antes esto cerraba la salida y devolvía false, y en el móvil el
+    // permiso de micro se pide DESPUÉS de arrancar la app: el motor se
+    // quedaba muerto en el primer arranque y no había forma de que volviera.
     oboe::AudioStreamBuilder inputBuilder;
     inputBuilder.setDirection(oboe::Direction::Input);
     inputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
@@ -229,20 +236,18 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
 
     oboe::Result result = inputBuilder.openStream(m_inputStream);
     if (result != oboe::Result::OK) {
-        LOGE("Failed to open input stream: %s", oboe::convertToText(result));
-        m_outputStream->close();
-        // El stream cerrado se deja a null, como hace closeStreams(): si no,
-        // el motor creería que tiene una salida abierta.
-        m_outputStream.reset();
-        Q_EMIT audioInitialized(false);
-        return false;
+        // Oboe deja el stream a null cuando no puede abrirlo.
+        LOGW("⚠️ No se pudo abrir la entrada de audio (micro): se sigue sin grabar (%s)",
+             oboe::convertToText(result));
+        m_inputStream.reset();
+    } else {
+        LOGD("Input stream opened: %d Hz, %d frames/burst, %d channels",
+             m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
+
+        // Initialize ring buffers
+        crearBuffersEntrada(m_inputStream->getChannelCount());
     }
 
-    LOGD("Input stream opened: %d Hz, %d frames/burst, %d channels",
-         m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
-
-    // Initialize ring buffers
-    crearBuffersEntrada(m_inputStream->getChannelCount());
     crearBuffersSalida(m_outputStream->getChannelCount());
 
     // Start disk writer thread
@@ -362,7 +367,9 @@ void NovaAndroidAudioEngine::shutdown() {
 
 bool NovaAndroidAudioEngine::start() {
 #if defined(Q_OS_ANDROID)
-    if (!m_outputStream || !m_inputStream) return false;
+    // Solo hace falta la salida de audio: la entrada (micro) es opcional, y
+    // sin ella el motor reproduce igual (lo que no puede es grabar).
+    if (!m_outputStream) return false;
 
     // El reproductor no se puede tocar con el stream de salida en marcha: su
     // callback puede estar leyendo el reproductor a la vez (el reproductor no
@@ -387,20 +394,25 @@ bool NovaAndroidAudioEngine::start() {
         LOGE("Failed to start output stream: %s", oboe::convertToText(result));
         return false;
     }
-    
-    result = m_inputStream->requestStart();
-    if (result != oboe::Result::OK) {
-        LOGE("Failed to start input stream: %s", oboe::convertToText(result));
-        m_outputStream->requestStop();
-        return false;
+
+    // La entrada se arranca solo si existe: si no, se sigue sin grabar pero
+    // la salida (y el spike) siguen funcionando.
+    if (m_inputStream) {
+        const oboe::Result arranqueEntrada = m_inputStream->requestStart();
+        if (arranqueEntrada != oboe::Result::OK) {
+            LOGW("⚠️ No se pudo arrancar la entrada de audio (micro): se sigue sin grabar (%s)",
+                 oboe::convertToText(arranqueEntrada));
+            m_inputStream.reset();
+        }
     }
-    
+
     m_isPlaying = true;
-    m_isRecording = true;
+    // Grabar solo es posible si hay micro.
+    m_isRecording = (m_inputStream != nullptr);
     m_currentFrame = 0;
 
     Q_EMIT playbackStateChanged(true);
-    Q_EMIT recordingStateChanged(true);
+    Q_EMIT recordingStateChanged(m_isRecording);
     return true;
 #else
     return false;
