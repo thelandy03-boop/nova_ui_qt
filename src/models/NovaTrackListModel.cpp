@@ -3,6 +3,8 @@
 #include "core/NovaAudioUtils.h"
 #include "core/platform/NovaAndroidStubs.h"
 
+#include <QMetaObject>
+
 #include <cmath>
 #include <algorithm>
 #include <memory>
@@ -46,6 +48,9 @@ public:
     ARDOUR::Session *session = nullptr;
     std::vector<std::shared_ptr<ARDOUR::Route>> routes;
     PBD::ScopedConnectionList sessionConnections;
+    // Conexiones a las senales Changed de los controles de cada pista.
+    // Se reconstruyen en cada syncWithArdour()/removeTrack().
+    PBD::ScopedConnectionList controlConnections;
 #else
     void *session = nullptr;
     std::vector<std::shared_ptr<ARDOUR::Route>> routes; // stub types on Android/Win
@@ -86,6 +91,16 @@ void NovaTrackListModel::setSession(void *session)
     d_ptr->session = ardourSession;
 
     if (d_ptr->session) {
+        // Las pistas pueden entrar en la sesion por muchos caminos (plantilla
+        // del proyecto, carga de sesion, plugins, atajos...). El modelo solo se
+        // resincronizaba desde addAudioTrack()/removeTrack(), asi que el
+        // panel TCP se quedaba VACIO al abrir un proyecto y solo aparecia
+        // al pulsar "+ Add Track". Con esta conexion a Session::RouteAdded
+        // el panel se actualiza en cuanto la sesion gana una pista.
+        ardourSession->RouteAdded.connect_same_thread(
+            d_ptr->sessionConnections,
+            [this](ARDOUR::RouteList &) { syncWithArdour(); });
+
         syncWithArdour();
     } else {
         beginResetModel();
@@ -101,6 +116,11 @@ void NovaTrackListModel::syncWithArdour()
     if (!d_ptr->session) return;
 
     beginResetModel();
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    // Las conexiones apuntan a pistas del vector anterior: soltarlas antes
+    // de vaciarlo para no reaccionar a controles ya no listados.
+    d_ptr->controlConnections.drop_connections();
+#endif
     d_ptr->routes.clear();
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
@@ -118,7 +138,66 @@ void NovaTrackListModel::syncWithArdour()
     }
     endResetModel();
 
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    connectControlSignals();
+#endif
+
     Q_EMIT trackCountChanged(static_cast<int>(d_ptr->routes.size()));
+}
+
+void NovaTrackListModel::connectControlSignals()
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    // Mute, Solo y RecEnable son controles marcados con Controllable::RealTime
+    // (ver mute_control.cc / solo_control.cc / record_enable_control.cc).
+    // En AutomationControl::set_value() -> check_rt() eso significa que el
+    // cambio NO se aplica: se encola para el hilo de audio y la funcion vuelve.
+    // Consecuencia: el dataChanged que emitimos justo despues de set_value()
+    // vuelve a leer el valor VIEJO, el binding de la tarjeta no cambia, y el
+    // usuario percibe que hay que hacer "doble clic" (en realidad el primer
+    // clic si cambia el audio; solo falla el refresco visual).
+    //
+    // Solucion: escuchar Changed, que se emite cuando el hilo de audio aplica
+    // el valor de verdad, y reemitir dataChanged desde el hilo GUI.
+    d_ptr->controlConnections.drop_connections();
+
+    for (const auto &route : d_ptr->routes) {
+        if (!route) continue;
+
+        std::weak_ptr<ARDOUR::Route> weakRoute = route;
+
+        auto connectControl = [this, weakRoute](const std::shared_ptr<ARDOUR::AutomationControl> &control,
+                                                int role) {
+            if (!control) return;
+
+            // Changed puede emitirse desde el hilo de audio: solo encolamos
+            // trabajo y tocamos el modelo en el hilo GUI.
+            control->Changed.connect_same_thread(
+                d_ptr->controlConnections,
+                [this, weakRoute, role](bool, PBD::Controllable::GroupControlDisposition) {
+                    QMetaObject::invokeMethod(this, [this, weakRoute, role]() {
+                        const auto route = weakRoute.lock();
+                        if (!route) return;
+                        for (size_t row = 0; row < d_ptr->routes.size(); ++row) {
+                            if (d_ptr->routes[row] == route) {
+                                Q_EMIT dataChanged(index(static_cast<int>(row)),
+                                                   index(static_cast<int>(row)),
+                                                   QList<int>{role});
+                                return;
+                            }
+                        }
+                    }, Qt::QueuedConnection);
+                });
+        };
+
+        connectControl(route->mute_control(), MuteRole);
+        connectControl(route->solo_control(), SoloRole);
+
+        if (auto track = std::dynamic_pointer_cast<ARDOUR::Track>(route)) {
+            connectControl(track->rec_enable_control(), RecEnableRole);
+        }
+    }
+#endif
 }
 
 int NovaTrackListModel::rowCount(const QModelIndex &parent) const
@@ -320,6 +399,9 @@ void NovaTrackListModel::removeTrack(int row)
     d_ptr->routes.erase(d_ptr->routes.begin() + row);
     endRemoveRows();
 
+    // Reconstruir conexiones: la pista eliminada ya no debe notificar.
+    connectControlSignals();
+
     Q_EMIT trackCountChanged(static_cast<int>(d_ptr->routes.size()));
 }
 
@@ -359,6 +441,9 @@ void NovaTrackListModel::setMute(int row, bool muted)
 #endif
         }
     }
+    // Refresco inmediato (util sobre todo si el control no esta en modo
+    // RealTime). Para mute/solo/rec el refresco definitivo llega desde
+    // connectControlSignals() cuando el hilo de audio aplica el cambio.
     Q_EMIT dataChanged(index(row), index(row), QList<int>{MuteRole});
 }
 

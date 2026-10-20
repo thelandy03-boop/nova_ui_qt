@@ -28,6 +28,9 @@
 #include "ardour/session.h"
 #include "ardour/session_event.h"
 #include "ardour/plugin_manager.h"
+#include "ardour/rc_configuration.h"
+#include "ardour/transport_master_manager.h"
+#include "pbd/stateful.h"
 
 #pragma pop_macro("emit")
 #pragma pop_macro("slots")
@@ -73,6 +76,30 @@ bool NovaSessionManager::initSession()
             return false;
         }
 
+        // 🛡️ EVITAR CRASH DE ARRANQUE (use-after-free del TransportMaster)
+        //
+        // AudioEngine::start() llama a ARDOUR::init_post_engine() ->
+        // TransportMasterManager::restart(). Si la configuracion de Ardour no
+        // guarda el estado de "TransportMasters" (este proyecto no crea
+        // ~/.config/ardour/ardour.conf), restart() cae en la rama
+        // set_default_configuration() -> clear(), que DESTRUYE todos los
+        // TransportMaster. Para entonces el backend JACK ya ha pedido conectar
+        // sus puertos y el hilo de JACK puede estar dentro de
+        // TransportMaster::connection_handler() sobre un objeto ya liberado:
+        // vptr corrupto -> salto a direccion invalida -> SIGSEGV al arrancar.
+        //
+        // Publicamos el estado actual de los transport masters en la
+        // configuracion en memoria: asi restart() usa la rama que NO destruye
+        // nada y los objetos sobreviven a los callbacks del hilo de audio.
+        if (ARDOUR::Config && !ARDOUR::Config->transport_master_state()) {
+            XMLNode &tm_state = ARDOUR::TransportMasterManager::instance().get_state ();
+            XMLNode *root = new XMLNode ("Ardour");
+            root->add_child_nocopy (tm_state);
+            ARDOUR::Config->set_state (*root, PBD::Stateful::current_state_version);
+            delete root;
+            qCDebug(novaCore) << "🛡️ Estado de transport masters publicado en memoria (evita clear() destructivo al arrancar).";
+        }
+
         if (!ARDOUR::SessionEvent::has_per_thread_pool()) {
             ARDOUR::SessionEvent::create_per_thread_pool("GUI", 4096);
         }
@@ -106,12 +133,25 @@ bool NovaSessionManager::initSession()
         backend->set_sample_rate(48000.0f);
         backend->set_buffer_size(1024);
 
+        // 🔍 Verificación: los transport masters deben SOBREVIVIR al arranque.
+        // Si engine->start() los destruye y recrea (clear()), el hilo de JACK
+        // puede estar usando el objeto liberado -> use-after-free -> crash.
+        const size_t tm_before = ARDOUR::TransportMasterManager::instance().transport_masters().size();
+        const std::shared_ptr<ARDOUR::TransportMaster> tm_current_before =
+            ARDOUR::TransportMasterManager::instance().current();
+
         if (d_ptr->engine->start() != 0) {
             qCCritical(novaCore) << "Error al arrancar el motor de audio.";
             return false;
         }
 
-        qCDebug(novaCore) << "🔊 Conectado exitosamente al servidor PipeWire-JACK!";
+        const size_t tm_after = ARDOUR::TransportMasterManager::instance().transport_masters().size();
+        const bool tm_intactos = (tm_current_before ==
+                                   ARDOUR::TransportMasterManager::instance().current());
+
+        qCDebug(novaCore) << "🔊 Conectado exitosamente al servidor PipeWire-JACK!"
+                          << "| transport masters:" << tm_before << "->" << tm_after
+                          << "| mismo objeto:" << (tm_intactos ? "sí" : "NO (hubo clear() → riesgo de crash)");
 #else
         qCDebug(novaCore) << "📱 Inicializando subsistema C++ para Android/Windows...";
         if (!d_ptr->engine) {

@@ -61,6 +61,7 @@ signals:
 
 private:
     void syncWithArdour();
+    void connectControlSignals();
 
     std::unique_ptr<NovaTrackListModelPrivate> d_ptr;
 };
