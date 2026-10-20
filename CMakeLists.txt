@@ -128,6 +128,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaDecodedAudio.h
     src/audio/NovaAudioDecoder.h
     src/audio/NovaAudioDecoder.cpp
+    src/audio/NovaAudioPeaks.h
+    src/audio/NovaAudioPeaks.cpp
     src/audio/NovaWavReader.h
     src/audio/NovaWavReader.cpp
     src/audio/NovaMp3Decoder.h
@@ -144,6 +146,13 @@ target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Co
 
 if(ANDROID)
     set_property(TARGET nova_ui_qt PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+
+    # El controlador del spike (motor de Oboe + forma de onda) solo se
+    # compila en Android: en el escritorio la app es la de siempre.
+    target_sources(nova_ui_qt PRIVATE
+        src/core/platform/NovaSpikeController.h
+        src/core/platform/NovaSpikeController.cpp
+    )
 
     target_link_libraries(nova_ui_qt PRIVATE oboe ${AAUDIO} ${OPENSLES} ${LOGCAT} ${ANDROID_SYS_LIB})
 
@@ -304,6 +313,22 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_audio_player PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(test_audio_player PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME audio_player COMMAND test_audio_player)
+
+    # Los picos de la forma de onda, calculados del PCM ya decodificado. El
+    # test carga el WAV del fixture, por eso necesita el decodificador y
+    # Qt6::Core (el decodificador trabaja con QString).
+    add_executable(test_audio_peaks
+        tests/test_audio_peaks.cpp
+        src/audio/NovaAudioPeaks.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+        src/core/NovaSimdPeaks.cpp
+    )
+    target_link_libraries(test_audio_peaks PRIVATE Qt6::Core)
+    target_include_directories(test_audio_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_peaks PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_peaks COMMAND test_audio_peaks)
 
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).

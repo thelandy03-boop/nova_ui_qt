@@ -16,6 +16,12 @@
 #include "src/NovaAudioEngine.h"
 #include "src/views/NovaWaveformItem.h"
 
+#if defined(Q_OS_ANDROID)
+// El controlador del spike (motor de audio + forma de onda) solo existe en
+// Android: en el escritorio la app es la de siempre.
+#include "src/core/platform/NovaSpikeController.h"
+#endif
+
 int main(int argc, char *argv[])
 {
     // 🎨 FORMATO PROFESIONAL DE LOGS EN CONSOLA
@@ -34,6 +40,11 @@ int main(int argc, char *argv[])
 
     // 🎨 Registrar tipo nativo de formas de onda
     qmlRegisterType<NovaWaveformItem>("NovaStudio", 1, 0, "NovaWaveformItem");
+
+#if defined(Q_OS_ANDROID)
+    // 🎧 El controlador del spike: motor de audio y forma de onda real.
+    qmlRegisterType<NovaSpikeController>("NovaStudio", 1, 0, "SpikeController");
+#endif
 
     // 🔒 Una sola instancia a la vez.
     // El motor de audio se conecta al servidor JACK de PipeWire, que es
@@ -160,7 +171,13 @@ int main(int argc, char *argv[])
     } else {
         qDebug() << "Modo QRC (sin hot-reload de fuentes)";
         engine.addImportPath(QStringLiteral("qrc:/qt/qml/NovaStudio"));
+#if defined(Q_OS_ANDROID)
+        // En Android se carga la página del spike (forma de onda real y
+        // cabezal), no la app de escritorio.
+        engine.load(QUrl(QStringLiteral("qrc:/qt/qml/NovaStudio/qml/spike/SpikePage.qml")));
+#else
         engine.load(QUrl(QStringLiteral("qrc:/qt/qml/NovaStudio/qml/Main.qml")));
+#endif
         if (engine.rootObjects().isEmpty())
             return -1;
     }
