@@ -52,10 +52,28 @@ Ese eje es defendible porque el proyecto de NOVA en escritorio **ya es un format
 
 ## 5. Restricciones
 
+### 5.1 Límites de Waydroid (el entorno de pruebas)
+
+Waydroid es un Android en un contenedor: sirve para validar **lógica, decodificación, interfaz y formato**, pero **no** reproduce el hardware de un móvil. Estos límites son conocidos y hay que tenerlos presentes al cerrar fases:
+
+| Qué | En Waydroid | Consecuencia |
+|---|---|---|
+| **ABI** | La imagen es **x86_64**; nuestro APK actual es **arm64-v8a** → **no arranca**. Hay que construir además la variante **x86_64** (`Qt/6.8.3/android_x86_64` ✓ instalado, NDK ✓). | `build_android.sh` debe parametrizar el ABI. Entregable de la fase 0. |
+| **Audio de salida** | HAL virtual sobre el audio del host (PipeWire/Pulse, 48 kHz). Oboe **no encuentra AAudio** y cae a OpenSL ES / HAL emulado. | **La latencia medida en Waydroid no es representativa.** El camino de baja latencia (AAudio) **no se puede verificar aquí**. |
+| **Latencia real** | La del host (varios ms, con jitter). | El objetivo de latencia móvil queda **sin verificar** hasta que haya un móvil real. Se documenta como riesgo abierto (§14). |
+| **Entrada táctil** | El ratón emula el táctil. | Se validan **toque y arrastre**. Los **gestos multitáctiles (pinza de zoom) NO se pueden validar** → la fase 4 queda parcialmente bloqueada. |
+| **Micrófono** | El host puede exponer su entrada; depende de la configuración de Waydroid. | La **grabación** puede quedar sin verificar. |
+| **Doze / background** | No hay gestión de energía real. | El `AudioForegroundService` y el `WAKE_LOCK` se implementan **siguiendo buenas prácticas, sin poder verificarlos aquí**. |
+| **Almacenamiento** | El `sdcard` del contenedor es la carpeta del host → el móvil puede ver (y escribir) ficheros del PC. | **Muy útil para probar**: la sesión del escritorio es directamente visible desde Waydroid. |
+
+**Consecuencia de planificación:** las fases 0-3 se pueden cerrar en Waydroid. La fase 4 (interfaz táctil) se cierra **a medias**, y el trabajo de campo (grabación, background, latencia) queda pendiente de un móvil real. Antes de publicar a usuarios habrá que hacer una **revisión en hardware** (§13).
+
+### 5.2 Restricciones generales
+
 | Restricción | Detalle |
 |---|---|
 | **Tiempo** | Un desarrollador. ~3 meses a tiempo completo hasta la v1 creíble. |
-| **Dispositivo** | Hace falta **al menos un móvil Android 8+** para las fases 1-4. Hoy `adb devices` no muestra ninguno. Sin dispositivo, las fases 0-2 no se pueden cerrar. |
+| **Entorno de pruebas** | **Waydroid**, no un móvil físico. Imagen `waydroid_x86_64` instalada (`/var/lib/waydroid/images/system.img`), host x86_64, audio del host por PipeWire/Pulse a **48 kHz float32** ✓ (coincide con las sesiones). Límites reales de este entorno (§5.1). |
 | **Toolchain Android** | NDK 26.1.10909125, Qt 6.8.3 `android_arm64_v8a`, Java 17 o 21, SDK 35, Gradle 8.10, AGP 8.2.2. Todo ya instalado y funcionando (`./build_android.sh`). |
 | **Toolchain escritorio** | Ardour 8.x compilado en el repo padre (`build/libs/ardour`), JACK vía `pw-jack`. |
 | **Sin plugins de terceros** | Restricción dura (§3). |
@@ -76,7 +94,7 @@ Medido sobre el código hoy:
 - **QML sin ramas Android:** `grep Q_OS_ANDROID qml/` → **0 resultados**. La UI es la misma en escritorio y móvil (hoy, layout de escritorio, no táctil).
 - **94 bloques `#if Q_OS_ANDROID`** repartidos en 12 ficheros de `src/` → condicionales dispersos que hay que ir cerrando.
 - **APK:** `apks/NovaStudio-arm64-v8a.apk`, 34 MB, 80 librerías nativas, manifest `com.novastudio.nova`. Compila y empaqueta (arreglado en el commit `363ed47`).
-- **Windows también va contra los stubs:** `CMakeLists.txt:45` → `if(NOT ANDROID AND NOT WIN32)` para enlazar Ardour. O sea: **el build de Windows (`build_windows.sh` → `exes/NovaStudio-Win64.exe`, 13,6 MB) NO usa Ardour**, igual que Android. Windows es, hoy, un tercer "caparazón" sin motor. **PENDIENTE DE DECISIÓN DEL USUARIO** (§16).
+- **Windows también va contra los stubs:** `CMakeLists.txt:45` → `if(NOT ANDROID AND NOT WIN32)` para enlazar Ardour. O sea: **el build de Windows (`build_windows.sh` → `exes/NovaStudio-Win64.exe`, 13,6 MB) NO usa Ardour**, igual que Android. Windows es, hoy, un tercer "caparazón" sin motor. **Decidido: fuera de alcance** (§16.1 decisión 3).
 - **Tests:** 3 tests en `ctest`, todos en verde.
 
 ---
@@ -261,7 +279,7 @@ signals:
 | `src/core/NovaTransportController.cpp` | **MODIFICAR** | Habla con el motor, no con `ARDOUR::Transport`. |
 | `src/core/platform/NovaAndroidStubs.h` | **REEMPLAZAR** | Los stubs son la implementación de mentira; se sustituyen por el motor real. El fichero desaparece (o queda solo lo estrictamente no-ARDOUR). |
 | `src/core/platform/NovaAndroidAudioEngine.cpp` | **MODIFICAR** | Se queda como **base** del motor: ring buffer + streams + grabación. Se le añade reproducción. |
-| `src/core/NovaProjectManager.cpp` | **MODIFICAR** | En móvil, abrir proyecto = leer sesión de Ardour. |
+| `src/core/NovaProjectManager.cpp` | **MODIFICAR** | En móvil, abrir proyecto = leer sesión de Ardour (§9). **Añadir**: importador de proyectos NOVA (`.novaproject` / `project.json`) → crea una sesión Ardour nueva en el escritorio (fase 3, §16.2 decisión 1). |
 | `src/core/NovaRecordManager.cpp` | **MODIFICAR** | Idem con la grabación. |
 | QML (`qml/skins/logic/**`) | **MODIFICAR (fase 4)** | Layout táctil. El modelo de datos de QML no cambia. |
 
@@ -314,12 +332,17 @@ signals:
 - Graba a WAV en la carpeta del proyecto; el archivo se referencia como una fuente más.
 - `REC` por pista, `MONITOR` y `input` de latencia: fuera del alcance de la v1 salvo lo mínimo.
 
-### 8.6 Persistencia
+### 8.6 Persistencia (decidido)
 
-- **Fase 1-2: el proyecto es una sesión de Ardour**, solo lectura para el móvil al principio. El móvil **no** escribe sesiones de Ardour.
-- Si el móvil necesita guardar cambios (fase 2, edición), se usa un **formato propio NOVA**: una carpeta con un `project.json` + los archivos de audio. La sesión de Ardour queda intacta; el móvil guarda su versión en un sitio aparte.
-  - `project.json` (a definir en fase 2): versión, pistas, clips (ruta + offset + largo + ganancia), tempo, compás, loop.
-  - **Es una extensión, no un reemplazo**: el escritorio sigue leyendo sesiones de Ardour.
+- **Fase 1-2: el proyecto es una sesión de Ardour**, y el móvil la abre **en modo lectura**. El móvil **no escribe sesiones de Ardour** (nunca).
+- **Cómo llega al móvil (decidido):** el usuario elige la carpeta de sesión con el selector de Android (`ACTION_OPEN_DOCUMENT_TREE`) → la app toma el permiso persistente → se hace una **copia de trabajo** de la sesión en el almacenamiento privado de la app (`filesDir/projects/<nombre>/`). El motor trabaja sobre esa copia con **rutas absolutas** (§9.1) y **nunca toca la sesión original**.
+  - Por qué copia y no "in situ": el motor necesita rutas reales (§10), y el acceso "en sitio" por SAF son URIs. La copia lo resuelve sin permisos especiales y funciona en cualquier Android 8+ y en Waydroid.
+  - Si el usuario concede `MANAGE_EXTERNAL_STORAGE`, se puede abrir **in situ** (sin copia) — mejora opcional para sesiones gigantes, no bloqueante.
+- **Formato propio NOVA** (fase 2, cuando haya edición que guardar): una carpeta con `project.json` + los archivos de audio.
+  - `project.json`: versión, pistas (nombre, fader, pan, M/S), regiones (posición, largo, offset, ganancia, fades), fuentes (ruta relativa), tempo, compás, loop.
+  - Rutas **relativas** dentro de la carpeta del proyecto → la carpeta es movible y exportable.
+- **Exportar proyecto NOVA (`.novaproject`)**: un ZIP con `project.json` + audio, que se escribe en el `sdcard` (visible desde el PC en Waydroid, y exportable por SAF en un móvil). Es el vehículo de **vuelta al escritorio** (§12, fase 3).
+- **El escritorio sigue leyendo sesiones de Ardour** y, además, entendendrá proyectos NOVA mediante un importador (§7.3).
 
 ---
 
@@ -365,10 +388,10 @@ Y **validarlo contra una sesión real** (hay proyectos del usuario en `~/Documen
 
 | Tema | Decisión |
 |---|---|
-| **Almacenamiento / acceso a archivos** | **PENDIENTE DE DECISIÓN DEL USUARIO** (ver §16). El motor trabaja con **rutas absolutas** (§9.1), así que hacen falta rutas de verdad, no URIs. Opción A: `MANAGE_EXTERNAL_STORAGE` ("todos los archivos") → rutas reales, Simple, pero Google Play lo restringe. Opción B: SAF (`ACTION_OPEN_DOCUMENT_TREE`) → URIs, obliga a una capa de IO propia para libsndfile/minimp3 y a no poder escribir junto a la sesión. Opción C: **copiar la sesión al almacenamiento privado de la app** al abrirla y trabajar ahí (simple, pero copia de GB y el proyecto deja de ser visible fuera de la app). La skin ya declara `MANAGE_EXTERNAL_STORAGE`; el manifest habrá que ajustarlo a lo que se decida. |
+| **Almacenamiento / acceso a archivos (decidido)** | **SAF (`ACTION_OPEN_DOCUMENT_TREE`) + copia de trabajo en el almacenamiento privado de la app** (§8.6). El motor trabaja con **rutas absolutas** (§9.1), así que se resuelve la ruta copiando, no con URIs. Ventajas: sin permisos especiales, funciona en Android 8+ y en Waydroid, y publicable en Play. `MANAGE_EXTERNAL_STORAGE` queda como **mejora opcional** (abrir in situ sin copiar). Consecuencia: **el móvil nunca escribe en la sesión original**. El manifest declara hoy `MANAGE_EXTERNAL_STORAGE`; se mantiene como opcional y se añade el flujo SAF. |
 | **Tasa de muestreo / remuestreo** | Las sesiones del usuario son de **48 kHz**; muchos móviles tienen 44,1 kHz nativo. Decisión: el motor **pide 48 kHz** a Oboe y, si el dispositivo no lo da, **remuestrea en el motor** (lineal o cúbica). Sin esto, el móvil suena afinado una octava por debajo en la mitad de los teléfonos. |
 | **Permisos** | `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `WAKE_LOCK`, `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE` (ya en el manifest). |
-| **Almacenamiento (redundante, se unifica arriba)** | Scoped storage: `READ/WRITE_EXTERNAL_STORAGE` + `MANAGE_EXTERNAL_STORAGE` (ya en el manifest, con `tools:ignore`). Si se elige SAF en lugar de `MANAGE_EXTERNAL_STORAGE`, hay que quitar el permiso especial y usar el selector de carpetas (`ACTION_OPEN_DOCUMENT_TREE`), que da acceso persistente a la carpeta elegida. |
+| **Copia de trabajo** | La app copia la carpeta de sesión a `filesDir/projects/<nombre>/` y trabaja ahí. La copia es la **única** que se modifica. Los picos calculados se guardan en la copia (no en la original). |
 | **Servicio en primer plano** | `AudioForegroundService` ya existe en `android/app/src/main/java/com/novastudio/nova/AudioForegroundService.java`; hay que declarar `foregroundServiceType="microphone|mediaPlayback"` en el manifest y que el servicio sobreviva al "Doze". |
 | **Doze / background** | Con la pantalla apagada, Android puede pausar el proceso. `WAKE_LOCK` + servicio en primer plano + `setKeepScreenOn` en la actividad. |
 | **Audio route** | Oboe debe reaccionar a los cambios de ruta (auriculares Bluetooth, USB). A probar: enchufar/desenchuchar el jack → cambia el número de frames. |
@@ -385,26 +408,30 @@ El QML **no tiene ramas Android** y el layout actual es de escritorio (panel izq
 - **Fase 4**, no antes: hasta la fase 3, se usa el layout de escritorio en horizontal (en un móvil en horizontal puede servir para probar el motor).
 - Lo que hay que construir: un `MobileWorkspace.qml` (o variantes del `WorkspaceRouter.qml`) que componga: barra de transporte arriba → timeline → pestañas (Pistas / Mixer / Efectos).
 - **La skin `bandlab` del repo NO sirve como base móvil**: es una skin de escritorio (rack/TCP/topbar, 1.731 líneas). No confundir "bandlab" (skin) con "BandLab" (producto).
+- **En Waydroid el táctil es el ratón**: se validan toque y arrastre, pero **la pinza de zoom no se puede probar** (§5.1). Los gestos multitáctiles quedan pendientes de hardware real.
 
 ---
 
 ## 12. Fases
 
-Cada fase tiene un entregable verificable. **Una fase no está cerrada hasta que su criterio de "hecho" se cumple en un dispositivo real.**
+Cada fase tiene un entregable verificable. **Una fase no está cerrada hasta que su criterio de "hecho" se cumple en el entorno de pruebas (Waydroid).**
 
-### Fase 0 — Spike: que suene algo en un móvil
+### Fase 0 — Spike: que suene algo en el móvil
 
-**Objetivo:** validar, en hardware, el camino de riesgo máximo (decodificación + Oboe + UI táctil).
+**Objetivo:** validar, en el entorno de pruebas (Waydroid), el camino de riesgo máximo (decodificación + Oboe + UI).
 
 **Tareas:**
-1. Conectar un móvil por adb (`adb devices`).
-2. Leer un MP3 de una ruta conocida (`/sdcard/Music/...`) y decodificarlo con el decodificador elegido.
-3. Reproducirlo con el stream de Oboe existente (`NovaAndroidAudioEngine`), sin mixer: un archivo, directo a salida.
-4. Mostrar la forma de onda (reutilizando el renderizador actual) y un playhead que avanza.
-5. Medir la latencia real en el dispositivo.
+1. **Parametrizar `build_android.sh` por ABI** (`--abi arm64-v8a | x86_64`): hoy está fijo en arm64-v8a y **la imagen de Waydroid es x86_64**, así que hoy el APK ni arranca ahí. Toolchain `Qt/6.8.3/android_x86_64` ya instalado ✓.
+2. Arrancar Waydroid (`waydroid session start`) y comprobar que `adb devices` ve el contenedor.
+3. Instalar el APK x86_64 (`adb install -r ...`) y ver que arranca.
+4. Leer un MP3 de una ruta conocida (`/sdcard/Music/...` o de la carpeta del host montada en el contenedor) y decodificarlo con el decodificador elegido.
+5. Reproducirlo con el stream de Oboe existente (`NovaAndroidAudioEngine`), sin mixer: un archivo, directo a salida.
+6. Mostrar la forma de onda (reutilizando el renderizador actual) y un playhead que avanza.
+7. Medir la latencia **en Waydroid**, sabiendo que **no es representativa** (§5.1).
 
-**Hecho cuando:** en un móvil suena un MP3 con onda visible y el playhead avanza a la velocidad correcta, medido.
-**Riesgo que elimina:** decodificador + Oboe + rendimiento. Si esto falla, todo lo demás es detener y replantear.
+**Hecho cuando:** en Waydroid suena un MP3 con onda visible y el playhead avanza a la velocidad correcta.
+**Riesgo que elimina:** decodificador + Oboe + empaquetado + ABI. Si esto falla, todo lo demás es detener y replantear.
+**Lo que NO se puede cerrar aquí:** latencia real, micrófono, gestos multitáctiles (§5.1).
 
 ### Fase 1 — Motor móvil + interfaz `NovaEngine`
 
@@ -412,13 +439,13 @@ Cada fase tiene un entregable verificable. **Una fase no está cerrada hasta que
 
 **Tareas:**
 1. `NovaEngine` + estructuras (interfaz pura, sin motor).
-2. `ArdourEngine`: adaptador sobre `ARDOUR::Session*`.
+2. `ArdourEngine`: adaptador sobre `ARDOUR::Session*`, cubriendo **todo** el surface que la skin llama hoy (§7.2).
 3. Migrar `NovaRegionModel` y `NovaTrackListModel` para hablar con `NovaEngine` (**los 3 tests de `ctest` en verde en todo momento**; el escritorio debe sonar y verse igual).
 4. `AndroidEngine` v0: reproduce N archivos en paralelo (sin mixer real todavía, o con mixer simple), transporte con posición.
-5. Lectura de sesiones de Ardour: investigación del formato (§9.3) + parser.
-6. El APK **deja de usar `NovaAndroidStubs.h`** (o lo deja solo para lo que no sea motor).
+5. **Abrir proyecto en el móvil**: selector de carpeta (SAF) → copia de trabajo → parser de sesión de Ardour (§9.3). En Waydroid, la carpeta del host es directamente visible en el `sdcard` del contenedor ✓.
+6. El APK **deja de usar `NovaAndroidStubs.h`** (los stubs quedan solo para Windows, §16.2 decisión 3).
 
-**Hecho cuando:** en el móvil se abre una sesión de Ardour real, se ve el timeline con sus clips y su onda, y suena.
+**Hecho cuando:** en Waydroid se abre una sesión de Ardour real (del `~/Documentos/NovaProjects/` del usuario), se ve el timeline con sus clips y su onda, y suena.
 **Hecho (escritorio):** `ctest` 3/3 y el escritorio sin cambios observables.
 
 ### Fase 2 — DAW móvil v1: mixer y edición
@@ -427,21 +454,23 @@ Cada fase tiene un entregable verificable. **Una fase no está cerrada hasta que
 
 **Tareas:**
 1. Mixer: fader, pan, M/S por pista + buses + metering.
-2. Edición de clips: mover, dividir, ganancia, fades.
+2. Edición de regiones: mover, dividir, ganancia, fades, normalize.
 3. Guardado propio: `project.json` + audio (formato NOVA, §8.6).
-4. Loop y metrónomo.
+4. **Exportar proyecto NOVA** (`.novaproject`, ZIP con `project.json` + audio) al `sdcard` → vehículo de vuelta al escritorio.
+5. Loop y metrónomo.
 
-**Hecho cuando:** en el móvil se edita un clip, se guarda, se reabre y se vuelve a oír igual.
+**Hecho cuando:** en el móvil se edita una región, se guarda, se reabre y se vuelve a oír igual; y el `.novaproject` exportado contiene lo esperado.
 
-### Fase 3 — La apuesta: abrir sesiones del escritorio
+### Fase 3 — La apuesta: continuidad de ida y vuelta
 
 **Objetivo:** el diferenciador.
 
 **Tareas:**
-1. Abrir una sesión de Ardour del escritorio en el móvil (el parser ya existe de la fase 1; aquí se le añade la edición y el guardado).
-2. Exportar a WAV (mezcla y/o stems).
+1. Abrir una sesión de Ardour del escritorio en el móvil, editarla y exportarla (el parser y la edición ya existen de las fases 1-2; aquí se une todo y se exporta a WAV).
+2. **Importador de proyectos NOVA en el escritorio**: abrir un `.novaproject` en NOVA de escritorio → crea una sesión Ardour nueva con sus pistas, regiones y audio (usando el import rápido ya existente). Esto es lo que hace la continuidad **de ida y vuelta** (§16.2 decisión 1).
+3. Exportar WAV (mezcla y/o stems) desde el móvil.
 
-**Hecho cuando:** una sesión creada en el escritorio se abre en el móvil, se edita y se exporta.
+**Hecho cuando:** una sesión creada en el escritorio → abierta y editada en el móvil → exportada como `.novaproject` → **abierta en el escritorio** con el mismo contenido.
 
 ### Fase 4 — Interfaz táctil y pulido
 
@@ -449,11 +478,11 @@ Cada fase tiene un entregable verificable. **Una fase no está cerrada hasta que
 
 **Tareas:**
 1. `MobileWorkspace.qml`: composición vertical por pestañas.
-2. Gestos: arrastrar clip, pinza de zoom, barrido del playhead.
-3. Tamaños de toque, areas seguras (notch), rotación.
-4. Grabación con el servicio en primer plano verificado en background.
+2. Gestos: arrastrar región, pinza de zoom, barrido del playhead.
+3. Tamaños de toque, áreas seguras (notch), rotación.
+4. Grabación con el servicio en primer plano, siguiendo buenas prácticas (§5.1: **no verificable en Waydroid**).
 
-**Hecho cuando:** una sesión se edita entera con el dedo, sin ratón ni teclado.
+**Hecho cuando:** una sesión se edita entera con el dedo (táctil emulado por ratón en Waydroid) y la parte multitáctil queda **pendiente de revisión en un móvil real** (§13).
 
 ### Fase 5 — Decidir con datos
 
@@ -471,7 +500,8 @@ Se aplica **en cada fase**:
 | **6 meses** sin una versión jugable en un móvil | Replantear el proyecto móvil entero |
 | Aparece un requisito de **plugins de terceros en móvil** | Descartar la idea (no hay ecosistema; ni la opción (a) lo arreglaba) |
 | El objetivo real resulta ser **paridad total con el escritorio** | Solo la vía (a) (portar Ardour) lo da, y está descartada → replantear el producto |
-| No hay dispositivo Android disponible | Las fases 0-4 no avanzan; el trabajo se limita a escritorio |
+| No hay **entorno de pruebas** disponible (Waydroid no arranca, o falta la imagen) | Las fases 0-3 no avanzan; el trabajo se limita a escritorio |
+| La fase 4 (táctil) se cierra solo a medias con el ratón de Waydroid | Antes de publicar a usuarios hace falta una **revisión en un móvil real** (gestos, micrófono, background, latencia). No publicar sin ella |
 
 ---
 
@@ -483,7 +513,9 @@ Se aplica **en cada fase**:
 | **Rendimiento en móvil** | La mezcla por pista puede no llegar en un gama media | Medir en el spike (fase 0) con 4-8 pistas; si falla, menos Simultaneidad o mezclar en `float`SIMD |
 | **Formato de sesiónvaries entre versiones de Ardour** | El parser falla con sesiones nuevas | Investigación previa (§9.3) + probar con sesiones reales de varias versiones; si el formato es inestable, el parser solo soporta un subconjunto documentado |
 | **Doze y background** | La grabación se corta al bloquear el móvil | `AudioForegroundService` + `WAKE_LOCK`; probar explícitamente con la pantalla apagada |
-| **Interfaz táctil descuidada** | El motor funciona pero la app no se puede usar | Fase 4 dedicada; no dar por buena la v1 sin probar con el dedo |
+| **Interfaz táctil descuidada** | El motor funciona pero la app no se puede usar | Fase 4 dedicada; no dar por buena la v1 sin probar con el dedo (Waydroid emula el ratón; los gestos multitáctiles quedan pendientes de hardware real) |
+| **Waydroid no representa a un móvil** | Se da por bueno algo que en un móvil real no funciona (latencia, multitáctil, background, micrófono) | §5.1 lista los límites; los riesgos no verificables quedan marcados como tales y se revisan antes de publicar |
+| **Windows se queda como caparazón** | El `.exe` arranca pero no hace nada de DAW | Fuera de alcance explícito (§16.2 decisión 3); no se invierte en mantenerlo |
 | **El escritorio se rompe** | Se pierde lo que ya funciona | Regla dura: `ctest` en verde siempre; cambios de escritorio solo con motivo |
 | **Licencias** | El móvil hereda GPL por descuido | El motor móvil se escribe limpio, sin código de Ardour. Revisión legal aparte |
 
@@ -498,27 +530,32 @@ cmake --build build -j$(nproc)          # compilar
 cd build && ctest                      # 3/3 obligatorios
 
 # ── Android ────────────────────────────────────────────────────
-./build_android.sh                      # NDK + Qt Android + Gradle
-ls -la apks/NovaStudio-arm64-v8a.apk    # debe pesar >30 MB y traer libnova_ui_qt
+./build_android.sh --abi arm64-v8a       # APK para móvil real
+./build_android.sh --abi x86_64          # APK para Waydroid (imagen x86_64)
+ls -la apks/*.apk                       # debe pesar >30 MB y traer libnova_ui_qt
 
-# ── dispositivo ───────────────────────────────────────────────
-adb devices                            # debe listar un móvil
-adb install -r apks/NovaStudio-arm64-v8a.apk
-adb logcat | grep -i nova               # logs de la app
+# ── entorno de pruebas: Waydroid ───────────────────────────────
+waydroid session start
+adb devices                             # debe listar el contenedor
+adb install -r apks/NovaStudio-x86_64.apk
+adb logcat | grep -i nova                # logs de la app
 ```
 
-**Regla de verificación:** ninguna fase se da por cerrada sin ejecutarla **en un móvil real**. Compilar no es funcionar.
+**Regla de verificación:** ninguna fase se da por cerrada sin ejecutarla **en el entorno de pruebas**. Compilar no es funcionar. Y lo que Waydroid no puede verificar (latencia real, micrófono, multitáctil, background) queda **marcado como pendiente de hardware** (§5.1), no como hecho.
 
 ---
 
 ## 16. Decisiones
 
-### 16.1 Pendientes de decisión del usuario (bloquean el plan)
+### 16.1 Decisiones tomadas (el usuario delegó: "lo que sea mejor")
 
-1. **¿El escritorio debe poder abrir lo que se editó en el móvil?** (ida y vuelta). Si sí → hay que añadir a la app de escritorio un importador de proyectos NOVA (`project.json` → sesión Ardour), porque el escritorio solo sabe leer sesiones de Ardour. Si no → la continuidad es de una sola dirección y lo editado en el móvil solo sale como WAV.
-2. **Modelo de acceso a archivos en Android**: `MANAGE_EXTERNAL_STORAGE` (rutas reales) / SAF (URIs) / copia al almacenamiento privado de la app (§10). Depende también de si el APK se publica en Google Play.
-3. **¿Windows sigue siendo objetivo?** Si sí → hace falta una tercera implementación de `NovaEngine` (motor WASAPI) o los stubs se quedan; si no → se declara fuera de alcance a propósito (y no por accidente de compilación).
-4. **¿Hay un móvil Android disponible para probar?** (modelo, versión de Android, tasa nativa). Sin dispositivo, las fases 0-2 no se cierran.
+1. ** Ida y vuelta: SÍ.** El escritorio podrá abrir los proyectos NOVA que edite el móvil → hay que añadir un importador `project.json` → sesión Ardour en la app de escritorio (fase 3, §7.3 y §12).
+   - Por qué: la promesa central ("tus proyectos no viven en la nube de nadie") solo vale si es bidireccional. Sin vuelta, lo editado en el móvil sale como WAV y se pierde la trazabilidad.
+2. **Acceso a archivos: SAF + copia de trabajo** en el almacenamiento privado de la app (§8.6, §10). `MANAGE_EXTERNAL_STORAGE` queda como mejora opcional (abrir in situ). El móvil **nunca escribe en la sesión original**.
+   - Por qué: el motor necesita rutas absolutas; SAF + copia evita reescribir la capa de IO de audio, funciona sin permisos especiales, en Android 8+ y en Waydroid, y es publicable en Play.
+3. **Windows: fuera de alcance, explícitamente.** No se invierte en un motor WASAPI ahora. Los stubs quedan **solo para Windows** (`NovaAndroidStubs.h` → guard `Q_OS_WIN` solamente cuando el motor móvil aterrice). Si más adelante se quiere Windows, es la **tercera** implementación de `NovaEngine` con el mismo patrón.
+   - Por qué: dispersar el trabajo entre dos plataformas sin motor cuesta más que lo que aporta ahora; el `.exe` sigue compilando y arrancando como hoy.
+4. **Entorno de pruebas: Waydroid** (no hay móvil físico). Implica: construir también la variante **x86_64** del APK, y aceptar que latencia real, micrófono, multitáctil y background **no son verificables** (§5.1). Antes de publicar a usuarios, revisión en hardware real (§13).
 
 ### 16.2 Decisiones del usuario
 
@@ -526,6 +563,7 @@ adb logcat | grep -i nova               # logs de la app
 - Se acepta que el móvil use un **motor propio** y que el escritorio **no se toque**.
 - La skin en uso es **`logic`**; las demás se conservan pero no se tocan.
 - Se acepta la definición del eje: **continuidad con el escritorio + edición real + sin cuenta/nube**.
+- No hay móvil físico: las pruebas se hacen en **Waydroid**.
 
 ### 16.3 Decisiones mías (se pueden corregir en la revisión)
 
@@ -545,7 +583,9 @@ adb logcat | grep -i nova               # logs de la app
 ## 17. Fuera de alcance
 
 - Cualquier cambio en el motor público `NOVA-STUDIO` (Ardour).
+- **Windows**: motor propio (WASAPI). El `.exe` sigue compilando y arrancando como hoy, pero **sin motor** (§16.1 decisión 3).
 - Publicar en Google Play (firma, ficha, políticas): es una fase posterior de distribución, no de producto.
 - MIDI, efectos, comping, automatización: fases futuras, no bloqueantes.
 - Portar a iOS.
 - Limpieza de las skins muertas (bandlab/reaper/draft): requiere permiso explícito del usuario.
+- Revisión en hardware móvil real: no hay dispositivo (§5.1), así que queda como pendiente antes de publicar.
