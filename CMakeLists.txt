@@ -248,4 +248,19 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_link_libraries(test_project_policy PRIVATE Qt6::Core)
     target_include_directories(test_project_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME project_policy COMMAND test_project_policy)
+
+    add_executable(test_simd_peaks
+        tests/test_simd_peaks.cpp
+        src/core/NovaSimdPeaks.cpp
+    )
+    target_include_directories(test_simd_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME simd_peaks COMMAND test_simd_peaks)
+
+    # El contrato QML <-> C++ se comprueba con un script: detecta los botones
+    # que llaman a metodos inexistentes (fallan en runtime con TypeError).
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME qml_contract
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_qml_contract.py)
+    endif()
 endif()

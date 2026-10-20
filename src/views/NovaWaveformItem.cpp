@@ -74,6 +74,30 @@ void NovaWaveformItem::setClipGainDb(float dB) {
     update();
 }
 
+void NovaWaveformItem::setStartBeat(double beat) {
+    if (!qFuzzyCompare(m_startBeat, beat)) {
+        m_startBeat = beat;
+        emit startBeatChanged();
+        update();
+    }
+}
+
+void NovaWaveformItem::setLengthBeats(double beats) {
+    if (!qFuzzyCompare(m_lengthBeats, beats)) {
+        m_lengthBeats = beats;
+        emit lengthBeatsChanged();
+        update();
+    }
+}
+
+void NovaWaveformItem::setPixelsPerBeat(double px) {
+    if (!qFuzzyCompare(m_pixelsPerBeat, px)) {
+        m_pixelsPerBeat = px;
+        emit pixelsPerBeatChanged();
+        update();
+    }
+}
+
 void NovaWaveformItem::setSession(void *session) {
     // Not used directly; the session is used by the model to fetch peaks.
     // The renderer gets peaks via setPeaks() called from outside.

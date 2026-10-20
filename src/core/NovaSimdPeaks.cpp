@@ -8,6 +8,18 @@
     #include <arm_neon.h>
 #endif
 
+void initPeakAccumulators(std::vector<float>& min, std::vector<float>& max,
+                          std::vector<float>& rms, std::vector<int>& count, int points)
+{
+    if (points <= 0) {
+        return;
+    }
+    min.assign(static_cast<size_t>(points), FLT_MAX);
+    max.assign(static_cast<size_t>(points), -FLT_MAX);
+    rms.assign(static_cast<size_t>(points), 0.0f);
+    count.assign(static_cast<size_t>(points), 0);
+}
+
 void processPeakBlockSimd(const float* samples, size_t numSamples,
                           double startPos, double detailStep, double overviewStep,
                           int detailPoints, int overviewPoints,

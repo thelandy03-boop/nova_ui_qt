@@ -124,9 +124,11 @@ void NovaAudioEngine::toggleRecord() { m_recorder.toggleRecord(); }
 void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
 void NovaAudioEngine::locateBeat(double beat) { m_transport.locateBeat(beat); }
 void NovaAudioEngine::setBpm(double bpm) { m_transport.setBpm(bpm); }
+void NovaAudioEngine::rewind() { m_transport.rewind(); }
 
 void NovaAudioEngine::setLoopEnabled(bool enabled) { m_transport.setLoopEnabled(enabled); }
 void NovaAudioEngine::setLoopRange(double startBeat, double endBeat) { m_transport.setLoopRange(startBeat, endBeat); }
+void NovaAudioEngine::toggleLoop() { m_transport.toggleLoop(); }
 
 // ✂️ HERRAMIENTA SPLIT: Dividir clip en el punto exacto del Playhead
 bool NovaAudioEngine::splitAtPlayhead(int targetRegionIndex)

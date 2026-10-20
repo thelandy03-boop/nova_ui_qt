@@ -81,6 +81,7 @@ private:
 
     std::vector<PeakPoint> m_peaks;
     std::vector<PeakPoint> m_overview;
+    QString m_lastRegionId;
 
     std::mutex m_dataMutex;
 };

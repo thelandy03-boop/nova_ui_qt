@@ -59,10 +59,12 @@ public:
     Q_INVOKABLE void locateFrame(double frame);
     Q_INVOKABLE void locateBeat(double beat);
     Q_INVOKABLE void setBpm(double bpm);
+    Q_INVOKABLE void rewind();
 
     // Bucle (Loop)
     Q_INVOKABLE void setLoopEnabled(bool enabled);
     Q_INVOKABLE void setLoopRange(double startBeat, double endBeat);
+    Q_INVOKABLE void toggleLoop();
 
     // ✂️ Herramienta Split (Cortar Clip en el Cabezal / Playhead)
     Q_INVOKABLE bool splitAtPlayhead(int targetRegionIndex = -1);

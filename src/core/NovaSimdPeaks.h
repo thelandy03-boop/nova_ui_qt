@@ -29,4 +29,15 @@ void processPeakBlockSimd(const float* samples, size_t numSamples,
                           std::vector<float>& overviewMin, std::vector<float>& overviewMax,
                           std::vector<float>& overviewRms, std::vector<int>& overviewCount);
 
+/**
+ * @brief Inicializa los acumuladores de picos de un conjunto de bins.
+ *
+ * El minimo se inicializa a +FLT_MAX y el maximo a -FLT_MAX: el audio es
+ * bipolar, asi que inicializarlos a 0 haria que los minimos negativos
+ * NUNCA se registrasen (nunca son menores que 0) y la forma de onda
+ * apareciese solo por encima del eje.
+ */
+void initPeakAccumulators(std::vector<float>& min, std::vector<float>& max,
+                          std::vector<float>& rms, std::vector<int>& count, int points);
+
 #endif // NOVA_SIMD_PEAKS_H

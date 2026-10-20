@@ -57,6 +57,11 @@ public:
     static void removePeaks(const QString &regionId);
     static void clear();
 
+    // Consulta barata: ¿hay picos para esa region? Permite al renderizador
+    // comprobar en cada frame si los datos han llegado sin copiar el
+    // PeakData completo (que son decenas de KB por clip).
+    static bool hasPeaks(const QString &regionId);
+
 private:
     static inline std::map<QString, PeakData> s_cache;
     static inline std::mutex s_mutex;

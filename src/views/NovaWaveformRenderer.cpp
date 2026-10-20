@@ -333,6 +333,45 @@ void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {
         m_height = h;
         changed = true;
     }
+
+    // ── Ventana temporal del clip: donde se dibujan los picos ──────────
+    const double startBeat = wf->startBeat();
+    const double endBeat = wf->startBeat() + wf->lengthBeats();
+    const double pixelsPerBeat = wf->pixelsPerBeat();
+    if (!qFuzzyCompare(m_startBeat, startBeat) ||
+        !qFuzzyCompare(m_endBeat, endBeat) ||
+        !qFuzzyCompare(m_pixelsPerBeat, pixelsPerBeat)) {
+        m_startBeat = startBeat;
+        m_endBeat = endBeat;
+        m_pixelsPerBeat = pixelsPerBeat;
+        changed = true;
+    }
+
+    // ── Picos de la region ──────────────────────────────────────────────
+    // Antes el renderer no recibia nunca datos: setPeaks()/setViewport()
+    // no los llamaba nadie y la forma de onda no se dibujaba. Ahora se
+    // piden a la cache por regionId.
+    const QString regionId = wf->regionId();
+    const bool regionChanged = (regionId != m_lastRegionId);
+    if (regionChanged) {
+        m_lastRegionId = regionId;
+        m_peaks.clear();
+        m_overview.clear();
+        changed = true;
+    }
+    // Los picos pueden llegar despues (se calculan al cargar el proyecto):
+    // si aun no tenemos datos pero la cache los tiene, se recuperan.
+    if (!regionId.isEmpty() && (regionChanged || m_peaks.empty())) {
+        if (NovaWaveformCache::hasPeaks(regionId)) {
+            PeakData data;
+            if (NovaWaveformCache::getPeaks(regionId, data)) {
+                m_peaks = data.peaks;
+                m_overview = data.overview;
+                changed = true;
+            }
+        }
+    }
+
     if (changed)
         m_dirtyGeometry = true;
 }

@@ -173,6 +173,10 @@ Item {
             regionIndex: model.index
             regionId: model.regionId || ""
             peakColor: "#FFFFFF"
+            // Ventana temporal: donde se coloca la forma de onda dentro del clip
+            startBeat: root.startBeat
+            lengthBeats: root.lengthBeats
+            pixelsPerBeat: root.barWidth
             visible: true
         }
 

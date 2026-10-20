@@ -91,6 +91,13 @@ bool NovaWaveformCache::getOverview(const QString &regionId, std::vector<PeakPoi
     return false;
 }
 
+bool NovaWaveformCache::hasPeaks(const QString &regionId)
+{
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto it = s_cache.find(regionId);
+    return it != s_cache.end() && !it->second.peaks.empty();
+}
+
 void NovaWaveformCache::removePeaks(const QString &regionId)
 {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -130,9 +137,14 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
     ARDOUR::samplepos_t currentPos = startPos;
 
     // Buffers de acumulación
-    std::vector<float> detailMin(detailPoints, 0), detailMax(detailPoints, 0), detailRms(detailPoints, 0);
-    std::vector<float> overviewMin(overviewPoints, 0), overviewMax(overviewPoints, 0), overviewRms(overviewPoints, 0);
-    std::vector<int> detailCount(detailPoints, 0), overviewCount(overviewPoints, 0);
+    // 🛡️ El mínimo se inicializa a +FLT_MAX y el máximo a -FLT_MAX: el audio
+    // es bipolar, así que inicializarlos a 0 hacía que los mínimos negativos
+    // nunca se registrasen y la forma de onda solo se dibujara por encima
+    // del eje (la mitad negativa desaparecía).
+    std::vector<float> detailMin, detailMax, detailRms, overviewMin, overviewMax, overviewRms;
+    std::vector<int> detailCount, overviewCount;
+    initPeakAccumulators(detailMin, detailMax, detailRms, detailCount, detailPoints);
+    initPeakAccumulators(overviewMin, overviewMax, overviewRms, overviewCount, overviewPoints);
 
     const double detailStep = static_cast<double>(length) / detailPoints;
     const double overviewStep = static_cast<double>(length) / overviewPoints;
