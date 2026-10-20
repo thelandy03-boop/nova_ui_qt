@@ -222,7 +222,18 @@ private:
     // Vuelve a abrir el stream de salida con los canales que tenía y lo
     // deja como estaba (arrancado o parado). Se usa cuando una operación
     // falla a mitad y el motor tiene que quedarse como estaba.
-    void restaurarStreamSalida(bool estabaEnMarcha);
+    //
+    // @param canales        Canales con los que se reabre el stream.
+    // @param estabaEnMarcha true si el stream estaba arrancado antes.
+    // @param error          Mensaje si no se ha podido reabrir (puede ser
+    //                       nullptr).
+    // @return true si el stream se ha reabierto; false si se ha quedado
+    //         cerrado (el motor se queda sin salida de audio).
+    bool restaurarStreamSalida(int canales, bool estabaEnMarcha, QString* error);
+
+    // Crea los callbacks de Oboe si no existen (shutdown() los libera, y un
+    // initialize() posterior tiene que volver a crearlos).
+    void crearCallbacks();
 
     // Número máximo de tracks con ring buffer propio.
     static constexpr int kMaxTracks = 32;

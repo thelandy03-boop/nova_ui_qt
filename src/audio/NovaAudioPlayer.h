@@ -5,6 +5,8 @@
 
 #include <QString>
 
+#include <atomic>
+
 /**
  * Reproductor de un audio ya decodificado, con remuestreo a la tasa de
  * salida.
@@ -23,7 +25,11 @@
  * buffer en el móvil.
  *
  * La clase no es segura entre hilos: el llamante (el motor de Oboe) la usa
- * desde el hilo de audio.
+ * desde el hilo de audio. La única excepción es la bandera de "sonando", que
+ * es atómica porque el hilo de la interfaz la pone y el hilo de audio la lee.
+ * El resto del estado (el audio cargado, la posición, el remuestreador) solo
+ * lo toca un hilo cada vez: el motor de Oboe garantiza que el callback no
+ * corre mientras carga o rearranca el audio.
  */
 class NovaAudioPlayer {
 public:
@@ -130,6 +136,11 @@ private:
     /** true si hay audio cargado. */
     bool m_cargado = false;
 
-    /** true si el reproductor está sonando. */
-    bool m_sonando = false;
+    /**
+     * true si el reproductor está sonando.
+     *
+     * Es atómico porque lo pone el hilo de la interfaz (`play()`/`stop()`) y
+     * lo lee el hilo de audio (el callback de Oboe), que son hilos distintos.
+     */
+    std::atomic<bool> m_sonando{false};
 };
