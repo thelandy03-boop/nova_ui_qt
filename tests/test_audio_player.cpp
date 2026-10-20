@@ -29,9 +29,10 @@ static int g_checks = 0;
 
 // Cada comprobación lleva su nombre, para que la salida diga qué se ha
 // comprobado. Los nombres de las siete comprobaciones del enunciado se
-// respetan tal cual; las tres que se añaden comprueban cosas que el
+// respetan tal cual; las cuatro que se añaden comprueban cosas que el
 // enunciado enuncia (el error de load(), la posición fraccionaria que
-// evita los clics y el remuestreo por canal) pero que no verificaba.
+// evita los clics, el remuestreo por canal y la razón de interpolación) pero
+// que no verificaba.
 #define CHECK_NAMED(nombre, cond, msg)                                          \
     do {                                                                        \
         ++g_checks;                                                             \
@@ -351,7 +352,8 @@ int main()
     {
         NovaDecodedAudio audio;
         QString error;
-        decodeAudioFile(rutaFixture("tono-1s-44100-estereo.mp3"), audio, &error);
+        const bool decodificado =
+            decodeAudioFile(rutaFixture("tono-1s-44100-estereo.mp3"), audio, &error);
 
         NovaAudioPlayer reproductor;
         reproductor.load(audio, &error);
@@ -365,11 +367,39 @@ int main()
         const int crucesDerecho = crucesPorCero(salida, 1, 2);
 
         CHECK_NAMED("los_canales_no_se_mezclan",
-                    audio.channels == 2 && escritos == 48000
+                    decodificado && error.isEmpty() && audio.channels == 2 && escritos == 48000
                         && crucesIzquierdo > 800 && crucesIzquierdo < 960
                         && crucesDerecho > 1600 && crucesDerecho < 1900,
                     "tras remuestrear a 48 kHz, el canal izquierdo debe seguir a 440 Hz y el "
                     "derecho a 880 Hz");
+    }
+
+    // ------------------------------------------------------------------
+    // 11. El remuestreo interpola en la posición exacta que imponen las
+    //     tasas: de 44.100 a 48.000, la salida en el fotograma 1 es la
+    //     mezcla de las dos primeras muestras de entrada en la razón
+    //     44100/48000 = 0,91875
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio;
+        QString error;
+        const bool decodificado = decodificarFixture(audio, &error);
+
+        NovaAudioPlayer reproductor;
+        reproductor.load(audio, &error);
+        reproductor.play();
+
+        std::vector<float> salida(512, 0.0f);
+        const int escritos = reproductor.renderFrames(salida.data(), 512);
+
+        const float razon = 44100.0f / 48000.0f;
+        const float esperado = audio.samples[0]
+                             + (audio.samples[1] - audio.samples[0]) * razon;
+
+        CHECK_NAMED("el_remuestreo_interpola_en_la_razon_correcta",
+                    decodificado && escritos == 512 && std::fabs(salida[1] - esperado) < 0.0001f,
+                    "la salida en el fotograma 1 debe ser la interpolación entre las dos primeras "
+                    "muestras de entrada en la razón 44100/48000");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

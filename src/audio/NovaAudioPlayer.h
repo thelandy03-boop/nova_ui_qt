@@ -77,7 +77,14 @@ public:
      * del fichero cargado. Si el fichero se agota, devuelve menos fotogramas
      * de los pedidos (incluso 0) y deja de estar sonando.
      *
-     * @param interleavedOut Buffer donde escribir las muestras.
+     * Al final del fichero, los últimos fotogramas repiten el último
+     * fotograma del audio (como mucho uno por cada fotograma de entrada que
+     * "cabe" en uno de salida), porque no hay muestra siguiente con la que
+     * interpolar.
+     *
+     * @param interleavedOut Buffer donde escribir las muestras (debe caber
+     *                       `frames` fotogramas con los canales del
+     *                       fichero).
      * @param frames          Número de fotogramas que caben en el buffer.
      * @return Número de fotogramas escritos (0 si no está sonando).
      */

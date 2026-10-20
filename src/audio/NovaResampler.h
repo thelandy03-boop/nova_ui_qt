@@ -28,6 +28,11 @@ public:
      * Cambiar las tasas invalida lo que hubiera en el buffer, así que el
      * remuestreador queda como recién construido.
      *
+     * **Atención al número de canales:** el valor por defecto (1) es para
+     * audio mono. Con audio estéreo hay que indicar cuántos canales hay: si
+     * se deja el valor por defecto, la interpolación se haría entre muestras
+     * de canales distintos y el audio saldría corrupto.
+     *
      * @param inRate   Tasa del audio de entrada, en Hz.
      * @param outRate  Tasa del audio de salida, en Hz.
      * @param channels Número de canales intercalados (1 si no se indica).

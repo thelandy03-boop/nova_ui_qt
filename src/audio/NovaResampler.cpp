@@ -4,10 +4,16 @@
 
 namespace {
 
-// Tamaño con el que se reserva el buffer de entrada. Es suficiente para los
-// bloques típicos del callback de audio (unos cientos de fotogramas) y evita
-// que el remuestreador reserve memoria mientras suena el audio.
-constexpr size_t kCapacidadReservada = 16384;
+// Tamaño con el que se reserva el buffer de entrada. El pico del buffer en
+// régimen permanente es el umbral de compactación (unas 4.000 muestras) más el
+// bloque que se le pase al remuestreador, así que con bloques de hasta
+// 28.000 muestras no hace falta reservar memoria mientras suena el audio
+// (reservar en el hilo de audio es un corte en el sonido).
+constexpr size_t kCapacidadReservada = 32768;
+
+// A partir de este número de muestras ya convertidas, se quitan del buffer de
+// golpe (en vez de en cada llamada), para no mover memoria constantemente.
+constexpr size_t kUmbralCompactacion = 4096;
 
 } // namespace
 
@@ -40,6 +46,11 @@ int NovaResampler::process(const float* in, int inFrames, float* out, int outCap
     }
 
     if (in != nullptr && inFrames > 0) {
+        // Antes de añadir nada se quitan las muestras ya convertidas: si no,
+        // el buffer crecería sin parar y habría que reservarlo otra vez (una
+        // reserva de memoria en el hilo de audio es un corte en el sonido).
+        compactar();
+
         m_buffer.insert(m_buffer.end(), in,
                         in + static_cast<size_t>(inFrames) * static_cast<size_t>(m_canales));
     }
@@ -83,7 +94,6 @@ int NovaResampler::process(const float* in, int inFrames, float* out, int outCap
         m_inicio += static_cast<size_t>(consumido) * static_cast<size_t>(m_canales);
         m_pos -= static_cast<double>(consumido);
     }
-    compactar();
 
     return escritos;
 }
@@ -93,7 +103,7 @@ void NovaResampler::compactar()
     // Las muestras ya convertidas se quedan en el vector hasta que ocupan
     // una parte apreciable de él; entonces se quitan de golpe, para no
     // mover memoria en cada llamada.
-    if (m_inicio >= kCapacidadReservada && m_inicio * 2 >= m_buffer.size()) {
+    if (m_inicio >= kUmbralCompactacion && m_inicio * 2 >= m_buffer.size()) {
         m_buffer.erase(m_buffer.begin(), m_buffer.begin() + static_cast<std::ptrdiff_t>(m_inicio));
         m_inicio = 0;
     }
