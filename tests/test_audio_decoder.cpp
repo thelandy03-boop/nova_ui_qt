@@ -130,8 +130,7 @@ void anadirU32(std::vector<unsigned char>& bytes, unsigned int valor)
 
 // Escribe un WAV ya montado en disco (corrigiendo el tamano del RIFF).
 void escribirWav(const std::filesystem::path& destino,
-                 std::vector<unsigned char>& fichero)
-{
+                 std::vector<unsigned char>& fichero){
     const unsigned int tamano = static_cast<unsigned int>(fichero.size() - 8);
     fichero[4] = static_cast<unsigned char>(tamano & 0xFFu);
     fichero[5] = static_cast<unsigned char>((tamano >> 8) & 0xFFu);
@@ -233,6 +232,198 @@ std::filesystem::path escribirWavConTamanoMentiroso()
     anadirU32(fichero, 0x7FFFF000u); // casi 2 GiB de datos que no existen
 
     escribirWav(destino, fichero);
+    return destino;
+}
+
+// --- Ayudas para montar ficheros de prueba a partir del MP3 del fixture ---
+
+// Donde estan los campos de la cabecera Xing/Info de un MP3.
+struct CabeceraXing {
+    size_t inicioFrames = 0;     // posicion del numero de frames
+    size_t inicioBytes = 0;      // posicion del numero de bytes
+    size_t inicioFramesMpeg = 0; // donde empiezan los frames MPEG
+    size_t finFramesMpeg = 0;    // donde terminan
+};
+
+// Localiza la cabecera Xing/Info de un MP3: la marca va tras la cabecera
+// MPEG y la informacion lateral, cuyo tamano depende de la version de MPEG
+// y del numero de canales.
+CabeceraXing localizarCabeceraXing(const std::vector<unsigned char>& datos)
+{
+    CabeceraXing c;
+
+    size_t inicio = 0;
+    if (datos.size() > 10 && datos[0] == 'I' && datos[1] == 'D' && datos[2] == '3') {
+        const size_t tam = (static_cast<size_t>(datos[6] & 0x7F) << 21)
+                         | (static_cast<size_t>(datos[7] & 0x7F) << 14)
+                         | (static_cast<size_t>(datos[8] & 0x7F) << 7)
+                         | static_cast<size_t>(datos[9] & 0x7F);
+        inicio = 10 + tam;
+    }
+    c.inicioFramesMpeg = inicio;
+
+    size_t fin = datos.size();
+    if (fin >= 128 && datos[fin - 128] == 'T' && datos[fin - 127] == 'A'
+        && datos[fin - 126] == 'G') {
+        fin -= 128; // etiqueta ID3v1 final
+    }
+    c.finFramesMpeg = fin;
+
+    const int version = (datos[inicio + 1] >> 3) & 3; // 3 = MPEG1
+    const int modo = (datos[inicio + 3] >> 6) & 3;    // 3 = mono
+    const int lateral = (version == 3) ? ((modo == 3) ? 17 : 32)  // MPEG1
+                                       : ((modo == 3) ? 9 : 17);  // MPEG2 y 2.5
+    const size_t posXing = inicio + 4 + lateral;
+    c.inicioFrames = posXing + 8;  // tras la marca y los flags
+    c.inicioBytes = posXing + 12;
+    return c;
+}
+
+// Tamano de cada frame MPEG que hay entre dos posiciones.
+std::vector<int> tamanosFramesMpeg(const std::vector<unsigned char>& datos,
+                                    size_t desde, size_t hasta)
+{
+    static const int velocidades[2][16] = {
+        {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0},   // MPEG2 y 2.5
+        {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0}, // MPEG1
+    };
+    static const int tasas[2][4] = {
+        {22050, 24000, 16000, 0},
+        {44100, 48000, 32000, 0},
+    };
+
+    std::vector<int> tamanos;
+    size_t p = desde;
+    while (p + 4 <= hasta) {
+        if (datos[p] != 0xFF || (datos[p + 1] & 0xE0) != 0xE0) {
+            break;
+        }
+        const int version = (datos[p + 1] >> 3) & 3;
+        const int fila = (version == 3) ? 1 : 0;
+        const int velocidad = velocidades[fila][(datos[p + 2] >> 4) & 0xF];
+        const int tasa = tasas[fila][(datos[p + 2] >> 2) & 3];
+        const int relleno = (datos[p + 2] >> 1) & 1;
+        if (velocidad == 0 || tasa == 0) {
+            break;
+        }
+        const int muestras = (version == 3) ? 1152 : 576;
+        // El tamano de un frame Layer III es (muestras / 8) * velocidad en
+        // kbps * 1000 / tasa, mas el byte de relleno.
+        const int tamano = (muestras / 8) * velocidad * 1000 / tasa + relleno;
+        if (tamano <= 4) {
+            break;
+        }
+        tamanos.push_back(tamano);
+        p += tamano;
+    }
+    return tamanos;
+}
+
+void escribirU32Be(std::vector<unsigned char>& datos, size_t pos, unsigned int valor)
+{
+    datos[pos] = static_cast<unsigned char>((valor >> 24) & 0xFFu);
+    datos[pos + 1] = static_cast<unsigned char>((valor >> 16) & 0xFFu);
+    datos[pos + 2] = static_cast<unsigned char>((valor >> 8) & 0xFFu);
+    datos[pos + 3] = static_cast<unsigned char>(valor & 0xFFu);
+}
+
+std::vector<unsigned char> leerFixture(const char* nombre)
+{
+    std::ifstream entrada(rutaFixture(nombre).toStdString(), std::ios::binary);
+    std::vector<unsigned char> datos;
+    if (entrada) {
+        datos.assign(std::istreambuf_iterator<char>(entrada),
+                     std::istreambuf_iterator<char>());
+    }
+    return datos;
+}
+
+// Escribe en un temporal un MP3 largo cortado al principio. El MP3 se monta
+// con el frame Xing/Info (con el recuento parcheado para que describa el
+// fichero entero) y los frames de audio repetidos; despues se corta en un
+// borde de frame.
+//
+// Es el caso que el MP3 corto del fixture no cubre: en un fichero de un
+// segundo, cualquier corte cae despues de "16 bytes por frame declarado" y
+// el recorte se detecta por el numero de frames; en uno largo, el corte
+// inicial deja el fichero muchisimo mas corto de lo que declara la
+// cabecera, y hay que detectarlo por el numero de bytes.
+std::filesystem::path escribirMp3LargoCortado()
+{
+    const std::filesystem::path destino =
+        std::filesystem::temp_directory_path() / "nova_audio_mp3_largo_cortado.mp3";
+
+    const std::vector<unsigned char> original = leerFixture("tono-1s-44100-mono.mp3");
+    const CabeceraXing c = localizarCabeceraXing(original);
+    const std::vector<int> tamanos = tamanosFramesMpeg(original, c.inicioFramesMpeg,
+                                                        c.finFramesMpeg);
+    if (tamanos.size() < 4) {
+        return destino;
+    }
+
+    // El primer frame es la cabecera Xing/Info; el resto son frames de audio.
+    std::vector<unsigned char> largo;
+    largo.insert(largo.end(), original.begin() + c.inicioFramesMpeg,
+                 original.begin() + c.inicioFramesMpeg + tamanos.front());
+
+    std::vector<unsigned char> audio;
+    size_t pos = c.inicioFramesMpeg + tamanos.front();
+    for (size_t i = 1; i < tamanos.size(); ++i) {
+        audio.insert(audio.end(), original.begin() + pos, original.begin() + pos + tamanos[i]);
+        pos += tamanos[i];
+    }
+    const int repeticiones = 8;
+    for (int r = 0; r < repeticiones; ++r) {
+        largo.insert(largo.end(), audio.begin(), audio.end());
+    }
+
+    // El recuento de la cabecera tiene que describir el fichero montado.
+    const int framesAudio = (static_cast<int>(tamanos.size()) - 1) * repeticiones;
+    escribirU32Be(largo, c.inicioFrames - c.inicioFramesMpeg,
+                   static_cast<unsigned int>(framesAudio));
+    escribirU32Be(largo, c.inicioBytes - c.inicioFramesMpeg,
+                   static_cast<unsigned int>(largo.size()));
+
+    // Se corta despues de la cabecera y de dos frames de audio: el corte
+    // cae en un borde de frame, asi que no queda ningun byte suelto al final.
+    size_t corte = tamanos.front();
+    for (int i = 0; i < 2; ++i) {
+        corte += tamanos[1 + i];
+    }
+    largo.resize(corte);
+
+    std::ofstream salida(destino.string(), std::ios::binary | std::ios::trunc);
+    if (salida) {
+        salida.write(reinterpret_cast<const char*>(largo.data()),
+                     static_cast<std::streamsize>(largo.size()));
+    }
+    salida.close();
+
+    return destino;
+}
+
+// Escribe en un temporal una copia del MP3 del fixture con el numero de
+// frames de la cabecera parcheado a la convencion de mp3splt, que cuenta la
+// propia cabecera Xing/Info como un frame mas. El fichero es valido y se
+// tiene que poder decodificar.
+std::filesystem::path escribirMp3ContandoLaCabecera()
+{
+    const std::filesystem::path destino =
+        std::filesystem::temp_directory_path() / "nova_audio_mp3_con_frames.mp3";
+
+    std::vector<unsigned char> datos = leerFixture("tono-1s-44100-mono.mp3");
+    const CabeceraXing c = localizarCabeceraXing(datos);
+    if (datos.size() > c.inicioFrames + 4) {
+        escribirU32Be(datos, c.inicioFrames, 41u); // 40 de audio + la cabecera
+    }
+
+    std::ofstream salida(destino.string(), std::ios::binary | std::ios::trunc);
+    if (salida) {
+        salida.write(reinterpret_cast<const char*>(datos.data()),
+                     static_cast<std::streamsize>(datos.size()));
+    }
+    salida.close();
+
     return destino;
 }
 
@@ -457,8 +648,48 @@ int main()
                                          audio, &error);
 
         CHECK_NAMED("wav_con_tamano_de_datos_mentiroso_devuelve_error",
-                    !ok && !error.isEmpty(),
-                    "un WAV que declara mas datos de los que tiene debe fallar con un error, no reventar");
+                    !ok && !error.isEmpty() && error.contains("truncado"),
+                    "un WAV que declara mas datos de los que tiene debe fallar diciendo que esta truncado");
+
+        std::filesystem::remove(fichero);
+    }
+
+    // ------------------------------------------------------------------
+    // 13. Un MP3 largo cortado al principio: el corte cae en un borde de
+    //     frame y el fichero queda muchisimo mas corto de lo que declara
+    //     la cabecera
+    // ------------------------------------------------------------------
+    {
+        const std::filesystem::path truncado = escribirMp3LargoCortado();
+
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(QString::fromStdString(truncado.string()),
+                                         audio, &error);
+
+        CHECK_NAMED("mp3_largo_truncado_al_principio_devuelve_error",
+                    !ok && !error.isEmpty() && error.contains("truncado"),
+                    "un MP3 largo cortado al principio debe fallar diciendo que esta truncado");
+
+        std::filesystem::remove(truncado);
+    }
+
+    // ------------------------------------------------------------------
+    // 14. Un MP3 valido cuyo numero de frames cuenta la cabecera Xing/Info
+    //     (la convencion de mp3splt): no es un fichero truncado
+    // ------------------------------------------------------------------
+    {
+        const std::filesystem::path fichero = escribirMp3ContandoLaCabecera();
+
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(QString::fromStdString(fichero.string()),
+                                         audio, &error);
+
+        CHECK_NAMED("mp3_con_frames_contando_la_cabecera_se_decodifica",
+                    ok && error.isEmpty() && audio.sampleRate == 44100 && audio.channels == 1
+                        && audio.frameCount() >= 43218 && audio.frameCount() <= 44982,
+                    "un MP3 que cuenta la cabecera como un frame mas debe decodificarse como si nada");
 
         std::filesystem::remove(fichero);
     }

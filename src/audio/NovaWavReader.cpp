@@ -237,10 +237,11 @@ bool decodeWavFile(const QString& path, NovaDecodedAudio& out, QString* error)
     // declarado (reservar memoria para el seria pedirle al sistema una
     // cantidad absurda y el proceso moriria con bad_alloc).
     const qint64 tamanoFichero = archivo.size();
+    qint64 disponibles = 0;
     if (tamanoFichero > 0) {
-        const qint64 disponibles = tamanoFichero - inicioDatos;
+        disponibles = tamanoFichero - inicioDatos;
         if (tamanoDatos > disponibles) {
-            return fallar(error, QStringLiteral("'%1' esta truncado: el chunk 'data' declara %2 bytes pero el fichero solo tiene %3")
+            return fallar(error, QStringLiteral("'%1' esta truncado: el chunk 'data' declara %2 bytes pero en el fichero solo quedan %3 bytes de audio")
                           .arg(path).arg(tamanoDatos).arg(disponibles));
         }
     }
@@ -255,7 +256,15 @@ bool decodeWavFile(const QString& path, NovaDecodedAudio& out, QString* error)
     }
 
     std::vector<float> muestras;
-    muestras.reserve(static_cast<size_t>(tamanoDatos / bytesPorMuestra));
+    // La reserva es solo una optimizacion. No se puede fiar del tamano
+    // declarado (puede ser enorme) ni del tamano del fichero (en una FIFO o
+    // en un tuber vale 0 aunque se pueda leer): la reserva se limita a lo que
+    // hay de verdad, y si no se sabe, no se reserva nada y el vector crece
+    // solo con lo que se lee.
+    const qint64 aReservar = std::min<qint64>(tamanoDatos, disponibles);
+    if (aReservar > 0) {
+        muestras.reserve(static_cast<size_t>(aReservar / bytesPorMuestra));
+    }
 
     QByteArray bloque;
     QByteArray sobra; // bytes de una muestra partida entre dos bloques

@@ -38,9 +38,15 @@ const int kRetardoDecodificador = 529;
 // Tamano de la etiqueta ID3v1 que algunos codificadores dejan al final.
 const int kTamanoId3v1 = 128;
 
+// Margen que se admite al comparar los bytes declarados por la cabecera
+// Xing/Info con los decodificados: por si el codificador conto tambien una
+// etiqueta ID3v1 final.
+const int kMargenBytesFinales = 128;
+
 // Lo que declara la cabecera Xing/Info del primer frame.
 struct DatosXing {
     int frames = -1;     // frames de audio que declara (sin contar la cabecera)
+    int bytes = -1;      // bytes de los frames MPEG que declara
     bool hayLame = false; // viene con la etiqueta LAME
     int retardo = 0;     // muestras de retardo del codificador
     int relleno = 0;     // muestras de relleno al final
@@ -98,14 +104,18 @@ int posicionCabeceraXing(const char* frame, int bytes)
     return posicion;
 }
 
-// Lee la cabecera Xing/Info del primer frame: cuantos frames de audio
-// declara el fichero y, si viene con la etiqueta LAME, el retardo del
-// codificador y el relleno final.
+// Lee la cabecera Xing/Info del primer frame: cuantos frames de audio y
+// cuantos bytes declara el fichero y, si viene con la etiqueta LAME, el
+// retardo del codificador y el relleno final.
 //
-// El numero de frames no cuenta la propia cabecera Xing (asi lo escriben
-// LAME y el resto de codificadores), y sirve para saber si al fichero le
-// faltan frames: si el corte cae justo en un borde de frame no queda ningun
-// byte suelto al final, pero el recuento lo delata.
+// El numero de bytes son los bytes de los frames MPEG (con la cabecera
+// incluida), y es la senal fiable para saber si al fichero le falta parte:
+// un corte en un borde de frame no deja ni un byte suelto al final, pero el
+// recuento lo delata.
+//
+// El numero de frames depende de la convencion del codificador: LAME y
+// ffmpeg no cuentan la cabecera Xing/Info, pero mp3splt si. Por eso solo se
+// usa como apoyo y con un frame de margen.
 void leerCabeceraXing(const char* frame, int bytes, int posicionXing, DatosXing& datos)
 {
     const quint32 banderas = leerU32Be(frame + posicionXing + 4);
@@ -115,6 +125,7 @@ void leerCabeceraXing(const char* frame, int bytes, int posicionXing, DatosXing&
         p += 4;   // numero de frames
     }
     if (banderas & 0x02) {
+        datos.bytes = static_cast<int>(leerU32Be(frame + p));
         p += 4;   // numero de bytes
     }
     if (banderas & 0x04) {
@@ -205,6 +216,7 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
     int canales = 0;
     int tasa = 0;
     int framesDecodificados = 0; // frames de audio (sin la cabecera Xing)
+    qint64 primerFrameOffset = 0; // donde empieza el primer frame MPEG
     bool primero = true;
 
     const char* puntero = bytes;
@@ -231,6 +243,7 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
             // El primer frame puede ser la cabecera Xing/Info: es metadatos,
             // no audio, asi que sus muestras se descartan (pero se leen sus
             // datos de retardo y relleno).
+            primerFrameOffset = info.frame_offset;
             const int posicionXing = posicionCabeceraXing(frame, bytesFrame);
             if (posicionXing >= 0) {
                 esCabecera = true;
@@ -257,15 +270,30 @@ bool decodeMp3File(const QString& path, NovaDecodedAudio& out, QString* error)
                       .arg(path).arg(restante));
     }
 
-    // La cabecera Xing/Info dice cuantos frames de audio tiene el fichero.
-    // Si nos faltan, el fichero esta cortado aunque el corte haya caido justo
-    // en un borde de frame (en ese caso no queda ningun byte suelto al final).
-    // El recuento solo se fia si es plausible: un frame de MPEG ocupa siempre
-    // mas de 16 bytes, asi que un numero disparatado no puede ser real.
+    // La cabecera Xing/Info dice como de largo es el fichero: cuantos bytes
+    // de audio y cuantos frames. Sirve para saber si al fichero le falta
+    // parte: un corte en un borde de frame no deja ni un byte suelto al
+    // final, pero el recuento lo delata.
+    const qint64 bytesDecodificados = (fin - restante) - primerFrameOffset;
+
+    // El numero de bytes son los bytes de los frames MPEG (con la cabecera
+    // incluida). Es la senal fiable y no depende de la convencion del
+    // codificador. Se admite un margen por si el codificador conto una
+    // etiqueta ID3v1 final.
+    if (xing.bytes > 0 && xing.bytes > bytesDecodificados + kMargenBytesFinales) {
+        return fallar(error, QStringLiteral("'%1' esta truncado: la cabecera declara %2 bytes de audio y en el fichero solo hay %3")
+                      .arg(path).arg(xing.bytes).arg(bytesDecodificados));
+    }
+
+    // El numero de frames depende de la convencion del codificador: LAME y
+    // ffmpeg no cuentan la cabecera Xing/Info, pero mp3splt si. Por eso se
+    // admite un frame de margen. Solo se usa si el numero de bytes lo
+    // respalda: el tamano medio de un frame de MPEG no puede ser menor de
+    // 24 bytes, asi que un recuento disparatado no es de fiar.
     const bool recuentoFiable = xing.frames > 0
-                              && static_cast<qint64>(xing.frames) * 16 <= fin;
-    if (recuentoFiable && framesDecodificados < xing.frames) {
-        return fallar(error, QStringLiteral("'%1' esta truncado: la cabecera declara %2 frames y solo se han decodificado %3")
+                              && (xing.bytes <= 0 || xing.bytes / xing.frames >= 24);
+    if (recuentoFiable && framesDecodificados + 1 < xing.frames) {
+        return fallar(error, QStringLiteral("'%1' esta truncado: la cabecera declara %2 frames de audio y solo se han decodificado %3")
                       .arg(path).arg(xing.frames).arg(framesDecodificados));
     }
 
