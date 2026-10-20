@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <thread>
 #include <fstream>
 #include <cstring>
@@ -55,8 +56,7 @@
 #endif
 
 // Simple CRC32 (Adler-32) for peak data
-static uint32_t crc32_peaks(const std::vector<PeakPoint>& peaks)
-{
+static uint32_t crc32_peaks(const std::vector<PeakPoint>& peaks){
     QByteArray data;
     data.resize(peaks.size() * sizeof(PeakPoint));
     if (!data.isEmpty()) {
@@ -114,6 +114,10 @@ void NovaWaveformCache::clear()
 }
 
 // ── GENERADOR OPTIMIZADO DE PICOS WAVEFORM (SIMD / BLOQUES) ───────────
+// Regiones cuyo cálculo de picos está en marcha (evita duplicar trabajos)
+static std::mutex s_peakJobsMutex;
+static std::set<QString> s_peakJobsInFlight;
+
 static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion, int sampleRate, int channels)
 {
     PeakData result;
@@ -124,15 +128,24 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
     auto source = audioRegion->audio_source(0);
     if (!source) return result;
 
-    ARDOUR::samplepos_t startPos = audioRegion->start_sample();
-    ARDOUR::samplecnt_t length = audioRegion->length_samples();
+    // 🛡️ La region se mide en muestras de la linea de tiempo de la SESION,
+    // pero la fuente puede tener otra tasa (p.ej. un MP3 a 44,1 kHz en una
+    // sesion a 48 kHz). Sin convertir, la lectura se sale del final del
+    // archivo, source->read() devuelve 0 y la forma de onda sale VACIA.
+    const double sessionRate = (sampleRate > 0) ? static_cast<double>(sampleRate) : 48000.0;
+    const double sourceRate  = (source->sample_rate() > 0)
+        ? static_cast<double>(source->sample_rate()) : sessionRate;
+    const double rateRatio   = sourceRate / sessionRate;   // muestras de fuente por muestra de sesion
+
+    ARDOUR::samplepos_t startPos = static_cast<ARDOUR::samplepos_t> (audioRegion->start_sample() * rateRatio);
+    ARDOUR::samplecnt_t length   = static_cast<ARDOUR::samplecnt_t> (audioRegion->length_samples() * rateRatio);
     if (length <= 0) return result;
 
     result.sampleRate = sampleRate;
     result.channels = channels;
 
-    constexpr int detailPoints = 2000;      // detalle al máximo zoom
-    constexpr int overviewPoints = 200;     // overview (zoom out)
+    constexpr int detailPoints = 4096;      // detalle al máximo zoom (tipo FL Studio)
+    constexpr int overviewPoints = 320;     // overview (zoom out)
     constexpr ARDOUR::samplecnt_t bufferSize = 8192;
 
     std::vector<ARDOUR::Sample> readBuffer(bufferSize);
@@ -206,9 +219,60 @@ NovaRegionModel::NovaRegionModel(QObject *parent)
 NovaRegionModel::~NovaRegionModel()
 {
     waitForImports();
+    waitForPeakJobs();
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     if (m_sessionConnections) m_sessionConnections->drop_connections();
 #endif
+}
+
+void NovaRegionModel::requestRegionPeaks(const QString &regionId,
+                                          const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion,
+                                          int sampleRate, int channels,
+                                          const QString &peakFilePath)
+{
+    if (!audioRegion) return;
+
+    // No lanzar dos calculos para la misma region (rebuildRegionCache se
+    // llama a menudo y los picos tardan en estar disponibles).
+    {
+        std::lock_guard<std::mutex> lock(s_peakJobsMutex);
+        if (s_peakJobsInFlight.count(regionId)) return;
+        s_peakJobsInFlight.insert(regionId);
+    }
+
+    std::thread worker([this, regionId, audioRegion, sampleRate, channels, peakFilePath]() {
+        PeakData data = buildRegionPeaks(audioRegion, sampleRate, channels);
+
+        if (!data.peaks.empty()) {
+            savePeakFile(peakFilePath, data);
+            NovaWaveformCache::setPeaks(regionId, data);
+            qCDebug(novaModel) << "📈 Picos calculados para" << regionId.toStdString()
+                               << "(" << data.peaks.size() << " puntos de detalle)";
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(s_peakJobsMutex);
+            s_peakJobsInFlight.erase(regionId);
+        }
+    });
+
+    std::lock_guard<std::mutex> lock(m_peakWorkersMutex);
+    m_peakWorkers.push_back({std::move(worker)});
+}
+
+void NovaRegionModel::waitForPeakJobs()
+{
+    std::vector<PeakWorker> workers;
+    {
+        std::lock_guard<std::mutex> lock(m_peakWorkersMutex);
+        workers.swap(m_peakWorkers);
+    }
+
+    for (auto &w : workers) {
+        if (w.thread.joinable()) {
+            w.thread.join();
+        }
+    }
 }
 
 std::shared_ptr<ARDOUR::Track> NovaRegionModel::findTrackByIndex(int trackIndex) const
@@ -898,6 +962,12 @@ bool NovaRegionModel::loadPeakFile(const QString &peakFilePath, PeakData &outDat
     outData.peaks.resize(pcount);
     outData.overview.resize(ocount);
 
+    // La version del formato incluye la resolucion de los picos: si cambia,
+    // los ficheros antiguos se descartan y se recalculan.
+    if (ver != PeakData().version) {
+        return false;
+    }
+
     if (pcount > 0) {
         in.read(reinterpret_cast<char*>(outData.peaks.data()), pcount * sizeof(PeakPoint));
     }
@@ -1103,8 +1173,14 @@ void NovaRegionModel::rebuildRegionCache()
                             QString peakFile = sessionPeaksDir + "/" + item.id + ".novapeak";
                             if (!loadPeakFile(peakFile, cachedData)) {
                                 if (audioRegion) {
-                                    cachedData = buildRegionPeaks(audioRegion, static_cast<int>(sampleRate), channels);
-                                    savePeakFile(peakFile, cachedData);
+                                    // 🧵 Calcular los picos.decodeando el audio
+                                    // puede tardar varios segundos (un MP3 de
+                                    // 5 min tiene que decodificarse entero), asi
+                                    // que se hace en un hilo aparte: si no, la
+                                    // app se congela al importar.
+                                    requestRegionPeaks(item.id, audioRegion,
+                                                       static_cast<int>(sampleRate),
+                                                       channels, peakFile);
                                 }
                             }
                             if (!cachedData.peaks.empty()) NovaWaveformCache::setPeaks(item.id, cachedData);

@@ -19,6 +19,28 @@ Rectangle {
 
         function onPositionChanged() {
             root.currentPlayheadX = AudioEngine.beatToPixel(AudioEngine.currentBeat, root.barWidth);
+            root.followPlayhead();
+        }
+    }
+
+    // 🎥 LA CÁMARA SIGUE AL PLAYHEAD (como en cualquier DAW)
+    // Sin esto, cuando el playhead avanza más allá de la parte visible se
+    // sale de la pantalla y da la impresión de que el transporte se ha
+    // quedado clavado (pasaba en el compás 14, el final de la ventana).
+    function followPlayhead() {
+        if (!gridFlickable || root.currentPlayheadX <= 0) return;
+
+        const viewW = gridFlickable.width;
+        const margin = 80;                 // px de margen antes del borde
+        const x = root.currentPlayheadX;
+        const maxX = Math.max(0, gridFlickable.contentWidth - viewW);
+
+        if (x > gridFlickable.contentX + viewW) {
+            // Se ha salido por la derecha: la vista avanza con él
+            gridFlickable.contentX = Math.max(0, Math.min(x - viewW + margin, maxX));
+        } else if (x < gridFlickable.contentX) {
+            // Se ha ido por la izquierda: la vista vuelve
+            gridFlickable.contentX = Math.max(0, Math.min(x - margin, maxX));
         }
     }
 

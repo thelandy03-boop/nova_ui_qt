@@ -172,23 +172,48 @@ void NovaWaveformRenderer::rebuildGeometry() {
     m_indices.clear();
 
     const auto &peaks = (m_pixelsPerBeat > 2.0) ? m_peaks : m_overview;
-    if (peaks.empty()) {
-        m_dirtyGeometry = false;
-        return;
-    }
 
     int count = static_cast<int>(peaks.size());
     float gain = std::pow(10.0f, static_cast<float>(m_gainDb) / 20.0f);
     float centerY = m_height * 0.5f;
     float maxAmp = m_height * 0.44f;
 
-    m_vertices.reserve(count * 4 * 3); // 4 vertices per peak (quad), 3 floats each
-    m_indices.reserve(count * 6);
-
-    int vertexIdx = 0;
     const double totalBeats = m_endBeat - m_startBeat;
     const double pxPerBeatSafe = (m_pixelsPerBeat > 0.0) ? m_pixelsPerBeat : 100.0;
     const double totalPx = totalBeats * pxPerBeatSafe;
+
+    m_vertices.reserve(count * 4 * 3 + 12); // 4 vertices per peak (quad), 3 floats each
+    m_indices.reserve(count * 6 + 6);
+
+    int vertexIdx = 0;
+
+    // ── LÍNEA DE SILENCIO (EJE) ──────────────────────────────────────────
+    // Se dibuja siempre, aunque no haya picos: en los tramos sin sonido el
+    // clip muestra una linea horizontal (como en FL Studio/Logic) en vez de
+    // quedar completamente vacio.
+    {
+        const float lineH = 0.75f;
+        const float x0 = 0.0f;
+        const float x1 = static_cast<float>(totalPx);
+        const int base = vertexIdx;
+        m_vertices.push_back(x0); m_vertices.push_back(centerY - lineH); m_vertices.push_back(2.0f);
+        m_vertices.push_back(x1); m_vertices.push_back(centerY - lineH); m_vertices.push_back(2.0f);
+        m_vertices.push_back(x1); m_vertices.push_back(centerY + lineH); m_vertices.push_back(2.0f);
+        m_vertices.push_back(x0); m_vertices.push_back(centerY + lineH); m_vertices.push_back(2.0f);
+        m_indices.push_back(base);
+        m_indices.push_back(base + 1);
+        m_indices.push_back(base + 2);
+        m_indices.push_back(base + 2);
+        m_indices.push_back(base + 3);
+        m_indices.push_back(base);
+        vertexIdx += 4;
+    }
+
+    if (peaks.empty()) {
+        m_dirtyGeometry = false;
+        return;
+    }
+
     const double peakWidthPx = (count > 0) ? std::max(1.0, totalPx / count) : 1.0;
     for (int i = 0; i < count; ++i) {
         float minVal = peaks[i].min;

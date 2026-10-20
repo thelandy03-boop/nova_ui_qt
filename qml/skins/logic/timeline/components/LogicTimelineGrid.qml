@@ -2,7 +2,7 @@ import QtQuick
 
 Item {
     id: root
-    property int barWidth: 80
+    property real barWidth: 80.0
     property int totalBars: 60
     property int trackHeight: 74
 
@@ -25,6 +25,7 @@ Item {
             model: AudioEngine.tracks
             delegate: LogicTrackLane {
                 width: root.width
+                barWidth: root.barWidth
             }
         }
     }

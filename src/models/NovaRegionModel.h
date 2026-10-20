@@ -143,6 +143,11 @@ signals:
 
 private:
     void rebuildRegionCache();
+    void requestRegionPeaks(const QString &regionId,
+                             const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion,
+                             int sampleRate, int channels,
+                             const QString &peakFilePath);
+    void waitForPeakJobs();
     std::shared_ptr<ARDOUR::Track> findTrackByIndex(int trackIndex) const; // 🧹 Clean Code (CC-2)
     void cleanupImportThreads(); // 🧹 Limpieza automática de hilos terminados (Bug 3)
 
@@ -150,6 +155,14 @@ private:
         std::thread thread;
         std::shared_ptr<std::atomic<bool>> finished;
     };
+
+    // 🧵 Hilos de calculo de picos (decodifican el audio: NO deben en el hilo
+    // GUI, si no la app se congela mientras importa un MP3 largo).
+    struct PeakWorker {
+        std::thread thread;
+    };
+    std::vector<PeakWorker> m_peakWorkers;
+    std::mutex m_peakWorkersMutex;
 
     // ⚠️ ARDOUR::Session* es seguro aquí: forward-declared, se castea en el .cpp
     ARDOUR::Session *m_session = nullptr;

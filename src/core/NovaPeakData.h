@@ -20,7 +20,7 @@ struct PeakPoint {
 struct PeakData {
     std::vector<PeakPoint> peaks;      // detail (e.g. 2000 points)
     std::vector<PeakPoint> overview;   // overview (e.g. 200 points)
-    uint32_t version = 1;
+    uint32_t version = 2;
     uint32_t crc32 = 0;
     int sampleRate = 0;
     int channels = 0;

@@ -8,6 +8,10 @@ Rectangle {
 
     property int trackIndex: index
 
+    // Ancho de compás real (lo propaga el panel): con 80 fijo los clips no
+    // escalaban al hacer zoom ni se alineaban con las líneas de la rejilla.
+    property real barWidth: 80.0
+
     // Franja lateral de color
     Rectangle {
         anchors.left: parent.left
@@ -43,7 +47,7 @@ Rectangle {
         delegate: LogicAudioClip {
             // Se dibuja solo si el clip pertenece a este carril/pista
             visible: model.trackIndex === root.trackIndex
-            barWidth: 80
+            barWidth: root.barWidth
         }
     }
 }
