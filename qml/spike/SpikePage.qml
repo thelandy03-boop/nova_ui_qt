@@ -100,7 +100,11 @@ Window {
             TextField {
                 id: campoRuta
                 width: parent.width - 220
-                text: "/sdcard/Music/spike.mp3"
+                // La carpeta propia de la app en el almacenamiento externo es
+                // la unica que se puede leer sin permisos especiales
+                // (scoped storage): ahi se copia el fichero de prueba con
+                // "adb push /sdcard/Android/data/com.novastudio.nova/files/".
+                text: "/sdcard/Android/data/com.novastudio.nova/files/spike.mp3"
                 placeholderText: "Ruta del fichero de audio"
                 selectByMouse: true
             }
