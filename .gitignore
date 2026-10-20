@@ -127,3 +127,6 @@ venv/
 *.pem
 *.key
 *.p12
+
+# ── Worktrees aislados (ramas de trabajo) ─────────────────────
+.worktrees/
