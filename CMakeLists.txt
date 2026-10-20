@@ -132,6 +132,10 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaWavReader.cpp
     src/audio/NovaMp3Decoder.h
     src/audio/NovaMp3Decoder.cpp
+    src/audio/NovaAudioPlayer.h
+    src/audio/NovaAudioPlayer.cpp
+    src/audio/NovaResampler.h
+    src/audio/NovaResampler.cpp
     third_party/minimp3/minimp3.h
 )
 
@@ -284,6 +288,22 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_audio_decoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(test_audio_decoder PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME audio_decoder COMMAND test_audio_decoder)
+
+    # El reproductor con remuestreo. Usa QString (el error de load()) y el
+    # decodificador (el test carga el WAV del fixture), por eso enlaza
+    # Qt6::Core y compila tambien las fuentes del decodificador.
+    add_executable(test_audio_player
+        tests/test_audio_player.cpp
+        src/audio/NovaAudioPlayer.cpp
+        src/audio/NovaResampler.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+    )
+    target_link_libraries(test_audio_player PRIVATE Qt6::Core)
+    target_include_directories(test_audio_player PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_player PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_player COMMAND test_audio_player)
 
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).
