@@ -74,6 +74,9 @@ class NovaRegionModel : public QAbstractListModel
     // 🎯 Propiedad de Selección Global del Clip Activo en el Timeline
     Q_PROPERTY(int selectedRegionIndex READ selectedRegionIndex WRITE setSelectedRegionIndex NOTIFY selectedRegionIndexChanged)
 
+    // ⏳ Estado de la importación en curso (para mostrar progreso en la UI)
+    Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
+
 public:
     enum RegionRoles : int {
         RegionIdRole = Qt::UserRole + 1,
@@ -105,6 +108,9 @@ public:
     int selectedRegionIndex() const { return m_selectedRegionIndex; }
     void setSelectedRegionIndex(int index);
 
+    // ⏳ ¿Hay una importación en curso?
+    bool importing() const { return m_importing; }
+
     Q_INVOKABLE bool importAudioFile(int trackIndex, const QString &filePath, double startBeat);
     Q_INVOKABLE bool moveRegion(int regionIndex, double newStartBeat);
     Q_INVOKABLE bool resizeRegion(int regionIndex, double newStartBeat, double newLengthBeats);
@@ -131,6 +137,9 @@ public:
 signals:
     void regionCountChanged(int count);
     void selectedRegionIndexChanged(int index);
+    // ⏳ Progreso del import de audio
+    void importingChanged(bool importing);
+    void importFinished(bool success, const QString &message);
 
 private:
     void rebuildRegionCache();
@@ -148,6 +157,7 @@ private:
     std::unique_ptr<PBD::ScopedConnectionList> m_sessionConnections; // 🛡️ unique_ptr evita incluir pbd/signals.h aquí
     std::vector<ImportWorker> m_importWorkers;
     std::mutex m_workersMutex;
+    bool m_importing = false;   // ⏳ hay una importación en curso
 
     int m_liveRecordingIndex = -1;
     int m_selectedRegionIndex = -1;

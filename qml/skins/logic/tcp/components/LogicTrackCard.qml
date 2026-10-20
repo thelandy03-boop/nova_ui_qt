@@ -230,7 +230,7 @@ Rectangle {
         
         Text {
             anchors.centerIn: parent
-            text: "🎵 Import"
+            text: AudioEngine.regions.importing ? "⏳ Importando…" : "🎵 Import"
             color: "#E0E0E0"
             font.pixelSize: 10
             font.weight: Font.Medium
@@ -241,7 +241,16 @@ Rectangle {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
+            enabled: !AudioEngine.regions.importing
             onClicked: fileDialog.open()
+        }
+    }
+
+    // 📢 Resultado del import de audio (éxito o error)
+    Connections {
+        target: AudioEngine.regions
+        function onImportFinished(success, message) {
+            console.log(success ? "✅ [GUI] " + message : "❌ [GUI] " + message)
         }
     }
 
@@ -268,9 +277,9 @@ Rectangle {
             // Importar archivo en esta pista (index) comenzando en el compás 1 (startBeat = 0)
             var success = AudioEngine.regions.importAudioFile(index, selectedFile, 0.0)
             if (success) {
-                console.log("⏳ [GUI] Importación aceptada; preparando el clip...")
+                console.log("⏳ [GUI] Importación iniciada; el clip aparecerá en cuanto esté listo")
             } else {
-                console.log("❌ [GUI] Error al importar el archivo de audio")
+                console.log("❌ [GUI] Error al iniciar la importación del archivo de audio")
             }
         }
     }

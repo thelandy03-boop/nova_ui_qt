@@ -43,6 +43,9 @@
 #include "ardour/region.h"
 #include "ardour/playlist.h"
 #include "ardour/import_status.h"
+#include "ardour/session_directory.h"
+#include "ardour/mp3filesource.h"
+#include "ardour/sndfilesource.h"
 #include "pbd/signals.h"
 
 #pragma pop_macro("emit")
@@ -357,65 +360,241 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
 {
     if (!m_session) return false;
 
+    const qint64 t0 = QDateTime::currentMSecsSinceEpoch();
+
     QString cleanPath = NovaPlatformUtils::sanitizePath(filePath);
     QFileInfo fileInfo(cleanPath);
-    if (!fileInfo.exists()) return false;
+    if (!fileInfo.exists()) {
+        qCWarning(novaModel) << "❌ Import: el archivo no existe:" << cleanPath;
+        Q_EMIT importFinished(false, QStringLiteral("El archivo no existe: %1").arg(fileInfo.fileName()));
+        return false;
+    }
 
     cleanupImportThreads();
 
     auto targetTrack = findTrackByIndex(trackIndex);
-    if (!targetTrack) return false;
+    if (!targetTrack) {
+        qCWarning(novaModel) << "❌ Import: no se encontró la pista" << trackIndex;
+        Q_EMIT importFinished(false, QStringLiteral("No se encontró la pista de destino"));
+        return false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // IMPORT SIN RE-CODIFICAR
+    //
+    // Antes se usaba Session::import_files(), que SIEMPRE decodifica el
+    // archivo y escribe una copia en PCM dentro de la carpeta de la sesion
+    // (ademas remuestreando a la tasa de la sesion). Para un MP3 de 5
+    // minutos son ~115 MB escritos y un remuestreo 44,1 -> 48 kHz: minutos
+    // de espera sin que el usuario vea nada (el import se hacia en un hilo
+    // auxiliar y sin progreso).
+    //
+    // Ahora el archivo se copia tal cual (copia byte a byte, instantanea) y la
+    // fuente se crea sobre la copia, igual que hace el GUI de Ardour con
+    // SourceFactory::createExternal / Mp3FileSource. El audio se decodifica en
+    // tiempo de reproduccion, no al importar.
+    // ─────────────────────────────────────────────────────────────────────
+
+    const bool isMp3 = (fileInfo.suffix().compare(QStringLiteral("mp3"), Qt::CaseInsensitive) == 0);
+    const QString destDir = QString::fromStdString(m_session->session_directory().sound_path());
+    const QString baseName = fileInfo.completeBaseName();
+    const QString suffix = fileInfo.suffix();
 
     auto finishedFlag = std::make_shared<std::atomic<bool>>(false);
 
-    std::thread workerThread([this, targetTrack, cleanPath, fileInfo, startBeat, finishedFlag]() {
+    Q_EMIT importingChanged(true);
+    qCDebug(novaModel) << "⏳ Import: copiando" << cleanPath
+                       << "(" << fileInfo.size() / 1024 << " KB) a la pista" << trackIndex;
+
+    std::thread workerThread([this, targetTrack, cleanPath, fileInfo, startBeat, finishedFlag, t0,
+                              destDir, baseName, suffix, isMp3]() {
         try {
-            ARDOUR::ImportStatus status;
-            status.paths.push_back(cleanPath.toStdString());
-            status.quality = ARDOUR::SrcFastest;
-
-            m_session->import_files(status);
-
-            if (status.sources.empty() || status.cancel) {
-                finishedFlag->store(true);
+            if (!QDir().mkpath(destDir)) {
+                qCCritical(novaModel) << "❌ Import: no se pudo crear la carpeta de audio:" << destDir;
+                QMetaObject::invokeMethod(this, [this, finishedFlag]() {
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo crear la carpeta de audio del proyecto"));
+                    Q_EMIT importingChanged(false);
+                }, Qt::QueuedConnection);
                 return;
             }
 
-            const ARDOUR::SourceList importedSources = status.sources;
-            QMetaObject::invokeMethod(this, [this, targetTrack, importedSources, fileInfo, startBeat, finishedFlag]() {
-                if (!m_session || importedSources.empty() || !importedSources.front()) {
+            // Nombre único dentro de la carpeta de audio del proyecto
+            QString destPath;
+            for (int i = 1; i < 1000; ++i) {
+                const QString candidate = QString("%1/%2%3.%4")
+                    .arg(destDir, baseName,
+                         (i == 1 ? QString() : QString("-%1").arg(i)),
+                         suffix);
+                if (!QFileInfo::exists(candidate)) {
+                    destPath = candidate;
+                    break;
+                }
+            }
+
+            if (destPath.isEmpty() || !QFile::copy(cleanPath, destPath)) {
+                qCCritical(novaModel) << "❌ Import: no se pudo copiar el archivo a:" << destPath;
+                QMetaObject::invokeMethod(this, [this, finishedFlag]() {
                     finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo copiar el archivo al proyecto"));
+                    Q_EMIT importingChanged(false);
+                }, Qt::QueuedConnection);
+                return;
+            }
+
+            const qint64 tCopy = QDateTime::currentMSecsSinceEpoch();
+            qCDebug(novaModel) << "⏳ Import: copia hecha en" << (tCopy - t0) << "ms ->" << destPath;
+
+            // Crear fuentes y región: toca la sesión, va en el hilo GUI
+            QMetaObject::invokeMethod(this, [this, targetTrack, destPath, fileInfo, startBeat,
+                                             finishedFlag, t0, tCopy, isMp3]() {
+                const qint64 t2 = QDateTime::currentMSecsSinceEpoch();
+
+                ARDOUR::SoundFileInfo info{};
+                std::string err;
+                bool infoOk = false;
+
+                try {
+                    if (isMp3) {
+                        infoOk = (ARDOUR::Mp3FileSource::get_soundfile_info (destPath.toStdString(), info, err) == 0);
+                    } else {
+                        infoOk = ARDOUR::AudioFileSource::get_soundfile_info (destPath.toStdString(), info, err);
+                    }
+                } catch (...) {
+                    infoOk = false;
+                }
+
+                if (!infoOk || info.channels == 0) {
+                    qCCritical(novaModel) << "❌ Import: formato no soportado:" << destPath
+                                          << (err.empty() ? QStringLiteral("(libsndfile no lo reconoce)").toStdString() : err);
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("Formato no soportado: %1").arg(fileInfo.suffix()));
+                    Q_EMIT importingChanged(false);
                     return;
                 }
 
-                PBD::PropertyList plist;
-                plist.add(ARDOUR::Properties::start, Temporal::timepos_t(0));
-                plist.add(ARDOUR::Properties::length, importedSources.front()->length());
-                plist.add(ARDOUR::Properties::name, fileInfo.fileName().toStdString());
+                ARDOUR::SourceList sources;
+                const std::string path = destPath.toStdString();
 
-                auto region = ARDOUR::RegionFactory::create(importedSources, plist);
-                if (!region) {
+                try {
+                    for (uint16_t chn = 0; chn < info.channels; ++chn) {
+                        std::shared_ptr<ARDOUR::AudioSource> src;
+
+                        if (isMp3) {
+                            // Ardour trae mpg123/minimp3: el MP3 se decodifica
+                            // al reproducir, sin convertir nada al importar.
+                            src = std::shared_ptr<ARDOUR::Mp3FileSource> (
+                                new ARDOUR::Mp3FileSource (*m_session, path, chn, ARDOUR::Source::Flag (0)));
+                        } else {
+                            src = std::shared_ptr<ARDOUR::SndFileSource> (
+                                new ARDOUR::SndFileSource (*m_session, path, chn, ARDOUR::Source::Flag (0)));
+                        }
+
+                        if (!src) {
+                            throw std::runtime_error ("no se pudo crear la fuente");
+                        }
+                        sources.push_back (src);
+                    }
+                } catch (const std::exception &e) {
+                    qCCritical(novaModel) << "❌ Import: no se pudo abrir el audio:" << e.what();
                     finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo abrir el archivo de audio"));
+                    Q_EMIT importingChanged(false);
+                    return;
+                } catch (...) {
+                    qCCritical(novaModel) << "❌ Import: no se pudo abrir el audio";
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo abrir el archivo de audio"));
+                    Q_EMIT importingChanged(false);
+                    return;
+                }
+
+                if (sources.empty()) {
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("El archivo no contiene audio"));
+                    Q_EMIT importingChanged(false);
+                    return;
+                }
+
+                // Anunciar las fuentes a la sesión (igual que hace
+                // SourceFactory::createExternal con announce=true).
+                for (const auto &s : sources) {
+                    ARDOUR::SourceFactory::SourceCreated (s);
+                }
+
+                // La longitud del clip se expresa en muestras de la línea de
+                // tiempo de la sesión: si el archivo viene a 44,1 kHz y la
+                // sesión va a 48 kHz hay que convertir (el audio se remuestrea
+                // al reproducir).
+                const double sessionRate = (m_session->sample_rate() > 0)
+                    ? static_cast<double> (m_session->sample_rate()) : 48000.0;
+
+                auto firstAudio = std::dynamic_pointer_cast<ARDOUR::AudioSource> (sources.front());
+                const double sourceRate = (firstAudio && firstAudio->sample_rate() > 0)
+                    ? static_cast<double> (firstAudio->sample_rate()) : sessionRate;
+
+                const ARDOUR::samplecnt_t srcSamples = firstAudio
+                    ? firstAudio->length().samples() : 0;
+                const auto lengthSamples = static_cast<ARDOUR::samplepos_t> (
+                    (static_cast<double> (srcSamples) * sessionRate) / sourceRate);
+
+                PBD::PropertyList plist;
+                plist.add (ARDOUR::Properties::start, Temporal::timepos_t (0));
+                plist.add (ARDOUR::Properties::length, Temporal::timepos_t (lengthSamples));
+                plist.add (ARDOUR::Properties::name, fileInfo.fileName().toStdString());
+
+                auto region = ARDOUR::RegionFactory::create (sources, plist);
+                if (!region) {
+                    qCCritical(novaModel) << "❌ Import: no se pudo crear la región";
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo crear el clip"));
+                    Q_EMIT importingChanged(false);
                     return;
                 }
 
                 auto playlist = targetTrack->playlist();
                 if (!playlist) {
+                    qCCritical(novaModel) << "❌ Import: la pista no tiene playlist";
                     finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("La pista no tiene playlist"));
+                    Q_EMIT importingChanged(false);
                     return;
                 }
 
-                const double sampleRate = m_session->sample_rate() > 0 ? static_cast<double>(m_session->sample_rate()) : 48000.0;
-                const auto startSample = static_cast<ARDOUR::samplepos_t>(NovaTimeUtils::beatToFrame(startBeat, sampleRate, 120.0));
+                const auto startSample = static_cast<ARDOUR::samplepos_t> (
+                    NovaTimeUtils::beatToFrame (startBeat, sessionRate, 120.0));
 
-                playlist->add_region(region, Temporal::timepos_t(startSample));
+                playlist->add_region (region, Temporal::timepos_t (startSample));
                 m_session->set_dirty();
 
                 rebuildRegionCache();
+
+                const qint64 t3 = QDateTime::currentMSecsSinceEpoch();
+                qCDebug(novaModel) << "✅ Import: clip listo | copia:" << (tCopy - t0) << "ms"
+                                   << "| región:" << (t3 - tCopy) << "ms"
+                                   << "| total:" << (t3 - t0) << "ms"
+                                   << "| " << info.channels << "ch @" << sourceRate << "Hz"
+                                   << " (" << fileInfo.fileName().toStdString() << ")";
+
                 finishedFlag->store(true);
+                Q_EMIT importFinished(true, QStringLiteral("%1 importado").arg(fileInfo.fileName()));
+                Q_EMIT importingChanged(false);
+            }, Qt::QueuedConnection);
+
+        } catch (const std::exception &e) {
+            qCCritical(novaModel) << "❌ Import: excepción:" << e.what();
+            QMetaObject::invokeMethod(this, [this, finishedFlag]() {
+                finishedFlag->store(true);
+                Q_EMIT importFinished(false, QStringLiteral("Error inesperado al importar"));
+                Q_EMIT importingChanged(false);
             }, Qt::QueuedConnection);
         } catch (...) {
-            finishedFlag->store(true);
+            qCCritical(novaModel) << "❌ Import: excepción desconocida";
+            QMetaObject::invokeMethod(this, [this, finishedFlag]() {
+                finishedFlag->store(true);
+                Q_EMIT importFinished(false, QStringLiteral("Error inesperado al importar"));
+                Q_EMIT importingChanged(false);
+            }, Qt::QueuedConnection);
         }
     });
 
