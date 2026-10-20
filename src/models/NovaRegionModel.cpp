@@ -141,6 +141,11 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
     ARDOUR::samplecnt_t length   = static_cast<ARDOUR::samplecnt_t> (audioRegion->length_samples() * rateRatio);
     if (length <= 0) return result;
 
+    qCDebug(novaModel) << "📈 Picos: long. región:" << audioRegion->length_samples()
+                       << "| long. fuente:" << source->length().samples()
+                       << "| tasa:" << sourceRate << " (" << sessionRate << ")"
+                       << "| a leer:" << length << " desde" << startPos;
+
     result.sampleRate = sampleRate;
     result.channels = channels;
 
@@ -168,7 +173,11 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
     while (remaining > 0) {
         ARDOUR::samplecnt_t toRead = std::min(remaining, bufferSize);
         ARDOUR::samplecnt_t read = source->read(readBuffer.data(), currentPos, toRead, 0);
-        if (read <= 0) break;
+        if (read <= 0) {
+            qCWarning(novaModel) << "📈 Picos: la fuente no devolvió datos en" << currentPos
+                                 << "(quedaban" << remaining << "muestras) -> la forma de onda quedará vacía";
+            break;
+        }
 
         // Procesamiento de picos usando SIMD si está disponible, de lo contrario escalar
         processPeakBlockSimd(reinterpret_cast<const float*>(readBuffer.data()), read,
@@ -241,13 +250,15 @@ void NovaRegionModel::requestRegionPeaks(const QString &regionId,
     }
 
     std::thread worker([this, regionId, audioRegion, sampleRate, channels, peakFilePath]() {
+        qCDebug(novaModel) << "📈 Calculando picos de" << regionId.toStdString() << "...";
         PeakData data = buildRegionPeaks(audioRegion, sampleRate, channels);
+        qCDebug(novaModel) << "📈 Picos terminados:" << data.peaks.size() << "detalle /"
+                           << data.overview.size() << "overview";
 
         if (!data.peaks.empty()) {
             savePeakFile(peakFilePath, data);
             NovaWaveformCache::setPeaks(regionId, data);
-            qCDebug(novaModel) << "📈 Picos calculados para" << regionId.toStdString()
-                               << "(" << data.peaks.size() << " puntos de detalle)";
+            qCDebug(novaModel) << "📈 Picos publicados en cache para" << regionId.toStdString();
         }
 
         {
@@ -638,6 +649,8 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
                                    << "| región:" << (t3 - tCopy) << "ms"
                                    << "| total:" << (t3 - t0) << "ms"
                                    << "| " << info.channels << "ch @" << sourceRate << "Hz"
+                                   << "| muestras fuente:" << srcSamples
+                                   << "| long. clip:" << lengthSamples
                                    << " (" << fileInfo.fileName().toStdString() << ")";
 
                 finishedFlag->store(true);
