@@ -270,5 +270,10 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     if(Python3_Interpreter_FOUND)
         add_test(NAME qml_contract
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_qml_contract.py)
+
+        # El contrato del script de build de Android: debe compilar para el ABI
+        # que se le pida (arm64-v8a para telefonos, x86_64 para Waydroid).
+        add_test(NAME android_build_script
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_android_build_script.py)
     endif()
 endif()

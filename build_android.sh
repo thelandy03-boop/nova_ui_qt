@@ -1,6 +1,43 @@
 #!/bin/bash
 set -e
 
+# 0. Parámetros
+#    --abi <arm64-v8a|x86_64>: ABI del APK. Por defecto arm64-v8a (teléfonos
+#    reales); x86_64 es lo que necesita la imagen de Waydroid. Un APK solo
+#    instala si el ABI que lleva dentro coincide con el del dispositivo.
+ABI="${ABI:-arm64-v8a}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --abi)
+            if [ -z "${2:-}" ]; then
+                echo "❌ Error: --abi necesita un valor (arm64-v8a o x86_64)"
+                exit 1
+            fi
+            ABI="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>]"
+            exit 0
+            ;;
+        *)
+            echo "❌ Error: opción desconocida '$1'"
+            echo "   Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>]"
+            exit 1
+            ;;
+    esac
+done
+
+case "${ABI}" in
+    arm64-v8a|x86_64) ;;
+    *)
+        echo "❌ Error: ABI '${ABI}' no soportado."
+        echo "   ABIs admitidos: arm64-v8a (teléfonos), x86_64 (Waydroid/emulador)."
+        exit 1
+        ;;
+esac
+
 echo "🚀 [NOVA ANDROID BUILD] Configurando entorno de compilación..."
 
 # 1. Variables del sistema Android y Java 17 LTS (Oficial para AGP 8 / Qt 6.8)
@@ -19,10 +56,15 @@ export PATH="${JAVA_HOME}/bin:${PATH}"
 
 echo "  - SDK Root:  ${ANDROID_SDK_ROOT}"
 echo "  - NDK Root:  ${ANDROID_NDK_ROOT}"
+echo "  - ABI:       ${ABI}"
 echo "  - Java Home: ${JAVA_HOME} ($(${JAVA_HOME}/bin/java -version 2>&1 | head -n 1))"
 
-# 2. Herramienta Qt CMake para Android (arm64-v8a)
-QT_ANDROID_CMAKE="$HOME/Qt/6.8.3/android_arm64_v8a/bin/qt-cmake"
+# 2. Herramienta Qt CMake para Android. El kit se llama android_<abi> con
+#    guiones bajos (arm64-v8a -> android_arm64_v8a, x86_64 -> android_x86_64),
+#    así que el directorio se deriva del ABI, no al revés.
+QT_ABI_DIR="${ABI//-/_}"
+QT_ANDROID_DIR="$HOME/Qt/6.8.3/android_${QT_ABI_DIR}"
+QT_ANDROID_CMAKE="${QT_ANDROID_DIR}/bin/qt-cmake"
 
 if [ ! -f "$QT_ANDROID_CMAKE" ]; then
     echo "❌ Error: No se encontró qt-cmake en $QT_ANDROID_CMAKE"
@@ -31,9 +73,17 @@ fi
 
 BUILD_DIR="build_android"
 
+# El cache de CMake fija el ABI (CMAKE_ANDROID_ARCH_ABI) y no se puede cambiar
+# en caliente: si el directorio es de otro ABI, se regenera desde cero.
+if [ -f "${BUILD_DIR}/CMakeCache.txt" ] \
+    && ! grep -q "^ANDROID_ABI[^=]*=${ABI}\$" "${BUILD_DIR}/CMakeCache.txt"; then
+    echo "  ♻️ ${BUILD_DIR} era de otro ABI: se regenera"
+    rm -rf "${BUILD_DIR}"
+fi
+
 echo "🔨 [NOVA ANDROID BUILD] Generando archivos CMake en ./${BUILD_DIR}..."
 ${QT_ANDROID_CMAKE} -B ${BUILD_DIR} \
-    -DANDROID_ABI="arm64-v8a" \
+    -DANDROID_ABI="${ABI}" \
     -DANDROID_PLATFORM="android-31" \
     -DCMAKE_BUILD_TYPE=Release
 
@@ -61,13 +111,25 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
     # 🔒 Los jars de Qt (org.qtproject.qt.android.*) tienen que estar en
     # app/libs/ y declarados como dependencia (fileTree). Sin esto el Java de
     # la app no compila: "package org.qtproject.qt.android does not exist".
-    QT_ANDROID_DIR="$HOME/Qt/6.8.3/android_arm64_v8a"
     if [ -d "${QT_ANDROID_DIR}/jar" ]; then
         mkdir -p ${BUILD_DIR}/android-build/app/libs
         cp -f ${QT_ANDROID_DIR}/jar/*.jar ${BUILD_DIR}/android-build/app/libs/ 2>/dev/null || true
         echo "  - Jars de Qt copiados a app/libs/: $(ls ${BUILD_DIR}/android-build/app/libs/ | wc -l)"
     else
         echo "  ⚠️ No se encontró el directorio de jars de Qt: ${QT_ANDROID_DIR}/jar"
+    fi
+
+    # 🔒 El staging arrastra el build.gradle del proyecto, que fija
+    # abiFilters 'arm64-v8a', 'armeabi-v7a': el APK se empaquetaría con las
+    # libs de otro ABI. Se reescribe en el staging (no en el fuente, que
+    # sigue siendo el de arm64) para que solo viaje el ABI elegido.
+    STAGING_GRADLE="${BUILD_DIR}/android-build/app/build.gradle"
+    if [ -f "${STAGING_GRADLE}" ]; then
+        sed -i "s|abiFilters.*|abiFilters '${ABI}'|" "${STAGING_GRADLE}"
+        # Las .so nativas del ABI nuevo tampoco se deben comprimir ni stripear.
+        sed -i "s|doNotStrip .*|doNotStrip \"*/${ABI}/*.so\"|" "${STAGING_GRADLE}"
+    else
+        echo "  ⚠️ No se encontró el build.gradle del staging: no se ajustan los ABI"
     fi
 fi
 
@@ -79,7 +141,7 @@ EXPORT_DIR="apks"
 mkdir -p "${EXPORT_DIR}"
 
 APK_SRC="${BUILD_DIR}/android-build/app/build/outputs/apk/release/app-release.apk"
-APK_DEST="${EXPORT_DIR}/NovaStudio-arm64-v8a.apk"
+APK_DEST="${EXPORT_DIR}/NovaStudio-${ABI}.apk"
 
 if [ -f "${APK_SRC}" ]; then
     cp "${APK_SRC}" "${APK_DEST}"
