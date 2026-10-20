@@ -12,13 +12,12 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import org.qtproject.qt.android.QtNative;
+import org.qtproject.qt.android.QtActivityBase;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends QtActivityBase {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     
@@ -47,10 +46,7 @@ public class MainActivity extends AppCompatActivity {
         
         // Request permissions
         requestPermissionsIfNeeded();
-        
-        // Initialize Qt
-        QtNative.init(this);
-        
+
         // Start foreground service for audio
         startAudioForegroundService();
     }
@@ -59,14 +55,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         Log.i(TAG, "onResume");
-        QtNative.resume();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         Log.i(TAG, "onPause");
-        QtNative.pause();
     }
 
     @Override
@@ -97,7 +91,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         Log.i(TAG, "onNewIntent: " + intent.getAction());
-        QtNative.setIntent(intent);
     }
 
     @Override

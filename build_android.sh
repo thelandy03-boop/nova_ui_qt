@@ -58,6 +58,17 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
     # El módulo app necesita su manifest (el template lo guarda en src/main/)
     mkdir -p ${BUILD_DIR}/android-build/app/src/main
     cp android/app/src/main/AndroidManifest.xml ${BUILD_DIR}/android-build/app/src/main/AndroidManifest.xml
+    # 🔒 Los jars de Qt (org.qtproject.qt.android.*) tienen que estar en
+    # app/libs/ y declarados como dependencia (fileTree). Sin esto el Java de
+    # la app no compila: "package org.qtproject.qt.android does not exist".
+    QT_ANDROID_DIR="$HOME/Qt/6.8.3/android_arm64_v8a"
+    if [ -d "${QT_ANDROID_DIR}/jar" ]; then
+        mkdir -p ${BUILD_DIR}/android-build/app/libs
+        cp -f ${QT_ANDROID_DIR}/jar/*.jar ${BUILD_DIR}/android-build/app/libs/ 2>/dev/null || true
+        echo "  - Jars de Qt copiados a app/libs/: $(ls ${BUILD_DIR}/android-build/app/libs/ | wc -l)"
+    else
+        echo "  ⚠️ No se encontró el directorio de jars de Qt: ${QT_ANDROID_DIR}/jar"
+    fi
 fi
 
 echo "📦 [NOVA ANDROID BUILD] Gradle manual (assembleRelease)..."
@@ -67,13 +78,14 @@ echo "📦 [NOVA ANDROID BUILD] Gradle manual (assembleRelease)..."
 EXPORT_DIR="apks"
 mkdir -p "${EXPORT_DIR}"
 
-APK_SRC="${BUILD_DIR}/android-build/nova_ui_qt.apk"
+APK_SRC="${BUILD_DIR}/android-build/app/build/outputs/apk/release/app-release.apk"
 APK_DEST="${EXPORT_DIR}/NovaStudio-arm64-v8a.apk"
 
 if [ -f "${APK_SRC}" ]; then
     cp "${APK_SRC}" "${APK_DEST}"
-elif [ -f "${BUILD_DIR}/android-build/build/outputs/apk/release/android-build-release-unsigned.apk" ]; then
-    cp "${BUILD_DIR}/android-build/build/outputs/apk/release/android-build-release-unsigned.apk" "${APK_DEST}"
+    echo "  ✅ APK copiado a ${APK_DEST} ($(du -h "${APK_DEST}" | cut -f1))"
+else
+    echo "  ❌ No se encontró el APK en ${APK_SRC}"
 fi
 
 echo ""

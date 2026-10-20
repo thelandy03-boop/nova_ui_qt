@@ -104,6 +104,10 @@ namespace ARDOUR {
     public:
         virtual ~Source() = default;
         Temporal::timecnt_t length() const { return Temporal::timecnt_t(0); }
+        // Tasa de la fuente: la usa el calculo de picos para convertir las
+        // posiciones de la region (muestras de la sesion) a muestras del
+        // archivo. En Android el motor es propio y siempre trabaja a 48 kHz.
+        float sample_rate() const { return 48000.0f; }
         samplecnt_t read(Sample*, samplepos_t, samplecnt_t, int) { return 0; }
     };
 

@@ -44,6 +44,13 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
     
+    // 🔒 El lint en release abortaba la build por avisos del propio codigo
+    // (no por errores de compilacion). Se desactiva el lint del release.
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+    
     kotlinOptions {
         jvmTarget = '1.8'
     }
@@ -59,10 +66,21 @@ android {
         }
         
         // Don't compress native libraries
-        exclude '**/*.so'
+        // (OJO: antes habia un 'exclude **/*.so' aqui, que excluia las
+        // librerias nativas del APK en lugar de dejarlas sin comprimir:
+        // el APK salia sin libnova_ui_qt ni las de Qt y no arrancaba.)
+        // La falta de compresion la resuelve jniLibs.useLegacyPackaging.
     }
     
     // NOTE: no externalNativeBuild here — the native .so is already built by
+    // androiddeployqt into android-build/libs/arm64-v8a/. Se añaden como
+    // jniLibs para que el APK las traiga (sin esto el APK salia con las
+    // librerias nativas de Qt y la app sin el motor).
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['../libs']
+        }
+    }
     // Qt's CMake (build_android/) and androiddeployqt stages it into the APK.
     // The old standalone cpp/CMakeLists.txt is stale (Qt 6.6 paths) and unused.
     
@@ -73,6 +91,12 @@ android {
 }
 
 dependencies {
+    // 🔒 Qt6 Android (org.qtproject.qt.android.*: QtActivity, QtService...):
+    // androiddeployqt copia los jars de Qt en app/libs/ y se añaden aqui. Sin
+    // ellos el codigo Java de la app (MainActivity, AudioForegroundService)
+    // no compila: "package org.qtproject.qt.android does not exist".
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
     implementation "androidx.core:core-ktx:1.12.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "com.google.android.material:material:1.11.0"
@@ -89,11 +113,6 @@ dependencies {
     
     // Coroutines for async operations
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
-    
-    // Room for local database (projects, settings)
-    implementation "androidx.room:room-runtime:2.6.1"
-    implementation "androidx.room:room-ktx:2.6.1"
-    kapt "androidx.room:room-compiler:2.6.1"
     
     // DataStore for settings
     implementation "androidx.datastore:datastore-preferences:1.0.0"

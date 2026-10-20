@@ -462,7 +462,7 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // IMPORT SIN RE-CODIFICAR
+    // IMPORT SIN RE-CODIFICAR (solo escritorio: usa el core de Ardour)
     //
     // Antes se usaba Session::import_files(), que SIEMPRE decodifica el
     // archivo y escribe una copia en PCM dentro de la carpeta de la sesion
@@ -475,8 +475,84 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     // fuente se crea sobre la copia, igual que hace el GUI de Ardour con
     // SourceFactory::createExternal / Mp3FileSource. El audio se decodifica en
     // tiempo de reproduccion, no al importar.
+    //
+    // En Android/Windows no hay core de Ardour (solo stubs), asi que se
+    // mantiene la ruta simple de import_files() de los stubs.
     // ─────────────────────────────────────────────────────────────────────
 
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    {
+        auto finishedFlag = std::make_shared<std::atomic<bool>>(false);
+        Q_EMIT importingChanged(true);
+
+        std::thread workerThread([this, targetTrack, cleanPath, fileInfo, startBeat, finishedFlag]() {
+            try {
+                ARDOUR::ImportStatus status;
+                status.paths.push_back(cleanPath.toStdString());
+                status.quality = ARDOUR::SrcFastest;
+
+                m_session->import_files(status);
+
+                if (status.sources.empty() || status.cancel) {
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(false, QStringLiteral("No se pudo importar el archivo"));
+                    Q_EMIT importingChanged(false);
+                    return;
+                }
+
+                const ARDOUR::SourceList importedSources = status.sources;
+                QMetaObject::invokeMethod(this, [this, targetTrack, importedSources, fileInfo,
+                                                 startBeat, finishedFlag]() {
+                    if (!m_session || importedSources.empty() || !importedSources.front()) {
+                        finishedFlag->store(true);
+                        return;
+                    }
+
+                    PBD::PropertyList plist;
+                    plist.add(ARDOUR::Properties::start, Temporal::timepos_t(0));
+                    plist.add(ARDOUR::Properties::length, importedSources.front()->length());
+                    plist.add(ARDOUR::Properties::name, fileInfo.fileName().toStdString());
+
+                    auto region = ARDOUR::RegionFactory::create(importedSources, plist);
+                    if (!region) {
+                        finishedFlag->store(true);
+                        return;
+                    }
+
+                    auto playlist = targetTrack->playlist();
+                    if (!playlist) {
+                        finishedFlag->store(true);
+                        return;
+                    }
+
+                    const double sampleRate = m_session->sample_rate() > 0
+                        ? static_cast<double>(m_session->sample_rate()) : 48000.0;
+                    const auto startSample = static_cast<ARDOUR::samplepos_t>(
+                        NovaTimeUtils::beatToFrame(startBeat, sampleRate, 120.0));
+
+                    playlist->add_region(region, Temporal::timepos_t(startSample));
+                    m_session->set_dirty();
+
+                    rebuildRegionCache();
+                    finishedFlag->store(true);
+                    Q_EMIT importFinished(true, QStringLiteral("%1 importado").arg(fileInfo.fileName()));
+                    Q_EMIT importingChanged(false);
+                }, Qt::QueuedConnection);
+            } catch (...) {
+                finishedFlag->store(true);
+                Q_EMIT importFinished(false, QStringLiteral("Error inesperado al importar"));
+                Q_EMIT importingChanged(false);
+            }
+        });
+
+        {
+            std::lock_guard<std::mutex> lock(m_workersMutex);
+            m_importWorkers.push_back({std::move(workerThread), finishedFlag});
+        }
+
+        return true;
+    }
+#else
     const bool isMp3 = (fileInfo.suffix().compare(QStringLiteral("mp3"), Qt::CaseInsensitive) == 0);
     const QString destDir = QString::fromStdString(m_session->session_directory().sound_path());
     const QString baseName = fileInfo.completeBaseName();
@@ -688,6 +764,7 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     }
 
     return true;
+#endif // escritorio (ruta rápida) / móvil (stubs)
 }
 
 bool NovaRegionModel::moveRegion(int regionIndex, double newStartBeat)
