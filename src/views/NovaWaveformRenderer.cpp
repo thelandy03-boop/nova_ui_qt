@@ -1,5 +1,6 @@
 #include "NovaWaveformRenderer.h"
 #include "NovaWaveformItem.h"
+#include "core/NovaLogging.h"
 #include <QOpenGLContext>
 #include <QQuickFramebufferObject>
 #include <QVector2D>
@@ -393,7 +394,11 @@ void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {
                 m_peaks = data.peaks;
                 m_overview = data.overview;
                 changed = true;
+                qCDebug(novaModel) << "🎨 Onda: recibidos" << m_peaks.size()
+                                   << "picos para" << regionId.toStdString();
             }
+        } else if (regionChanged) {
+            qCDebug(novaModel) << "🎨 Onda: todavía sin picos para" << regionId.toStdString();
         }
     }
 
