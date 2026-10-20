@@ -128,9 +128,29 @@ public:
 
     // Transport info
     int64_t currentFrame() const { return m_currentFrame.load(); }
-    double currentTimeSeconds() const { return static_cast<double>(m_currentFrame.load()) / m_sampleRate; }
+    double currentTimeSeconds() const
+    {
+        return static_cast<double>(m_currentFrame.load())
+             / static_cast<double>(tasaSalidaReal());
+    }
     void setSampleRate(int rate) { m_sampleRate = rate; }
+
+    /** Tasa pedida al dispositivo (48.000 Hz en el móvil). */
     int sampleRate() const { return m_sampleRate; }
+
+    /**
+     * Tasa real del stream de salida: la que el dispositivo ha dado de
+     * verdad, que puede no ser la que se le ha pedido (44,1 kHz es lo
+     * habitual en muchos móviles).
+     *
+     * Es la que gobierna el reproductor (que remuestrea a esa tasa) y la
+     * posición del cabezal.
+     */
+    int tasaSalidaReal() const
+    {
+        const int real = m_tasaSalidaReal.load();
+        return real > 0 ? real : m_sampleRate;
+    }
 
 signals:
     void audioInitialized(bool success);
@@ -186,6 +206,12 @@ private:
     std::atomic<bool> m_inputStreamError{false};
     std::atomic<bool> m_outputStreamError{false};
     int m_sampleRate = 48000;
+
+    // Tasa real del stream de salida (la que dio el dispositivo). 0 si
+    // todavía no se ha abierto ningún stream. La lee el hilo de la
+    // interfaz; es atómica por si el motor se consulta desde otro hilo.
+    std::atomic<int> m_tasaSalidaReal{0};
+
     int m_framesPerBurst = 0;
 
     // Per-track ring buffers

@@ -179,7 +179,9 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
     crearCallbacks();
 
     // El reproductor entrega el audio a la tasa del stream (48.000 Hz en el
-    // móvil), así que remuestrea el fichero si viene a otra tasa.
+    // móvil), así que remuestrea el fichero si viene a otra tasa. La tasa
+    // real (la que dé el dispositivo al abrir el stream) se aplica después,
+    // en abrirStreamSalida().
     m_player.setOutputSampleRate(sampleRate);
 
     // Get optimal frames per burst from Oboe
@@ -297,8 +299,22 @@ bool NovaAndroidAudioEngine::abrirStreamSalida(int canales, QString* error) {
     m_canalSalida = m_outputStream->getChannelCount();
     m_framesPerBurst = std::max(m_outputStream->getFramesPerBurst(), 64);
 
-    LOGD("Output stream opened: %d Hz, %d frames/burst, %d channels",
-         m_outputStream->getSampleRate(), m_framesPerBurst, m_outputStream->getChannelCount());
+    // La tasa con la que el driver ha abierto el stream es la que manda:
+    // puede no ser la que se le ha pedido (44,1 kHz es habitual en muchos
+    // móviles). El reproductor tiene que entregar el audio a ESA tasa: si
+    // entrega 48 kHz a un HAL que consume 44,1 kHz, el audio suena ~8,8 %
+    // lento y más de un semitono grave.
+    //
+    // INVARIANTE: aquí el stream de salida está parado (todas las aperturas
+    // se hacen con el stream cerrado), así que se puede tocar el reproductor
+    // sin carrera con su callback.
+    const int tasaReal = m_outputStream->getSampleRate();
+    m_tasaSalidaReal.store(tasaReal > 0 ? tasaReal : m_sampleRate);
+    m_player.setOutputSampleRate(m_tasaSalidaReal.load());
+
+    LOGD("Output stream opened: %d Hz (pedida %d Hz), %d frames/burst, %d channels",
+         m_tasaSalidaReal.load(), m_sampleRate, m_framesPerBurst,
+         m_outputStream->getChannelCount());
 
     return true;
 #else
@@ -545,7 +561,12 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
         }
         return false;
     }
-    m_player.setOutputSampleRate(m_sampleRate);
+    // El reproductor remuestrea a la tasa REAL del stream de salida, no a
+    // la pedida: si el dispositivo ha abierto el stream a 44,1 kHz y el
+    // reproductor entrega 48 kHz, el audio suena grave y lento. Al
+    // reabrir el stream (más abajo) la tasa real se vuelve a aplicar, por
+    // si el driver la ha cambiado.
+    m_player.setOutputSampleRate(tasaSalidaReal());
     m_canalesFichero = audio.channels;
 
     // Un fichero nuevo empieza en el principio: el cabezal de reproducción
@@ -927,6 +948,10 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
 void NovaAndroidAudioEngine::OutputStreamCallback::onErrorAfterClose(
     oboe::AudioStream* stream, oboe::Result error) {
     LOGE("Output stream error: %s", oboe::convertToText(error));
+    // Si hay que reabrir el stream, se hace desde el hilo de la interfaz
+    // (aquí no: este callback corre en el hilo de audio y reabrir un stream
+    // ahí no es seguro). Toda reapertura pasa por abrirStreamSalida(), que
+    // vuelve a aplicar la tasa real del dispositivo al reproductor.
     m_engine->Q_EMIT bufferUnderrun();
 }
 #endif // Q_OS_ANDROID

@@ -169,7 +169,11 @@ double NovaSpikeController::positionSeconds() const
     }
     // La posición la lleva el motor: son los fotogramas que ha escrito de
     // verdad, no los que lleva el reloj.
-    const int tasa = m_engine->sampleRate();
+    //
+    // Se mide con la tasa REAL del stream de salida (la que dio el
+    // dispositivo), no con la pedida: si el móvil abre el stream a 44,1 kHz,
+    // los fotogramas son 44,1 mil por segundo.
+    const int tasa = m_engine->tasaSalidaReal();
     if (tasa <= 0) {
         return 0.0;
     }
