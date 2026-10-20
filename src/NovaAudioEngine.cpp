@@ -3,6 +3,7 @@
 #include "core/NovaAudioDeviceManager.h"
 #include "core/NovaHardwareSanitizer.h"
 #include "core/NovaProjectManager.h"
+#include "core/NovaProjectPolicy.h"
 #include "core/platform/NovaPlatformUtils.h"
 #include "models/NovaTrackListModel.h"
 #include "models/NovaRegionModel.h"
@@ -82,8 +83,10 @@ bool NovaAudioEngine::initEngine()
 
     // 🆕 Auto-crear proyecto por defecto si no hay recientes
     if (m_sessionManager.session() == nullptr) {
-        QString defaultName = "Untitled";
-        QString defaultDir = NovaPlatformUtils::getProjectsDirectory();
+        const QString defaultDir = NovaPlatformUtils::getProjectsDirectory();
+        // Si "Untitled" ya existe guardado, se usa "Untitled 2": nunca se pisa
+        // un proyecto que el usuario ya haya guardado.
+        const QString defaultName = NovaProjectPolicy::uniqueProjectName(defaultDir, QStringLiteral("Untitled"));
         qCDebug(novaCore) << "🆕 Auto-creando proyecto por defecto:" << defaultName;
         newProject(defaultName, defaultDir);
     }
@@ -202,11 +205,14 @@ bool NovaAudioEngine::newProject(const QString &name, const QString &parentDir)
     
     auto session = NovaProjectManager::createProject(m_sessionManager.engine(), name, parentDir);
     m_sessionManager.setSession(session);
-    
+
     if (session) {
         connectSessionSignals();
         return true;
     }
+
+    qCCritical(novaCore) << "❌ No se pudo crear el proyecto:" << name
+                         << "(puede que ya exista un proyecto guardado con ese nombre)";
     return false;
 }
 
@@ -255,10 +261,16 @@ Q_INVOKABLE void NovaAudioEngine::quitApplication()
 void NovaAudioEngine::discardProject()
 {
     qCDebug(novaCore) << "🗑️ Descartando proyecto activo sin guardar...";
-    if (m_sessionManager.session()) {
-        NovaProjectManager::discardUnsavedProject(m_sessionManager.session());
-    }
+
+    // 1) Decidir ANTES de cerrar: la sesion viva es quien tiene la ruta.
+    //    Devuelve vacio si el proyecto esta guardado (no se borra nunca).
+    const QString pathToDelete = NovaProjectManager::discardableProjectPath(m_sessionManager.session());
+
+    // 2) Cerrar la sesion primero: mientras viva sigue escribiendo en la carpeta.
     closeProject();
+
+    // 3) Y solo despues eliminar la carpeta, y solo si nunca fue guardada.
+    NovaProjectManager::deleteUnsavedProjectFolder(pathToDelete);
 }
 
 // 🗑️ ELIMINAR PROYECTO DEL HISTORIAL DE RECIENTES

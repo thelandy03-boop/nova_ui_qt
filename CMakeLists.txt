@@ -90,6 +90,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/core/NovaSessionManager.cpp
     src/core/NovaProjectManager.h
     src/core/NovaProjectManager.cpp
+    src/core/NovaProjectPolicy.h
+    src/core/NovaProjectPolicy.cpp
     src/core/NovaTransportController.h
     src/core/NovaTransportController.cpp
     src/core/NovaRecordManager.h
@@ -229,3 +231,21 @@ qt_add_qml_module(nova_ui_qt
         qml/skins/logic/topbar/icons/svg/LogicIconPointer.svg
         qml/skins/logic/topbar/icons/svg/LogicIconScissors.svg
 )
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+# Tests unitarios sin dependencias externas (asserts simples + Qt6Core).
+# Ejecutar con:  ctest --test-dir build --output-on-failure
+# o directamente: ./tests/run_tests.sh
+include(CTest)
+
+if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
+    add_executable(test_project_policy
+        tests/test_project_policy.cpp
+        src/core/NovaProjectPolicy.cpp
+    )
+    target_link_libraries(test_project_policy PRIVATE Qt6::Core)
+    target_include_directories(test_project_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME project_policy COMMAND test_project_policy)
+endif()

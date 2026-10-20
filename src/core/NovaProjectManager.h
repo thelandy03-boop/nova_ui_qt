@@ -30,8 +30,14 @@ public:
     static void addProjectToRecent(const QString &name, const QString &path);
     static void removeProjectFromRecent(const QString &path);
 
-    // 🗑️ Limpia carpetas de proyectos que nunca fueron guardados si el usuario descarta
-    static void discardUnsavedProject(void *session);
+    // 🗑️ Carpeta del proyecto actual que puede eliminarse al descartarlo.
+    // Devuelve una cadena vacia si el proyecto esta guardado (no se borra)
+    // o si no hay carpeta que eliminar.
+    static QString discardableProjectPath(void *session);
+
+    // Elimina la carpeta fisica de un proyecto que nunca fue guardado y lo
+    // quita de los recientes. No hace nada si la ruta esta vacia.
+    static void deleteUnsavedProjectFolder(const QString &path);
 
 private:
     std::unique_ptr<NovaProjectManagerPrivate> d_ptr;

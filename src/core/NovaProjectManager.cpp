@@ -1,5 +1,6 @@
 #include "NovaProjectManager.h"
 #include "NovaLogging.h"
+#include "NovaProjectPolicy.h"
 #include "platform/NovaPlatformUtils.h"
 #include <QDir>
 #include <QFileInfo>
@@ -94,7 +95,17 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
     qCDebug(novaCore) << "🆕 Generando proyecto nuevo independiente en:" << sessionDir;
 
     try {
+        // 🛡️ Nunca sobrescribir un proyecto que ya tiene datos del usuario
+        // (sesion guardada o audio importado): se rechaza en vez de borrar.
+        QString reason;
+        if (!NovaProjectPolicy::canCreateProjectIn(sessionDir, &reason)) {
+            qCCritical(novaCore) << "❌ No se puede crear el proyecto:" << reason;
+            return nullptr;
+        }
+
         if (QDir(sessionDir).exists()) {
+            // Restos de un proyecto nunca guardado: se limpia y se reutiliza.
+            qCDebug(novaCore) << "🧹 Limpiando carpeta residual (sin sesion guardada):" << sessionDir;
             QDir(sessionDir).removeRecursively();
         }
         QDir().mkpath(targetParentDir);
@@ -245,19 +256,40 @@ void NovaProjectManager::removeProjectFromRecent(const QString &path)
     qCDebug(novaCore) << "🗑️ Proyecto eliminado del historial de recientes:" << cleanTarget;
 }
 
-void NovaProjectManager::discardUnsavedProject(void *session)
+QString NovaProjectManager::discardableProjectPath(void *session)
 {
-    if (!session) return;
+    if (!session) return {};
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
     QString path = sanitizePath(QString::fromStdString(ardourSession->path()));
 #else
     QString path = "";
 #endif
+
+    if (path.isEmpty()) {
+        return {};
+    }
+
+    // 🛡️ Un proyecto guardado (o con audio importado) NUNCA se borra: se
+    // conserva en disco y sigue apareciendo en los recientes.
+    if (!NovaProjectPolicy::mayDeleteFolderOnDiscard(path)) {
+        qCDebug(novaCore) << "🛡️ Proyecto con datos guardados: se conserva intacto ->" << path;
+        return {};
+    }
+
+    return path;
+}
+
+void NovaProjectManager::deleteUnsavedProjectFolder(const QString &path)
+{
+    if (path.isEmpty()) {
+        return;
+    }
+
     removeProjectFromRecent(path);
 
-    if (!path.isEmpty() && QDir(path).exists()) {
-        qCDebug(novaCore) << "🗑️ Descartando y eliminando carpeta física de proyecto no guardado:" << path;
+    if (QDir(path).exists()) {
+        qCDebug(novaCore) << "🗑️ Eliminando carpeta de proyecto nunca guardado:" << path;
         QDir(path).removeRecursively();
     }
 }
