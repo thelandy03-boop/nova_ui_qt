@@ -24,12 +24,17 @@ void NovaSpikeLoader::cargar(const QString& path)
     m_cargado = false;
     m_hiloTrabajo = nullptr;
 
+    // Cada carga tiene su número: si el usuario pide otro fichero mientras
+    // este se está cargando, el resultado de este se descarta (así no se
+    // publica una onda que no es la del fichero pedido).
+    const quint64 generacion = ++m_generacion;
+
     // El cargador se lleva el trabajo con un puntero débil: si se destruye
     // mientras el trabajo está en marcha, el resultado se descarta (no se
     // avisa a un objeto que ya no existe).
     QPointer<NovaSpikeLoader> cargador(this);
 
-    QThreadPool::globalInstance()->start([cargador, path]() {
+    QThreadPool::globalInstance()->start([cargador, path, generacion]() {
         if (cargador.isNull()) {
             return;
         }
@@ -51,8 +56,8 @@ void NovaSpikeLoader::cargar(const QString& path)
                                         : error;
             QMetaObject::invokeMethod(
                 cargador,
-                [cargador, mensaje]() {
-                    if (cargador.isNull()) {
+                [cargador, mensaje, generacion]() {
+                    if (cargador.isNull() || cargador->m_generacion != generacion) {
                         return;
                     }
                     cargador->m_error = mensaje;
@@ -73,8 +78,8 @@ void NovaSpikeLoader::cargar(const QString& path)
         }
         QMetaObject::invokeMethod(
             cargador,
-            [cargador, audio, picos, hilo]() {
-                if (cargador.isNull()) {
+            [cargador, audio, picos, hilo, generacion]() {
+                if (cargador.isNull() || cargador->m_generacion != generacion) {
                     return;
                 }
                 cargador->m_audio = audio;

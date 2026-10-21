@@ -49,7 +49,6 @@ public:
 
     /** true si la última carga ha terminado bien. */
     bool cargado() const { return m_cargado; }
-
     /** El audio decodificado de la última carga (nulo si no se ha cargado). */
     const std::shared_ptr<NovaDecodedAudio>& audio() const { return m_audio; }
 
@@ -76,6 +75,15 @@ public:
      */
     QThread* hiloTrabajo() const { return m_hiloTrabajo; }
 
+    /**
+     * Número de carga en curso.
+     *
+     * Si el usuario pide otro fichero mientras el primero se está
+     * cargando, el resultado del primero se descarta (así no se publica una
+     * onda que no es la del fichero pedido).
+     */
+    quint64 generacion() const { return m_generacion; }
+
 signals:
     /** La carga ha terminado bien: el audio y los picos están disponibles. */
     void cargaTerminada();
@@ -98,4 +106,10 @@ private:
 
     /** El hilo en el que se hizo el trabajo de la última carga. */
     QThread* m_hiloTrabajo = nullptr;
+
+    /**
+     * Número de carga: cada `cargar()` incrementa este número, y el
+     * resultado de una carga que ya no es la última se descarta.
+     */
+    quint64 m_generacion = 0;
 };

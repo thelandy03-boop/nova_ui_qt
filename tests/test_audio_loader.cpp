@@ -170,6 +170,38 @@ int main(int argc, char** argv)
                     "un fichero que no existe tiene que fallar la carga con un mensaje legible");
     }
 
+    // ------------------------------------------------------------------
+    // 6. Si se pide otro fichero mientras el primero se está cargando, el
+    //    resultado del primero se descarta: el estado tiene que ser el del
+    //    último fichero pedido (no una onda que no es la del fichero).
+    // ------------------------------------------------------------------
+    {
+        NovaSpikeLoader cargador;
+        QEventLoop bucle;
+        int terminadas = 0;
+
+        QObject::connect(&cargador, &NovaSpikeLoader::cargaTerminada, &bucle, [&]() {
+            ++terminadas;
+            bucle.quit();
+        });
+        QObject::connect(&cargador, &NovaSpikeLoader::cargaFallida, &bucle,
+                         [&]() { bucle.quit(); });
+        QTimer::singleShot(20000, &bucle, &QEventLoop::quit);
+
+        // El primero se pide y, sin esperar a que termine, el segundo: el
+        // resultado del primero se tiene que descartar.
+        cargador.cargar(rutaFixture("tono-1s-44100-mono.wav"));
+        cargador.cargar(rutaFixture("tono-1s-44100-estereo.mp3"));
+        bucle.exec();
+
+        const std::shared_ptr<NovaDecodedAudio>& audio = cargador.audio();
+        CHECK_NAMED("el_resultado_de_una_carga_antigua_se_descarta",
+                    terminadas == 1 && cargador.cargado() && audio
+                        && audio->channels == 2,
+                    "al pedir un segundo fichero, el resultado del primero se tiene que descartar: "
+                    "solo se publica el del último fichero pedido");
+    }
+
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
