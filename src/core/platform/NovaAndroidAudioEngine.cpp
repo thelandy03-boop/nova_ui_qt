@@ -341,8 +341,8 @@ void NovaAndroidAudioEngine::crearBuffersSalida(int canales) {
     // salida PARADO (no arrancado). El callback de salida usa un puntero
     // suelto a un ring buffer que se escapa del mutex: si se rehacen los
     // buffers con el stream en marcha, ese puntero podría quedar colgando
-    // (use-after-free). Por eso loadFile() cierra el stream antes de llamar
-    // aquí, y lo arranca después.
+    // (use-after-free). Por eso loadDecoded() cierra el stream antes de
+    // llamar a esta función, y lo arranca después.
     const size_t bufferCapacity = static_cast<size_t>(m_framesPerBurst) * 4; // 4 bursts worth
 
     std::lock_guard<std::mutex> lock(m_bufferMutex);
