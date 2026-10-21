@@ -7,7 +7,9 @@
 #include <QString>
 #include <QThread>
 
+#include <atomic>
 #include <memory>
+#include <mutex>
 
 /**
  * Carga el fichero de audio del spike: lo decodifica y le calcula los picos
@@ -92,6 +94,32 @@ signals:
     void cargaFallida(const QString& error);
 
 private:
+    /**
+     * Estado de la entrega del resultado, compartido con el hilo de
+     * trabajo.
+     *
+     * El hilo de trabajo **no puede** mirar un puntero débil de este
+     * objeto (un `QPointer`): el cargador se puede destruir en el hilo de
+     * la interfaz mientras el trabajo está en marcha, y leer ese puntero
+     * desde otro hilo es una carrera que puede acabar en un acceso a
+     * memoria ya liberada.
+     *
+     * En su lugar, el trabajo comparte este estado (que vive en un puntero
+     * compartido, así que sobrevive al cargador) y consulta `vivo` **bajo
+     * el candado** justo antes de entregar el resultado. El destructor
+     * marca `vivo = false` bajo ese mismo candado: así, o el trabajo
+     * entrega el resultado mientras el cargador sigue vivo, o no entrega
+     * nada.
+     *
+     * Invariante: el estado compartido **solo** se mira y se toca bajo su
+     * candado (el hilo de trabajo y el destructor son los dos que lo
+     * usan).
+     */
+    struct EstadoEntrega {
+        std::mutex mutex;
+        std::atomic<bool> vivo{true};
+    };
+
     /** El audio de la última carga (se mueve al motor, sin copiar). */
     std::shared_ptr<NovaDecodedAudio> m_audio;
 
@@ -112,4 +140,12 @@ private:
      * resultado de una carga que ya no es la última se descarta.
      */
     quint64 m_generacion = 0;
+
+    /**
+     * Estado de la entrega, compartido con los hilos de trabajo.
+     *
+     * Vive en un puntero compartido: los hilos de trabajo lo tienen
+     * mientras trabajan, aunque este cargador se destruya.
+     */
+    std::shared_ptr<EstadoEntrega> m_estado;
 };

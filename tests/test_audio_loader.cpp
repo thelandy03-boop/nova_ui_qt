@@ -11,10 +11,12 @@
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <utility>
 
 // Ruta de los fixtures; la define CMake al compilar este test.
@@ -200,6 +202,67 @@ int main(int argc, char** argv)
                         && audio->channels == 2,
                     "al pedir un segundo fichero, el resultado del primero se tiene que descartar: "
                     "solo se publica el del último fichero pedido");
+    }
+
+    // ------------------------------------------------------------------
+    // 7. Destruir el cargador mientras la carga está en marcha: el
+    //    resultado se descarta y no puede haber acceso a memoria liberada.
+    //
+    //    El cargador se destruye en el hilo de la interfaz mientras el
+    //    hilo de trabajo sigue decodificando: el trabajo no puede mirar
+    //    el puntero del cargador (si lo mirara, leería memoria ya
+    //    liberada). Con ASan, un acceso así se vería como un
+    //    "heap-use-after-free".
+    //
+    //    El cargador se destruye en momentos distintos a propósito: unas
+    //    veces nada más empezar (el hilo de trabajo todavía no ha tocado
+    //    el puntero) y otras cuando ya está decodificando (el momento
+    //    peligroso: el trabajo está a punto de entregar el resultado).
+    // ------------------------------------------------------------------
+    {
+        for (int intento = 0; intento < 40; ++intento) {
+            std::unique_ptr<NovaSpikeLoader> cargador =
+                std::make_unique<NovaSpikeLoader>();
+            cargador->cargar(rutaFixture("tono-1s-44100-mono.wav"));
+            if (intento % 2 == 1) {
+                // Se deja que el hilo de trabajo empiece a decodificar
+                // antes de destruir el cargador.
+                QThread::msleep(static_cast<unsigned long>(intento % 5));
+            }
+            // Se destruye el cargador con la carga en marcha: el hilo de
+            // trabajo sigue, y su resultado ya no tiene a quién entregar.
+            cargador.reset();
+        }
+        // Los hilos de trabajo tienen que terminar (el resultado se
+        // descarta: el cargador ya no existe). waitForDone() devuelve
+        // false si se agota el tiempo: eso significaría que el candado
+        // del estado de entrega se ha quedado pillado.
+        const bool terminado = QThreadPool::globalInstance()->waitForDone(30000);
+
+        CHECK_NAMED("destruir_el_cargador_en_marcha_no_toca_memoria_liberada",
+                    terminado,
+                    "destruir el cargador mientras la carga está en marcha no puede dar acceso a "
+                    "memoria liberada (el hilo de trabajo no toca el puntero del cargador) ni "
+                    "dejar pillado el candado del estado de entrega");
+    }
+
+    // ------------------------------------------------------------------
+    // 8. Después de destruir cargadores con la carga en marcha, un
+    //    cargador nuevo tiene que funcionar igual: el estado de entrega
+    //    es de cada cargador (uno destruido no puede fastidiar a los
+    //    siguientes).
+    // ------------------------------------------------------------------
+    {
+        NovaSpikeLoader cargador;
+        bool fallido = false;
+        QString error;
+        const bool terminado = esperarCarga(cargador, fallido, error);
+
+        CHECK_NAMED("el_cargador_sigue_funcionando_despues_de_destruir_otros",
+                    terminado && !fallido && cargador.cargado()
+                        && !cargador.picos().peaks.empty(),
+                    "un cargador nuevo tiene que cargar con normalidad después de que se hayan "
+                    "destruido otros con la carga en marcha");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

@@ -97,6 +97,16 @@ public:
     bool isRecording() const { return m_isRecording.load(); }
     bool isPlaying() const { return m_isPlaying.load(); }
 
+    /**
+     * true si el motor tiene un fichero cargado (el del reproductor).
+     *
+     * No es lo mismo que `isPlaying()`: el transporte está en marcha desde
+     * que el motor arranca, aunque no haya ningún fichero cargado. Para
+     * saber si la forma de onda que hay en pantalla describe algo real
+     * (y no se puede borrar) hace falta esta pregunta: ¿hay fichero?
+     */
+    bool tieneFicheroCargado() const;
+
     // Ring buffer access for tracks
     class RingBuffer {
     public:

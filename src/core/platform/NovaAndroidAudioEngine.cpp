@@ -518,6 +518,16 @@ void NovaAndroidAudioEngine::setPlaying(bool enabled) {
     Q_EMIT playbackStateChanged(enabled);
 }
 
+bool NovaAndroidAudioEngine::tieneFicheroCargado() const {
+#if defined(Q_OS_ANDROID)
+    // El reproductor guarda los canales del fichero cargado (0 si no hay
+    // ninguno): eso dice si hay algo que pueda seguir sonando.
+    return m_player.channels() > 0;
+#else
+    return false;
+#endif
+}
+
 bool NovaAndroidAudioEngine::loadDecoded(NovaDecodedAudio&& audio, QString* error) {
 #if defined(Q_OS_ANDROID)
     // El reproductor no es seguro entre hilos (el llamante lo usa desde el

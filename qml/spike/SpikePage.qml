@@ -64,6 +64,20 @@ Window {
                 sourceComponent: componenteOnda
             }
 
+            // La carga es asíncrona: los picos no existen en el momento de
+            // pulsar "Reproducir", sino un rato después (el fichero se
+            // decodifica en un hilo aparte). El controlador avisa con
+            // versionPicosChanged() cuando publica la forma de onda, y aquí
+            // se recrea el item para que el renderizador la lea (si no, la
+            // onda se quedaría en blanco hasta el siguiente clic).
+            Connections {
+                target: spikeController
+                function onVersionPicosChanged() {
+                    cargadorOnda.active = false
+                    cargadorOnda.active = true
+                }
+            }
+
             Component {
                 id: componenteOnda
                 NovaWaveformItem {
@@ -112,11 +126,11 @@ Window {
             Button {
                 text: "Reproducir"
                 onClicked: {
+                    // El item de la onda NO se recrea aquí: los picos aún no
+                    // existen (la carga es asíncrona). Se recrea cuando el
+                    // controlador avisa de que los ha publicado
+                    // (onVersionPicosChanged).
                     spikeController.loadAndPlay(campoRuta.text)
-                    // El item de la onda se recrea para que el renderizador
-                    // lea los picos del fichero nuevo.
-                    cargadorOnda.active = false
-                    cargadorOnda.active = true
                 }
             }
 

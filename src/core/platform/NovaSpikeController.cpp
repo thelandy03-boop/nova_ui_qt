@@ -109,6 +109,9 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
         return false;
     }
 
+    // Una carga nueva: el "Parar" anterior (si lo hubo) ya no aplica.
+    m_paradaPedida = false;
+
     // El trabajo pesado (decodificar el fichero y recorrer todas sus
     // muestras para calcular los picos) se hace en un hilo aparte: en el
     // hilo de la interfaz la app se congelaría (el spec §8.4 lo exige:
@@ -124,27 +127,42 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
 
 void NovaSpikeController::alCargarTerminado()
 {
-    // 1. Los picos ya están calculados: se publican y el renderizador de la
-    //    forma de onda los coge (los pide por el id de región "spike").
-    NovaWaveformCache::setPeaks(QString::fromLatin1(kRegionId), m_cargador->picos());
+    // 0. Si el usuario ha pulsado "Parar" mientras el fichero se
+    //    decodificaba, el resultado se descarta: la carga es asíncrona, así
+    //    que sin esta comprobación la reproducción arrancaría igualmente
+    //    al terminar la carga y el "Parar" no habría servido de nada.
+    if (m_paradaPedida) {
+        // El audio decodificado se suelta (memoria): no se va a poner en
+        // marcha.
+        m_cargador->tomarAudio();
+        actualizarEstado(QStringLiteral("parado"));
+        return;
+    }
+
+    // 1. Los picos ya están calculados (en el hilo de trabajo). Se
+    //    publican más abajo, cuando ya está claro que el fichero se va a
+    //    poner en marcha: publicar la onda y luego fallar dejaría la
+    //    pantalla mintiendo.
+    const PeakData& picos = m_cargador->picos();
 
     // 2. El audio, ya decodificado. Se mueve al motor: las muestras no se
     //    copian (un fichero estéreo de cinco minutos son unos 115 MB).
     NovaDecodedAudio audio = m_cargador->tomarAudio();
     if (audio.channels <= 0 || audio.sampleRate <= 0) {
-        limpiarOndaPublicada();
+        limpiarOndaSiNoSuena();
         actualizarEstado(QStringLiteral("no se ha podido decodificar el fichero"));
         return;
     }
 
     // 3. Duración del fichero, para saber dónde acaba el cabezal.
-    actualizarDuracion(static_cast<double>(audio.frameCount())
-                        / static_cast<double>(audio.sampleRate));
+    const double duracion = static_cast<double>(audio.frameCount())
+                            / static_cast<double>(audio.sampleRate);
 
-    // 4. Motor de audio: si no estaba listo se reintenta (a lo mejor ya se ha
-    //    concedido el permiso). Sin motor no hay sonido, pero la onda que se
-    //    acaba de publicar es real y se puede ver.
+    // 4. Motor de audio: si no estaba listo se reintenta (a lo mejor ya se
+    //    ha concedido el permiso). Sin motor no hay sonido, pero la onda
+    //    que se acaba de calcular es real y se puede ver.
     if (!prepararMotor()) {
+        publicarOnda(duracion);
         actualizarEstado(QStringLiteral("la onda está lista, pero el motor de audio no está listo: no suena"));
         return;
     }
@@ -153,39 +171,94 @@ void NovaSpikeController::alCargarTerminado()
     //    decodifica: recibe el audio ya decodificado.
     QString error;
     if (!m_engine->loadDecoded(std::move(audio), &error)) {
-        // El audio no se ha podido cargar: la onda y la duración que
-        // acabamos de publicar describen un fichero que no está en marcha,
-        // así que se quitan (si no, el cabezal se mediría contra un
-        // fichero que no suena).
-        limpiarOndaPublicada();
+        // El audio no se ha podido cargar: la onda que se acaba de
+        // calcular describe un fichero que no está en marcha, así que no
+        // se publica. Lo que hubiera en el motor se deja intacto (su onda
+        // y su duración no se tocan).
+        limpiarOndaSiNoSuena();
         actualizarEstado(error.isEmpty()
                              ? QStringLiteral("no se ha podido cargar el fichero en el motor de audio")
                              : error);
         return;
     }
+
+    // 6. Publicar la onda (los picos y la duración) y avisar: el QML
+    //    repinta la forma de onda con lo recién publicado (el renderizador
+    //    solo lee la caché cuando se crea, así que sin este aviso la onda
+    //    no aparecería hasta el siguiente clic).
+    publicarOnda(duracion);
+
+    // 7. Poner en marcha.
     m_engine->setPlaying(true);
 
-    qCDebug(novaCore) << "🔊 Spike: reproduciendo" << m_cargador->picos().peaks.size()
+    qCDebug(novaCore) << "🔊 Spike: reproduciendo" << picos.peaks.size()
                        << "picos";
     actualizarEstado(QStringLiteral("sonando"));
 }
 
 void NovaSpikeController::alCargarFallido(const QString& error)
 {
-    limpiarOndaPublicada();
+    // Un fallo NO destruye lo que está sonando: si el motor tiene un
+    // fichero cargado, su forma de onda y su duración se quedan (si no,
+    // el cabezal desaparecería mientras el audio sigue sonando y la
+    // posición avanzaría contra una duración de cero).
+    limpiarOndaSiNoSuena();
     actualizarEstado(error.isEmpty()
                          ? QStringLiteral("no se ha podido cargar el fichero")
                          : error);
+}
+
+void NovaSpikeController::publicarOnda(double duracion)
+{
+    // Los picos van a la caché con el id "spike": es el mismo que pide la
+    // página QML (NovaWaveformItem.regionId).
+    NovaWaveformCache::setPeaks(QString::fromLatin1(kRegionId), m_cargador->picos());
+    actualizarDuracion(duracion);
+
+    // La versión cambia para que el QML repinte la forma de onda: el
+    // renderizador solo vuelve a leer la caché cuando se crea.
+    ++m_versionPicos;
+    Q_EMIT versionPicosChanged();
 }
 
 void NovaSpikeController::limpiarOndaPublicada()
 {
     NovaWaveformCache::removePeaks(QString::fromLatin1(kRegionId));
     actualizarDuracion(0.0);
+
+    // La versión también cambia al borrar: el QML tiene que repintar la
+    // forma de onda (que ahora está vacía). Si no, el renderizador
+    // seguiría dibujando la onda anterior (la caché ya no la tiene, pero
+    // el renderizador solo la relee cuando se crea).
+    ++m_versionPicos;
+    Q_EMIT versionPicosChanged();
+}
+
+void NovaSpikeController::limpiarOndaSiNoSuena()
+{
+    if (hayFicheroEnElMotor()) {
+        return;
+    }
+    limpiarOndaPublicada();
+}
+
+bool NovaSpikeController::hayFicheroEnElMotor() const
+{
+    // Lo que decide es si el motor tiene un fichero cargado (el que se
+    // está reproduciendo o el último que se cargó), no si el transporte
+    // está en marcha: el transporte arranca con el motor, aunque no haya
+    // ningún fichero cargado.
+    return m_engine && m_engine->tieneFicheroCargado();
 }
 
 void NovaSpikeController::stop()
 {
+    // La carga es asíncrona: si el usuario pulsa "Parar" mientras el
+    // fichero se está decodificando, la carga en marcha se tiene que
+    // descartar al terminar (si no, la reproducción arrancaría igualmente
+    // y el "Parar" no habría servido de nada).
+    m_paradaPedida = true;
+
     if (m_engine) {
         m_engine->setPlaying(false);
     }
