@@ -11,12 +11,19 @@
 #include <thread>
 #include <QTimer>
 
+// El audio ya decodificado que el motor reproduce (lo recibe movido: el
+// fichero se decodifica una sola vez y el PCM no se copia).
+#include "audio/NovaDecodedAudio.h"
+
 #if defined(Q_OS_ANDROID)
 #include <oboe/Oboe.h>
 #include <android/native_activity.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 #include <android/log.h>
+
+// El reproductor del fichero cargado: lo sirve el callback de Oboe.
+#include "audio/NovaAudioPlayer.h"
 
 #define LOG_TAG "NovaAndroidAudio"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -69,11 +76,36 @@ public:
     bool openOutputStream(int channelCount = 2);
     void closeStreams();
 
+    // Reproducción de un fichero (spike): deja el audio listo para que el
+    // callback de Oboe lo sirva por la salida.
+    //
+    // El motor NO decodifica: recibe el audio ya decodificado (así el
+    // fichero se decodifica una sola vez y el PCM no se copia).
+    //
+    // El stream de salida se abre con los canales del fichero: el
+    // reproductor escribe muestras intercaladas con esos canales, y un
+    // fichero mono en un stream estéreo sonaría mal.
+    //
+    // @param audio Audio ya decodificado (se mueve: el motor es su dueño).
+    // @param error Mensaje con el motivo del fallo (puede ser nullptr).
+    // @return true si el audio se ha cargado y se puede reproducir.
+    bool loadDecoded(NovaDecodedAudio&& audio, QString* error);
+
     // Recording/Playback control
     void setRecording(bool enabled);
     void setPlaying(bool enabled);
     bool isRecording() const { return m_isRecording.load(); }
     bool isPlaying() const { return m_isPlaying.load(); }
+
+    /**
+     * true si el motor tiene un fichero cargado (el del reproductor).
+     *
+     * No es lo mismo que `isPlaying()`: el transporte está en marcha desde
+     * que el motor arranca, aunque no haya ningún fichero cargado. Para
+     * saber si la forma de onda que hay en pantalla describe algo real
+     * (y no se puede borrar) hace falta esta pregunta: ¿hay fichero?
+     */
+    bool tieneFicheroCargado() const;
 
     // Ring buffer access for tracks
     class RingBuffer {
@@ -113,9 +145,29 @@ public:
 
     // Transport info
     int64_t currentFrame() const { return m_currentFrame.load(); }
-    double currentTimeSeconds() const { return static_cast<double>(m_currentFrame.load()) / m_sampleRate; }
+    double currentTimeSeconds() const
+    {
+        return static_cast<double>(m_currentFrame.load())
+             / static_cast<double>(tasaSalidaReal());
+    }
     void setSampleRate(int rate) { m_sampleRate = rate; }
+
+    /** Tasa pedida al dispositivo (48.000 Hz en el móvil). */
     int sampleRate() const { return m_sampleRate; }
+
+    /**
+     * Tasa real del stream de salida: la que el dispositivo ha dado de
+     * verdad, que puede no ser la que se le ha pedido (44,1 kHz es lo
+     * habitual en muchos móviles).
+     *
+     * Es la que gobierna el reproductor (que remuestrea a esa tasa) y la
+     * posición del cabezal.
+     */
+    int tasaSalidaReal() const
+    {
+        const int real = m_tasaSalidaReal.load();
+        return real > 0 ? real : m_sampleRate;
+    }
 
 signals:
     void audioInitialized(bool success);
@@ -149,6 +201,19 @@ private:
     std::shared_ptr<oboe::AudioStream> m_outputStream;
     std::unique_ptr<InputStreamCallback> m_inputCallback;
     std::unique_ptr<OutputStreamCallback> m_outputCallback;
+
+    // Reproductor del fichero cargado: el callback de salida le pide los
+    // fotogramas y los escribe en el buffer del driver.
+    NovaAudioPlayer m_player;
+
+    // Canales con los que se abrió el stream de salida (los del fichero
+    // cargado, o 2 por defecto si todavía no hay ninguno).
+    int m_canalSalida = 2;
+
+    // Canales del fichero cargado (0 si no hay fichero). Lo lee el callback
+    // de salida: es atómico porque lo cambia el hilo de la interfaz y lo
+    // lee el hilo de audio.
+    std::atomic<int> m_canalesFichero{0};
 #endif
 
     ARDOUR::Session* m_session = nullptr;
@@ -158,6 +223,12 @@ private:
     std::atomic<bool> m_inputStreamError{false};
     std::atomic<bool> m_outputStreamError{false};
     int m_sampleRate = 48000;
+
+    // Tasa real del stream de salida (la que dio el dispositivo). 0 si
+    // todavía no se ha abierto ningún stream. La lee el hilo de la
+    // interfaz; es atómica por si el motor se consulta desde otro hilo.
+    std::atomic<int> m_tasaSalidaReal{0};
+
     int m_framesPerBurst = 0;
 
     // Per-track ring buffers
@@ -178,6 +249,37 @@ private:
         const float* samples,
         size_t frames,
         int channels);
+
+    // Crea los ring buffers de entrada con los canales del stream de
+    // entrada (los usa el grabador).
+    void crearBuffersEntrada(int canales);
+
+    // Crea los ring buffers de salida con los canales del stream: si no
+    // coinciden, al leer un bloque se escribirían más muestras de las que
+    // caben en el buffer del driver.
+    void crearBuffersSalida(int canales);
+
+    // Abre (o reabre) el stream de salida con el número de canales dado.
+    bool abrirStreamSalida(int canales, QString* error);
+
+    // Vuelve a abrir el stream de salida con los canales que tenía y lo
+    // deja como estaba (arrancado o parado). Se usa cuando una operación
+    // falla a mitad y el motor tiene que quedarse como estaba.
+    //
+    // @param canales        Canales con los que se reabre el stream.
+    // @param estabaEnMarcha true si el stream estaba arrancado antes.
+    // @param error          Mensaje si no se ha podido reabrir (puede ser
+    //                       nullptr).
+    // @return true si el stream se ha reabierto; false si se ha quedado
+    //         cerrado (el motor se queda sin salida de audio).
+    bool restaurarStreamSalida(int canales, bool estabaEnMarcha, QString* error);
+
+    // Crea los callbacks de Oboe si no existen (shutdown() los libera, y un
+    // initialize() posterior tiene que volver a crearlos).
+    void crearCallbacks();
+
+    // Número máximo de tracks con ring buffer propio.
+    static constexpr int kMaxTracks = 32;
 };
 
 #endif // NOVAAUDIOENGINE_ANDROID_H

@@ -26,8 +26,16 @@ if(ANDROID)
     find_library(ANDROID_SYS_LIB android)
 endif()
 
-get_filename_component(ARDOUR_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" ABSOLUTE)
-get_filename_component(ARDOUR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+# Rutas del motor Ardour. Por defecto, el repositorio padre del checkout
+# actual; se pueden sobreescribir con -DARDOUR_BUILD_DIR=... y
+# -DARDOUR_SRC_DIR=... para compilar la app fuera de ese arbol (worktrees,
+# builds alternos). Sin esos flags el comportamiento es el de siempre.
+if(NOT ARDOUR_BUILD_DIR)
+    get_filename_component(ARDOUR_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build" ABSOLUTE)
+endif()
+if(NOT ARDOUR_SRC_DIR)
+    get_filename_component(ARDOUR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+endif()
 
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
@@ -117,6 +125,22 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/views/NovaWaveformRenderer.cpp
     src/views/NovaWaveformRenderer.h
     src/core/NovaSimdPeaks.cpp
+    src/audio/NovaDecodedAudio.h
+    src/audio/NovaAudioDecoder.h
+    src/audio/NovaAudioDecoder.cpp
+    src/audio/NovaAudioPeaks.h
+    src/audio/NovaAudioPeaks.cpp
+    src/audio/NovaWavReader.h
+    src/audio/NovaWavReader.cpp
+    src/audio/NovaMp3Decoder.h
+    src/audio/NovaMp3Decoder.cpp
+    src/audio/NovaAudioPlayer.h
+    src/audio/NovaAudioPlayer.cpp
+    src/audio/NovaResampler.h
+    src/audio/NovaResampler.cpp
+    src/audio/NovaSpikeLoader.h
+    src/audio/NovaSpikeLoader.cpp
+    third_party/minimp3/minimp3.h
 )
 
 # Common Qt libraries for all platforms
@@ -124,6 +148,13 @@ target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Co
 
 if(ANDROID)
     set_property(TARGET nova_ui_qt PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+
+    # El controlador del spike (motor de Oboe + forma de onda) solo se
+    # compila en Android: en el escritorio la app es la de siempre.
+    target_sources(nova_ui_qt PRIVATE
+        src/core/platform/NovaSpikeController.h
+        src/core/platform/NovaSpikeController.cpp
+    )
 
     target_link_libraries(nova_ui_qt PRIVATE oboe ${AAUDIO} ${OPENSLES} ${LOGCAT} ${ANDROID_SYS_LIB})
 
@@ -256,11 +287,86 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_simd_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME simd_peaks COMMAND test_simd_peaks)
 
+    # El decodificador de audio (WAV propio + MP3 con minimp3). Usa QString,
+    # por eso enlaza Qt6::Core.
+    add_executable(test_audio_decoder
+        tests/test_audio_decoder.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+    )
+    target_link_libraries(test_audio_decoder PRIVATE Qt6::Core)
+    target_include_directories(test_audio_decoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_decoder PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_decoder COMMAND test_audio_decoder)
+
+    # El reproductor con remuestreo. Usa QString (el error de load()) y el
+    # decodificador (el test carga el WAV del fixture), por eso enlaza
+    # Qt6::Core y compila tambien las fuentes del decodificador.
+    add_executable(test_audio_player
+        tests/test_audio_player.cpp
+        src/audio/NovaAudioPlayer.cpp
+        src/audio/NovaResampler.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+    )
+    target_link_libraries(test_audio_player PRIVATE Qt6::Core)
+    target_include_directories(test_audio_player PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_player PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_player COMMAND test_audio_player)
+
+    # Los picos de la forma de onda, calculados del PCM ya decodificado. El
+    # test carga el WAV del fixture, por eso necesita el decodificador y
+    # Qt6::Core (el decodificador trabaja con QString).
+    add_executable(test_audio_peaks
+        tests/test_audio_peaks.cpp
+        src/audio/NovaAudioPeaks.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+        src/core/NovaSimdPeaks.cpp
+    )
+    target_link_libraries(test_audio_peaks PRIVATE Qt6::Core)
+    target_include_directories(test_audio_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_peaks PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_peaks COMMAND test_audio_peaks)
+
+    # El cargador del spike: decodifica el fichero y le calcula los picos en
+    # un hilo aparte (nunca en el hilo de la interfaz) y el fichero se
+    # decodifica una sola vez.
+    add_executable(test_audio_loader
+        tests/test_audio_loader.cpp
+        src/audio/NovaSpikeLoader.cpp
+        src/audio/NovaAudioPeaks.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaAudioPlayer.cpp
+        src/audio/NovaResampler.cpp
+        src/core/NovaSimdPeaks.cpp
+    )
+    target_link_libraries(test_audio_loader PRIVATE Qt6::Core)
+    target_include_directories(test_audio_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_loader PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_loader COMMAND test_audio_loader)
+
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME qml_contract
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_qml_contract.py)
+
+        # El contrato del script de build de Android: debe compilar para el ABI
+        # que se le pida (arm64-v8a para telefonos, x86_64 para Waydroid).
+        add_test(NAME android_build_script
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_android_build_script.py)
+
+        # El contrato del camino del spike de Android (el motor, el controlador
+        # y el cargador solo se compilan en Android: sus behaviours criticos se
+        # comprueban leyendo el codigo).
+        add_test(NAME spike_contract
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_spike_contract.py)
     endif()
 endif()
