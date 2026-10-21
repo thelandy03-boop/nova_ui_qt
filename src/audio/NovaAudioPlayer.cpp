@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <utility>
 
 bool NovaAudioPlayer::load(const NovaDecodedAudio& audio, QString* error)
 {
@@ -18,10 +19,40 @@ bool NovaAudioPlayer::load(const NovaDecodedAudio& audio, QString* error)
         return false;
     }
 
+    // El reproductor guarda su propia copia del audio, así que el llamante
+    // puede destruir el suyo.
     m_audio = audio;
-    m_canales = audio.channels;
-    m_tasaEntrada = audio.sampleRate;
-    m_fotogramasEntrada = audio.frameCount();
+    finalizarCarga();
+
+    return true;
+}
+
+bool NovaAudioPlayer::load(NovaDecodedAudio&& audio, QString* error)
+{
+    if (error) {
+        error->clear();
+    }
+
+    if (audio.channels <= 0 || audio.sampleRate <= 0) {
+        if (error) {
+            *error = QStringLiteral("el audio no tiene canales ni tasa de muestreo válidos");
+        }
+        return false;
+    }
+
+    // El audio se mueve: las muestras no se copian (el PCM de un fichero
+    // estéreo de cinco minutos son unos 115 MB).
+    m_audio = std::move(audio);
+    finalizarCarga();
+
+    return true;
+}
+
+void NovaAudioPlayer::finalizarCarga()
+{
+    m_canales = m_audio.channels;
+    m_tasaEntrada = m_audio.sampleRate;
+    m_fotogramasEntrada = m_audio.frameCount();
 
     m_fotogramasAlimentados = 0;
     m_fotogramasPosicion = 0;
@@ -30,8 +61,6 @@ bool NovaAudioPlayer::load(const NovaDecodedAudio& audio, QString* error)
 
     m_remuestreador.setRates(m_tasaEntrada, m_tasaSalida, m_canales);
     recalcularDuracion();
-
-    return true;
 }
 
 void NovaAudioPlayer::setOutputSampleRate(int sampleRate)

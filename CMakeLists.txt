@@ -138,6 +138,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaAudioPlayer.cpp
     src/audio/NovaResampler.h
     src/audio/NovaResampler.cpp
+    src/audio/NovaSpikeLoader.h
+    src/audio/NovaSpikeLoader.cpp
     third_party/minimp3/minimp3.h
 )
 
@@ -329,6 +331,25 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_audio_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(test_audio_peaks PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME audio_peaks COMMAND test_audio_peaks)
+
+    # El cargador del spike: decodifica el fichero y le calcula los picos en
+    # un hilo aparte (nunca en el hilo de la interfaz) y el fichero se
+    # decodifica una sola vez.
+    add_executable(test_audio_loader
+        tests/test_audio_loader.cpp
+        src/audio/NovaSpikeLoader.cpp
+        src/audio/NovaAudioPeaks.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaAudioPlayer.cpp
+        src/audio/NovaResampler.cpp
+        src/core/NovaSimdPeaks.cpp
+    )
+    target_link_libraries(test_audio_loader PRIVATE Qt6::Core)
+    target_include_directories(test_audio_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(test_audio_loader PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+    add_test(NAME audio_loader COMMAND test_audio_loader)
 
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).

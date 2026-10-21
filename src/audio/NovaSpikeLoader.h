@@ -1,0 +1,101 @@
+#pragma once
+
+#include "audio/NovaDecodedAudio.h"
+#include "core/NovaPeakData.h"
+
+#include <QObject>
+#include <QString>
+#include <QThread>
+
+#include <memory>
+
+/**
+ * Carga el fichero de audio del spike: lo decodifica y le calcula los picos
+ * **en un hilo aparte**, nunca en el hilo de la interfaz.
+ *
+ * Decodificar un fichero y recorrer todas sus muestras para sacar los picos
+ * son operaciones lentas (un fichero de cinco minutos son millones de
+ * muestras): si se hicieran en el hilo de la interfaz, la app se congelaría
+ * mientras se carga. El spec lo dice explícitamente (§8.4): *"Se calcula en
+ * un hilo aparte, nunca en el hilo GUI"*.
+ *
+ * El fichero se decodifica **una sola vez**: el audio que sale de aquí es el
+ * mismo que después se pasa al motor de audio, movido (sin copiar el PCM).
+ */
+class NovaSpikeLoader : public QObject
+{
+    Q_OBJECT
+
+public:
+    /** Puntos del nivel de detalle de la forma de onda (zoom máximo). */
+    static constexpr int kPuntosDetalle = 2048;
+
+    /** Puntos de la vista general de la forma de onda (zoom out). */
+    static constexpr int kPuntosVistaGeneral = 256;
+
+    explicit NovaSpikeLoader(QObject* parent = nullptr);
+    ~NovaSpikeLoader() override;
+
+    /**
+     * Pide cargar un fichero.
+     *
+     * El trabajo (decodificar y calcular los picos) se hace en un hilo de
+     * trabajo; al terminar se emite `cargaTerminada()` o `cargaFallida()`.
+     * Esta función no bloquea: vuelve enseguida.
+     *
+     * @param path Ruta del fichero a cargar.
+     */
+    void cargar(const QString& path);
+
+    /** true si la última carga ha terminado bien. */
+    bool cargado() const { return m_cargado; }
+
+    /** El audio decodificado de la última carga (nulo si no se ha cargado). */
+    const std::shared_ptr<NovaDecodedAudio>& audio() const { return m_audio; }
+
+    /**
+     * El audio decodificado, para pasarlo al motor de audio.
+     *
+     * El audio se **mueve** (las muestras no se copian: el PCM de un
+     * fichero estéreo de cinco minutos son unos 115 MB) y el cargador se
+     * queda sin él: el motor de audio es su nuevo dueño.
+     */
+    NovaDecodedAudio tomarAudio();
+
+    /** Los picos de la última carga. */
+    const PeakData& picos() const { return m_picos; }
+
+    /** El motivo del fallo de la última carga (vacío si no ha fallado). */
+    QString error() const { return m_error; }
+
+    /**
+     * El hilo en el que se ha hecho el trabajo de la última carga.
+     *
+     * Sirve para comprobar que el trabajo pesado NO se hace en el hilo de la
+     * interfaz (ver `tests/test_audio_loader.cpp`).
+     */
+    QThread* hiloTrabajo() const { return m_hiloTrabajo; }
+
+signals:
+    /** La carga ha terminado bien: el audio y los picos están disponibles. */
+    void cargaTerminada();
+
+    /** La carga ha fallado: `error()` dice por qué. */
+    void cargaFallida(const QString& error);
+
+private:
+    /** El audio de la última carga (se mueve al motor, sin copiar). */
+    std::shared_ptr<NovaDecodedAudio> m_audio;
+
+    /** Los picos de la última carga. */
+    PeakData m_picos;
+
+    /** El motivo del fallo de la última carga. */
+    QString m_error;
+
+    /** true si la última carga ha terminado bien. */
+    bool m_cargado = false;
+
+    /** El hilo en el que se hizo el trabajo de la última carga. */
+    QThread* m_hiloTrabajo = nullptr;
+};

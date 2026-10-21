@@ -11,6 +11,10 @@
 #include <thread>
 #include <QTimer>
 
+// El audio ya decodificado que el motor reproduce (lo recibe movido: el
+// fichero se decodifica una sola vez y el PCM no se copia).
+#include "audio/NovaDecodedAudio.h"
+
 #if defined(Q_OS_ANDROID)
 #include <oboe/Oboe.h>
 #include <android/native_activity.h>
@@ -72,17 +76,20 @@ public:
     bool openOutputStream(int channelCount = 2);
     void closeStreams();
 
-    // Reproducción de un fichero (spike): decodifica el audio y lo deja
-    // listo para que el callback de Oboe lo sirva por la salida.
+    // Reproducción de un fichero (spike): deja el audio listo para que el
+    // callback de Oboe lo sirva por la salida.
+    //
+    // El motor NO decodifica: recibe el audio ya decodificado (así el
+    // fichero se decodifica una sola vez y el PCM no se copia).
     //
     // El stream de salida se abre con los canales del fichero: el
     // reproductor escribe muestras intercaladas con esos canales, y un
     // fichero mono en un stream estéreo sonaría mal.
     //
-    // @param path  Ruta del fichero a reproducir.
+    // @param audio Audio ya decodificado (se mueve: el motor es su dueño).
     // @param error Mensaje con el motivo del fallo (puede ser nullptr).
-    // @return true si el fichero se ha cargado y se puede reproducir.
-    bool loadFile(const QString& path, QString* error);
+    // @return true si el audio se ha cargado y se puede reproducir.
+    bool loadDecoded(NovaDecodedAudio&& audio, QString* error);
 
     // Recording/Playback control
     void setRecording(bool enabled);

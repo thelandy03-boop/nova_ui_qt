@@ -16,7 +16,6 @@
 // ARDOUR includes for Android (using stubs)
 #include "NovaAndroidStubs.h"
 
-#include "audio/NovaAudioDecoder.h"
 #include "core/NovaLogging.h"
 
 #include <cmath>
@@ -519,13 +518,8 @@ void NovaAndroidAudioEngine::setPlaying(bool enabled) {
     Q_EMIT playbackStateChanged(enabled);
 }
 
-bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
+bool NovaAndroidAudioEngine::loadDecoded(NovaDecodedAudio&& audio, QString* error) {
 #if defined(Q_OS_ANDROID)
-    NovaDecodedAudio audio;
-    if (!decodeAudioFile(path, audio, error)) {
-        return false;
-    }
-
     // El reproductor no es seguro entre hilos (el llamante lo usa desde el
     // hilo de audio), así que el stream de salida se cierra mientras se
     // cambia el audio: mientras está cerrado, su callback no corre y no hay
@@ -551,8 +545,9 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
         m_outputStream.reset();
     }
 
-    // Con el stream cerrado se puede tocar el reproductor sin carrera.
-    if (!m_player.load(audio, error)) {
+    // Con el stream cerrado se puede tocar el reproductor sin carrera. El
+    // audio se mueve: el reproductor es su nuevo dueño (sin copias del PCM).
+    if (!m_player.load(std::move(audio), error)) {
         if (habiaStream) {
             QString errorRestaurar;
             if (!restaurarStreamSalida(canalesAnteriores, estabaEnMarcha, &errorRestaurar)) {
@@ -563,11 +558,11 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
     }
     // El reproductor remuestrea a la tasa REAL del stream de salida, no a
     // la pedida: si el dispositivo ha abierto el stream a 44,1 kHz y el
-    // reproductor entrega 48 kHz, el audio suena grave y lento. Al
-    // reabrir el stream (más abajo) la tasa real se vuelve a aplicar, por
-    // si el driver la ha cambiado.
+    // reproductor entrega 48 kHz, el audio suena grave y lento. Al reabrir
+    // el stream (más abajo) la tasa real se vuelve a aplicar, por si el
+    // driver la ha cambiado.
     m_player.setOutputSampleRate(tasaSalidaReal());
-    m_canalesFichero = audio.channels;
+    m_canalesFichero = m_player.channels();
 
     // Un fichero nuevo empieza en el principio: el cabezal de reproducción
     // vuelve a cero con el.
@@ -583,7 +578,7 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
         // El stream se abre con los canales del fichero: el reproductor
         // escribe las muestras intercaladas con esos canales, y un fichero
         // mono en un stream estéreo sonaría mal.
-        if (!abrirStreamSalida(audio.channels, error)) {
+        if (!abrirStreamSalida(m_player.channels(), error)) {
             // Se deja el motor como estaba, con los canales anteriores. El
             // fichero no sonará (su callback ve que los canales no
             // coinciden), pero el motor sigue vivo.
@@ -594,14 +589,14 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
             return false;
         }
 
-        if (m_outputStream->getChannelCount() != audio.channels) {
+        if (m_outputStream->getChannelCount() != m_player.channels()) {
             // El driver ha abierto el stream con otros canales: el audio
             // intercalado del fichero no cabría en el buffer del driver, así
             // que el fichero no se puede reproducir con este stream.
             const QString errorCanales = QStringLiteral(
                 "la salida de audio se ha abierto con %1 canales y el fichero tiene %2")
                 .arg(m_outputStream->getChannelCount())
-                .arg(audio.channels);
+                .arg(m_player.channels());
             LOGE("%s", qPrintable(errorCanales));
             if (error) {
                 *error = errorCanales;
@@ -622,14 +617,15 @@ bool NovaAndroidAudioEngine::loadFile(const QString& path, QString* error) {
     } else {
         // El motor todavía no está inicializado: initialize() abrirá el
         // stream con estos canales.
-        m_canalSalida = audio.channels;
+        m_canalSalida = m_player.channels();
     }
 
-    qCDebug(novaCore) << "🔊 Spike: cargado" << path << audio.sampleRate << "Hz,"
-                       << audio.channels << "canales," << audio.frameCount() << "muestras";
+    qCDebug(novaCore) << "🔊 Spike: cargado" << m_player.channels() << "canales,"
+                       << m_player.durationSeconds() << "s a"
+                       << m_player.outputSampleRate() << "Hz (tasa real del stream)";
     return true;
 #else
-    Q_UNUSED(path);
+    Q_UNUSED(audio);
     Q_UNUSED(error);
     return false;
 #endif

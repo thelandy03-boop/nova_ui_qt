@@ -4,8 +4,7 @@
 
 #include "NovaAndroidAudioEngine.h"
 
-#include "audio/NovaAudioDecoder.h"
-#include "audio/NovaAudioPeaks.h"
+#include "audio/NovaSpikeLoader.h"
 #include "core/NovaLogging.h"
 #include "models/NovaRegionModel.h"
 
@@ -14,10 +13,6 @@ namespace {
 // Id de la región donde se publica la forma de onda: tiene que ser
 // EXACTAMENTE el mismo que pide la página QML (NovaWaveformItem.regionId).
 const char* const kRegionId = "spike";
-
-// Puntos de la forma de onda: el detalle (zoom máximo) y la vista general.
-constexpr int kPuntosDetalle = 2048;
-constexpr int kPuntosVistaGeneral = 256;
 
 // Cadencia con la que se refresca la posición del cabezal.
 constexpr int kIntervaloPosicionMs = 50;
@@ -33,6 +28,15 @@ NovaSpikeController::NovaSpikeController(QObject* parent)
     // El controlador es el dueño del motor de audio: en Android no lo
     // instancia nadie más (la sesión de Ardour usa su stub).
     m_engine = std::make_unique<NovaAndroidAudioEngine>();
+
+    // El cargador decodifica el fichero y calcula los picos en un hilo
+    // aparte: en el hilo de la interfaz la app se congelaría (spec §8.4).
+    // No tiene padre: lo destruye este controlador (el unique_ptr).
+    m_cargador = std::make_unique<NovaSpikeLoader>();
+    connect(m_cargador.get(), &NovaSpikeLoader::cargaTerminada,
+            this, &NovaSpikeController::alCargarTerminado);
+    connect(m_cargador.get(), &NovaSpikeLoader::cargaFallida,
+            this, &NovaSpikeController::alCargarFallido);
 
     if (prepararMotor()) {
         actualizarEstado(QStringLiteral("listo"));
@@ -99,38 +103,50 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
         return false;
     }
 
-    // 1. Decodificar. Los picos NO necesitan ningún dispositivo de audio,
-    //    así que esto se hace siempre, motor listo o no.
-    NovaDecodedAudio audio;
-    QString error;
-    if (!decodeAudioFile(path, audio, &error)) {
-        actualizarEstado(error.isEmpty()
-                             ? QStringLiteral("no se ha podido decodificar el fichero")
-                             : error);
-        return false;
+    // El trabajo pesado (decodificar el fichero y recorrer todas sus
+    // muestras para calcular los picos) se hace en un hilo aparte: en el
+    // hilo de la interfaz la app se congelaría (el spec §8.4 lo exige:
+    // "Se calcula en un hilo aparte, nunca en el hilo GUI").
+    //
+    // El fichero se decodifica UNA sola vez: el audio que devuelve el
+    // cargador es el mismo que se pasa al motor (movido, sin copiar el PCM).
+    m_cargador->cargar(path);
+    actualizarEstado(QStringLiteral("cargando el fichero…"));
+    return true;
+}
+
+void NovaSpikeController::alCargarTerminado()
+{
+    // 1. Los picos ya están calculados: se publican y el renderizador de la
+    //    forma de onda los coge (los pide por el id de región "spike").
+    NovaWaveformCache::setPeaks(QString::fromLatin1(kRegionId), m_cargador->picos());
+
+    // 2. El audio, ya decodificado. Se mueve al motor: las muestras no se
+    //    copian (un fichero estéreo de cinco minutos son unos 115 MB).
+    NovaDecodedAudio audio = m_cargador->tomarAudio();
+    if (audio.channels <= 0 || audio.sampleRate <= 0) {
+        limpiarOndaPublicada();
+        actualizarEstado(QStringLiteral("no se ha podido decodificar el fichero"));
+        return;
     }
 
-    // 2. Calcular los picos y publicarlos: el renderizador de la forma de
-    //    onda los lee de la caché por el id de región ("spike").
-    const PeakData picos = buildPeakData(audio, kPuntosDetalle, kPuntosVistaGeneral);
-    NovaWaveformCache::setPeaks(QString::fromLatin1(kRegionId), picos);
-
     // 3. Duración del fichero, para saber dónde acaba el cabezal.
-    actualizarDuracion(audio.sampleRate > 0
-                            ? static_cast<double>(audio.frameCount()) / audio.sampleRate
-                            : 0.0);
+    actualizarDuracion(static_cast<double>(audio.frameCount())
+                        / static_cast<double>(audio.sampleRate));
 
     // 4. Motor de audio: si no estaba listo se reintenta (a lo mejor ya se ha
     //    concedido el permiso). Sin motor no hay sonido, pero la onda que se
     //    acaba de publicar es real y se puede ver.
     if (!prepararMotor()) {
         actualizarEstado(QStringLiteral("la onda está lista, pero el motor de audio no está listo: no suena"));
-        return false;
+        return;
     }
 
-    // 5. Cargar el fichero en el motor y ponerlo en marcha.
-    if (!m_engine->loadFile(path, &error)) {
-        // El fichero no se ha podido cargar: la onda y la duración que
+    // 5. Cargar el audio en el motor y ponerlo en marcha. El motor NO
+    //    decodifica: recibe el audio ya decodificado.
+    QString error;
+    if (!m_engine->loadDecoded(std::move(audio), &error)) {
+        // El audio no se ha podido cargar: la onda y la duración que
         // acabamos de publicar describen un fichero que no está en marcha,
         // así que se quitan (si no, el cabezal se mediría contra un
         // fichero que no suena).
@@ -138,14 +154,21 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
         actualizarEstado(error.isEmpty()
                              ? QStringLiteral("no se ha podido cargar el fichero en el motor de audio")
                              : error);
-        return false;
+        return;
     }
     m_engine->setPlaying(true);
 
-    qCDebug(novaCore) << "🔊 Spike: reproduciendo" << path
-                       << picos.peaks.size() << "picos";
+    qCDebug(novaCore) << "🔊 Spike: reproduciendo" << m_cargador->picos().peaks.size()
+                       << "picos";
     actualizarEstado(QStringLiteral("sonando"));
-    return true;
+}
+
+void NovaSpikeController::alCargarFallido(const QString& error)
+{
+    limpiarOndaPublicada();
+    actualizarEstado(error.isEmpty()
+                         ? QStringLiteral("no se ha podido cargar el fichero")
+                         : error);
 }
 
 void NovaSpikeController::limpiarOndaPublicada()
@@ -182,10 +205,11 @@ double NovaSpikeController::positionSeconds() const
 
 void NovaSpikeController::actualizarPosicion()
 {
+    const double posicion = positionSeconds();
+
     // Solo se avisa cuando la posición cambia de verdad: si no está sonando
     // nada, el reloj no tiene nada que contar (y el QML no se refresca 20
     // veces por segundo sin motivo).
-    const double posicion = positionSeconds();
     if (posicion == m_ultimaPosicion) {
         return;
     }

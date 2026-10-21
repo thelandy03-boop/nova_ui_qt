@@ -48,6 +48,21 @@ public:
     bool load(const NovaDecodedAudio& audio, QString* error);
 
     /**
+     * Carga un audio decodificado **moviéndolo** (sin copiar el PCM).
+     *
+     * Es la vía que usa el móvil: el audio se decodifica una sola vez y
+     * pasa de largo al reproductor sin copias (un fichero estéreo de cinco
+     * minutos son unos 115 MB de muestras).
+     *
+     * @param audio Audio a reproducir (queda movido: el llamante no lo
+     *              puede volver a usar).
+     * @param error Mensaje con el motivo del fallo (puede ser nullptr).
+     * @return true si el audio se ha cargado; si no, false y un mensaje de
+     *         error (nunca vacío cuando falla).
+     */
+    bool load(NovaDecodedAudio&& audio, QString* error);
+
+    /**
      * Cambia la tasa de salida, en Hz (48.000 en el móvil).
      *
      * Si ya hay audio cargado, la duración se recalcula con la tasa nueva y
@@ -76,6 +91,12 @@ public:
     /** Duración del fichero en segundos, a la tasa de salida vigente. */
     double durationSeconds() const;
 
+    /** Número de canales del audio cargado (0 si no hay ninguno). */
+    int channels() const { return m_canales; }
+
+    /** Tasa de salida vigente, en Hz (la del stream de salida). */
+    int outputSampleRate() const { return m_tasaSalida; }
+
     /**
      * Escribe en `interleavedOut` los fotogramas que queden de audio.
      *
@@ -102,6 +123,9 @@ public:
 private:
     /** Recalcula la duración con la tasa de salida vigente. */
     void recalcularDuracion();
+
+    /** Prepara el reproductor con el audio que se acaba de cargar. */
+    void finalizarCarga();
 
     /** Fotogramas de entrada por cada fotograma de salida. */
     double ratioEntradaPorSalida() const;
