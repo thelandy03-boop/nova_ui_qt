@@ -4,6 +4,12 @@ Cómo compilar el APK de NOVA Studio para Android y probarlo en **Waydroid**
 (el contenedor de Android que corre sobre Linux). Es el entorno de pruebas del
 spike de audio: no hay móvil físico.
 
+> ⚠️ **En esta máquina el contenedor no llega a ser utilizable**: Android
+> dentro de LXC se queda sin `netd` (sin DHCP, sin IPv4) y `adbd` no abre su
+> puerto, así que **no hay `adb`** y la verificación en el dispositivo está
+> bloqueada. El diagnóstico está en §3.3; el código del spike está completo y
+> verificado por tests, pero **la Task 6 del plan sigue abierta**.
+
 ---
 
 ## 1. Requisitos (ya instalados en esta máquina)
@@ -70,6 +76,31 @@ adb devices                                  # debe listar el dispositivo
 > Si se para la sesión, la siguiente puesta en marcha debe ser con root:
 > `sudo systemctl restart waydroid-container`.
 
+### 3.3 ⚠️ Bloqueo conocido: Android dentro de LXC (sin `netd`)
+
+En esta máquina el contenedor de Waydroid **arranca** (Android llega a
+`system_server`) pero **no hay `adb`**:
+
+1. El contenedor es un Android **dentro de un LXC**, y su `init` no levanta el
+   servicio `netd` (el que hace la configuración de red por DHCP).
+2. Sin `netd` no hay **DHCP** → el contenedor se queda **sin IPv4** (solo el
+   `127.0.0.1` de la loopback).
+3. Sin IPv4, `adbd` **no abre su puerto TCP** (5555): el transporte de `adb`
+   no llega a escuchar.
+4. Por eso `adb devices` **no lista nada** y no se puede instalar ni mirar el
+   logcat, aunque el contenedor esté vivo.
+
+Se intentó asignar la IP a mano
+(`nsenter -t <pid init> -n ip addr add 192.168.240.2/24 dev eth0`) y **sigue
+sin funcionar**: sin `netd`, `adbd` no abre su puerto.
+
+**Qué significa para el spike:** la verificación funcional en el dispositivo
+(la Task 6 del plan) **no se puede hacer en este entorno**: es un bloqueo del
+**entorno**, no del código. El código del spike está completo y verificado
+por tests (`ctest`), pero **la Task 6 NO está cerrada**: hace falta un
+entorno donde `adb` funcione (un móvil de verdad, o un host con Waydroid
+funcionando) para confirmar el sonido y el playhead.
+
 ## 4. Instalar y lanzar
 
 ```bash
@@ -103,11 +134,18 @@ Lo que debe aparecer:
 
 | Línea | Significado |
 |---|---|
-| `🔊 Spike: cargado … 44100 Hz, N canales` | el fichero se ha decodificado |
+| `🔊 Spike: cargando /sdcard/…` | se ha pedido el fichero (se decodifica y se calculan los picos en un hilo aparte) |
+| `🔊 Spike: cargado N canales, X s a Y Hz` | el audio está en el motor, remuestreado a la **tasa real** del stream (Y) |
 | `🎨 Onda: recibidos N picos` | los picos están en la caché y el renderizador los ha cogido |
-| frames escritos > 0 y creciendo | el callback de Oboe está sirviendo audio |
+| `🔊 Spike: reproduciendo N picos` | el fichero está en marcha |
+| `🔊 Spike: fotogramas escritos N posición X s` | el callback de Oboe está sirviendo audio: los fotogramas escritos crecen (una vez por segundo) |
 | `🛑 Spike: streams cerrados` al salir | cierre limpio |
 | **nada** de `SIGSEGV` / `Fatal signal` | sin crashes al cerrar |
+
+El criterio objetivo de la verificación es la línea de los **fotogramas
+escritos**: tiene que salir con un número **mayor que 0 y creciendo** (la
+posición también). Si el número se queda en 0, el callback de Oboe no está
+sirviendo audio.
 
 Captura de pantalla (para ver la onda y el cabezal):
 
@@ -135,6 +173,7 @@ Antes de publicar a usuarios hay que hacer una **revisión en hardware**.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `adb devices` vacío | la red del contenedor está caída | `sudo systemctl restart waydroid-container` y `adb connect 192.168.240.2:5555` |
+| `adb devices` vacío **aunque el contenedor esté vivo** | Android dentro de LXC sin `netd` → sin DHCP → sin IPv4 → `adbd` no abre su puerto (§3.3) | **no se puede arreglar desde el host**: hace falta un entorno con `adb` funcional (un móvil de verdad) |
 | `Failed to get service waydroidplatform` | no hay compositor Wayland | usar la vía headless (§3.2) o entrar en una sesión Wayland |
 | `Wayland socket ... doesn't exist` | sesión X11 | idem |
 | `the session is already running` pero no hay adb | sesión zombi | `waydroid session stop && waydroid session start` |

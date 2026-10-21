@@ -17,6 +17,9 @@ const char* const kRegionId = "spike";
 // Cadencia con la que se refresca la posición del cabezal.
 constexpr int kIntervaloPosicionMs = 50;
 
+// Cadencia del log de fotogramas: una vez por segundo.
+constexpr qint64 kIntervaloLogMs = 1000;
+
 // Tasa con la que arranca el motor de audio.
 constexpr int kTasaMotor = 48000;
 
@@ -53,6 +56,9 @@ NovaSpikeController::NovaSpikeController(QObject* parent)
     connect(&m_temporizador, &QTimer::timeout,
             this, &NovaSpikeController::actualizarPosicion);
     m_temporizador.start();
+
+    // El reloj del log de fotogramas.
+    m_reloj.start();
 }
 
 bool NovaSpikeController::prepararMotor()
@@ -110,6 +116,7 @@ bool NovaSpikeController::loadAndPlay(const QString& path)
     //
     // El fichero se decodifica UNA sola vez: el audio que devuelve el
     // cargador es el mismo que se pasa al motor (movido, sin copiar el PCM).
+    qCDebug(novaCore) << "🔊 Spike: cargando" << path;
     m_cargador->cargar(path);
     actualizarEstado(QStringLiteral("cargando el fichero…"));
     return true;
@@ -206,6 +213,19 @@ double NovaSpikeController::positionSeconds() const
 void NovaSpikeController::actualizarPosicion()
 {
     const double posicion = positionSeconds();
+
+    // Una vez por segundo se dice cuántos fotogramas se han escrito: es el
+    // criterio objetivo de la verificación (que los fotogramas escritos
+    // crecen). El log se hace aquí, en el hilo de la interfaz: en el
+    // callback de audio no se puede (allí no se reservan memoria ni se
+    // construyen cadenas).
+    const qint64 ahora = m_reloj.elapsed();
+    if (ahora - m_ultimoLogMs >= kIntervaloLogMs) {
+        m_ultimoLogMs = ahora;
+        qCDebug(novaCore) << "🔊 Spike: fotogramas escritos"
+                           << (m_engine ? m_engine->currentFrame() : 0)
+                           << "posición" << posicion << "s";
+    }
 
     // Solo se avisa cuando la posición cambia de verdad: si no está sonando
     // nada, el reloj no tiene nada que contar (y el QML no se refresca 20

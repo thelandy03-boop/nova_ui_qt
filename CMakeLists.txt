@@ -362,5 +362,11 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         # que se le pida (arm64-v8a para telefonos, x86_64 para Waydroid).
         add_test(NAME android_build_script
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_android_build_script.py)
+
+        # El contrato del camino del spike de Android (el motor, el controlador
+        # y el cargador solo se compilan en Android: sus behaviours criticos se
+        # comprueban leyendo el codigo).
+        add_test(NAME spike_contract
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_spike_contract.py)
     endif()
 endif()

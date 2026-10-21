@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QElapsedTimer>
 
 #include <memory>
 
@@ -117,6 +118,12 @@ private:
 
     // Reloj de refresco de la posición (el motor lleva la posición real).
     QTimer m_temporizador;
+
+    // Reloj del log de fotogramas (una vez por segundo).
+    QElapsedTimer m_reloj;
+
+    // Momento del último log de fotogramas (en milisegundos del reloj).
+    qint64 m_ultimoLogMs = 0;
 
     // El cargador del fichero (decodifica y calcula los picos en un hilo
     // aparte).
