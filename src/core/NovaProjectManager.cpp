@@ -135,6 +135,30 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
         qCCritical(novaCore) << "❌ Excepción durante la creación del proyecto:" << e.what();
     }
 #endif
+
+#if defined(Q_OS_ANDROID)
+    // Fase 2a: en Android no hay Ardour, pero creamos una sesion stub para que
+    // el modelo de pistas/regiones y el transporte tengan un contenedor valido.
+    // El audio real (Oboe) se cablea en la Fase 2b.
+    {
+        ARDOUR::AudioEngine *androidEngine = static_cast<ARDOUR::AudioEngine*>(engine);
+        QString targetParentDir = parentDir.isEmpty() ? NovaPlatformUtils::getProjectsDirectory() : sanitizePath(parentDir);
+        QString sessionDir = targetParentDir + "/" + projectName;
+        QDir().mkpath(targetParentDir);
+
+        ARDOUR::BusProfile bus_profile;
+        bus_profile.master_out_channels = 2;
+
+        auto session = new ARDOUR::Session(*androidEngine, sessionDir.toStdString(),
+                                          projectName.toStdString(), &bus_profile, "", true);
+        if (session) {
+            androidEngine->set_session(session);
+            qCDebug(novaCore) << "📱 [Android] Sesion stub creada:" << sessionDir;
+            return session;
+        }
+    }
+#endif
+
     return nullptr;
 }
 
