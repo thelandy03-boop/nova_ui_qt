@@ -55,8 +55,17 @@ printf 'ANDROID_ABI:UNINITIALIZED=%s\\n' "${ABI}" > "${BUILD_DIR}/CMakeCache.txt
 cat > "${BUILD_DIR}/android-build/gradlew" <<'GRADLEW'
 #!/bin/bash
 set -e
-mkdir -p app/build/outputs/apk/release
-printf 'APK de prueba\\n' > app/build/outputs/apk/release/app-release.apk
+TASK="$1"
+case "${TASK}" in
+  assembleDebug)
+    mkdir -p app/build/outputs/apk/debug
+    printf 'APK de prueba (debug)\\n' > app/build/outputs/apk/debug/app-debug.apk
+    ;;
+  *)
+    mkdir -p app/build/outputs/apk/release
+    printf 'APK de prueba\\n' > app/build/outputs/apk/release/app-release.apk
+    ;;
+esac
 GRADLEW
 chmod +x "${BUILD_DIR}/android-build/gradlew"
 """
@@ -126,6 +135,9 @@ class Sandbox:
 
     def apk(self, abi: str) -> pathlib.Path:
         return self.trabajo / "apks" / f"NovaStudio-{abi}.apk"
+
+    def apk_debug(self, abi: str) -> pathlib.Path:
+        return self.trabajo / "apks" / f"NovaStudio-{abi}-debug.apk"
 
     def staging_gradle(self) -> pathlib.Path:
         return self.trabajo / "build_android" / "android-build" / "app" / "build.gradle"
@@ -319,6 +331,26 @@ def genera_apk_con_el_abi_elegido() -> None:
         )
 
 
+def genera_apk_debug() -> None:
+    """Con --debug el APK sale de la tarea assembleDebug y con otro nombre."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sandbox = Sandbox(pathlib.Path(tmp))
+
+        proc = sandbox.ejecutar("--abi", "arm64-v8a", "--debug")
+        _exigir(
+            proc.returncode == 0,
+            "el script fallo con --debug:\n%s" % (proc.stdout + proc.stderr),
+        )
+        _exigir(
+            sandbox.apk_debug("arm64-v8a").is_file(),
+            "con --debug no se genera apks/NovaStudio-arm64-v8a-debug.apk",
+        )
+        _exigir(
+            not sandbox.apk("arm64-v8a").is_file(),
+            "con --debug se genera tambien el APK de release: se pisan",
+        )
+
+
 COMPROBACIONES = (
     ("soporta_parametro_abi", soporta_parametro_abi),
     ("abi_por_defecto_arm64", abi_por_defecto_arm64),
@@ -328,6 +360,7 @@ COMPROBACIONES = (
     ("ajusta_abifilters_del_staging", ajusta_abifilters_del_staging),
     ("rechaza_abi_invalido", lambda _texto: rechaza_abi_invalido()),
     ("genera_apk_con_el_abi_elegido", lambda _texto: genera_apk_con_el_abi_elegido()),
+    ("genera_apk_debug", lambda _texto: genera_apk_debug()),
 )
 
 

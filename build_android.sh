@@ -5,7 +5,10 @@ set -e
 #    --abi <arm64-v8a|x86_64>: ABI del APK. Por defecto arm64-v8a (teléfonos
 #    reales); x86_64 es lo que necesita la imagen de Waydroid. Un APK solo
 #    instala si el ABI que lleva dentro coincide con el del dispositivo.
+#    --debug: APK Debug (en vez de Release). El nombre del APK lleva el
+#    sufijo "-debug" para no pisar el de Release.
 ABI="${ABI:-arm64-v8a}"
+BUILD_TYPE="release"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -17,13 +20,17 @@ while [ $# -gt 0 ]; do
             ABI="$2"
             shift 2
             ;;
+        --debug)
+            BUILD_TYPE="debug"
+            shift
+            ;;
         -h|--help)
-            echo "Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>]"
+            echo "Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>] [--debug]"
             exit 0
             ;;
         *)
             echo "❌ Error: opción desconocida '$1'"
-            echo "   Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>]"
+            echo "   Uso: $(basename "$0") [--abi <arm64-v8a|x86_64>] [--debug]"
             exit 1
             ;;
     esac
@@ -57,6 +64,7 @@ export PATH="${JAVA_HOME}/bin:${PATH}"
 echo "  - SDK Root:  ${ANDROID_SDK_ROOT}"
 echo "  - NDK Root:  ${ANDROID_NDK_ROOT}"
 echo "  - ABI:       ${ABI}"
+echo "  - Tipo:      ${BUILD_TYPE}"
 echo "  - Java Home: ${JAVA_HOME} ($(${JAVA_HOME}/bin/java -version 2>&1 | head -n 1))"
 
 # 2. Herramienta Qt CMake para Android. El kit se llama android_<abi> con
@@ -133,15 +141,27 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
     fi
 fi
 
-echo "📦 [NOVA ANDROID BUILD] Gradle manual (assembleRelease)..."
-(cd ${BUILD_DIR}/android-build && chmod +x gradlew && ./gradlew assembleRelease)
+echo "📦 [NOVA ANDROID BUILD] Gradle manual (assemble${BUILD_TYPE^})..."
+# OJO: el staging de Gradle lo genera el target `apk` de Qt (androiddeployqt).
+# El target `apk` tambien intenta el build de Gradle y falla hasta el parche
+# posterior, por eso su error se tolera arriba y aqui se hace el build de verdad.
+# El APK Debug sale de la tarea `assembleDebug` de Gradle (app debuggable, key de
+# depuracion, jniDebuggable). Las .so nativas son las mismas que en Release:
+# el codigo nativo se compila con CMAKE_BUILD_TYPE=Release en ambos casos.
+GRADLE_TASK="assemble$(printf '%s' "${BUILD_TYPE}" | sed 's/^\(.\)/\U\1/')"
+(cd ${BUILD_DIR}/android-build && chmod +x gradlew && ./gradlew "${GRADLE_TASK}")
 
 # 3. Exportación a carpeta visible 'apks/' en la raíz
 EXPORT_DIR="apks"
 mkdir -p "${EXPORT_DIR}"
 
-APK_SRC="${BUILD_DIR}/android-build/app/build/outputs/apk/release/app-release.apk"
-APK_DEST="${EXPORT_DIR}/NovaStudio-${ABI}.apk"
+if [ "${BUILD_TYPE}" = "debug" ]; then
+    APK_SRC="${BUILD_DIR}/android-build/app/build/outputs/apk/debug/app-debug.apk"
+    APK_DEST="${EXPORT_DIR}/NovaStudio-${ABI}-debug.apk"
+else
+    APK_SRC="${BUILD_DIR}/android-build/app/build/outputs/apk/release/app-release.apk"
+    APK_DEST="${EXPORT_DIR}/NovaStudio-${ABI}.apk"
+fi
 
 if [ -f "${APK_SRC}" ]; then
     cp "${APK_SRC}" "${APK_DEST}"
@@ -152,7 +172,7 @@ fi
 
 echo ""
 echo "🎉 ========================================================"
-echo "✅ [ÉXITO] ¡APK de NOVA Studio listo para instalar!"
+echo "✅ [ÉXITO] ¡APK ${BUILD_TYPE} de NOVA Studio listo para instalar!"
 echo "📂 Ubicación directa:"
 echo "   👉 $(pwd)/${APK_DEST}"
 echo "==========================================================="
