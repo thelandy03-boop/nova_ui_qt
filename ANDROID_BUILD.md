@@ -88,6 +88,38 @@ cd android
 # Output: app/build/outputs/apk/release/app-release.aab
 ```
 
+## Compilar el APK Debug en GitHub Actions
+
+El workflow `.github/workflows/android-debug-apk.yml` compila **todo** el
+proyecto (el motor de Qt en C++, el QML y el código Java de Android) y deja un
+**APK Debug** listo para instalar.
+
+**Es exclusivamente manual.** No hay `push`, ni `pull_request`, ni
+`schedule`: el workflow solo arranca desde
+*Actions -> Android Debug APK -> Run workflow*.
+
+| Input | Qué hace | Por defecto |
+|-------|----------|-------------|
+| `ref` | Rama (o ref) del código que se compila | `feature/nova-android-spike` |
+| `abi` | ABI del APK: `arm64-v8a` (teléfonos) o `x86_64` (Waydroid/emulador) | `arm64-v8a` |
+| `use_cache` | **Activa o no la cache** (Qt, SDK de Android y Gradle) | `false` (desactivada) |
+
+La cache está apagada a propósito: se enciende marcando la casilla
+`use_cache` en el formulario del disparo manual. Con la cache activada el
+run reutiliza el SDK de Android, el Qt para Android y las dependencias de
+Gradle; sin ella, cada run baja todo desde cero.
+
+El workflow hace lo mismo que `build_android.sh`, con dos diferencias:
+
+- Configura la compilación con `-DCMAKE_BUILD_TYPE=Debug` y empaqueta con
+  `gradlew assembleDebug` (el script local empaqueta en *release*).
+- Pasa `-DCMAKE_AUTOMOC_EXECUTABLE` con el `moc` del host de Qt: el
+  `CMakeLists.txt` apunta al `moc` del escritorio (`/usr/lib/qt6/libexec/moc`),
+  que en CI no existe.
+
+El APK se sube como artefacto del run (`NovaStudio-<abi>-debug-apk`) y también
+se deja en `apks/NovaStudio-<abi>-debug.apk` dentro del workspace.
+
 ## Running on Device
 
 ### Install Debug APK
