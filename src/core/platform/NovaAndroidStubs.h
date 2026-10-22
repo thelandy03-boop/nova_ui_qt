@@ -149,11 +149,11 @@ namespace ARDOUR {
         ID id() const { return ID(m_regionId); }
         std::string name() const { return "Region"; }
         samplepos_t position_sample() const { return 0; }
-    private:
-        long long m_regionId = 0;
         samplecnt_t length_samples() const { return 0; }
         void set_position(Temporal::timepos_t) {}
         void set_length(Temporal::timecnt_t) {}
+    private:
+        long long m_regionId = 0;
     };
 
     class AudioRegion : public Region {

@@ -129,6 +129,7 @@ public:
     void createLiveRecordingClip(double startBeat);
     void updateLiveRecordingClip(double lengthBeats);
     void finalizeLiveRecordingClip();
+    void rebuildRegionCache();
 
     // Persistencia y Manejo de Peaks en Disco (.novapeak)
     static bool savePeakFile(const QString &peakFilePath, const PeakData &data);
@@ -142,7 +143,6 @@ signals:
     void importFinished(bool success, const QString &message);
 
 private:
-    void rebuildRegionCache();
     void requestRegionPeaks(const QString &regionId,
                              const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion,
                              int sampleRate, int channels,

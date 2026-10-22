@@ -2,6 +2,7 @@
 #include "NovaLogging.h"
 #include "NovaProjectPolicy.h"
 #include "platform/NovaPlatformUtils.h"
+#include "platform/NovaAndroidStubs.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QUrl>

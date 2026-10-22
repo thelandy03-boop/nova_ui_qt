@@ -1,5 +1,8 @@
 #include "NovaAudioEngine.h"
 #include "core/NovaLogging.h"
+#if defined(Q_OS_ANDROID)
+#include "core/platform/NovaAndroidStubs.h"
+#endif
 #include <QTimer>
 #include "core/NovaAudioDeviceManager.h"
 #include "core/NovaHardwareSanitizer.h"
@@ -217,7 +220,7 @@ void NovaAudioEngine::toggleRecord() {
         }
         // Asegurar que hay al menos una pista para capturar.
         {
-            auto session = m_sessionManager.session();
+            auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
             if (session) {
                 auto routes = session->get_routes();
                 bool hasTrack = false;
@@ -607,7 +610,7 @@ void NovaAudioEngine::androidCargaTerminada()
     // Fase 2c: crear una pista + region en la sesion stub para que el
     // timeline muestre el clip (y su onda). Si no hay pistas, se crea una.
     {
-        auto session = m_sessionManager.session();
+        auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
         if (session) {
             auto routeList = session->get_routes();
             bool hasTrack = false;
@@ -630,8 +633,8 @@ void NovaAudioEngine::androidCargaTerminada()
                     if (!track || !track->playlist()) continue;
                     auto region = std::make_shared<ARDOUR::AudioRegion>();
                     region->set_length(ARDOUR::samplecnt_t(audio.frameCount()));
-                    region->set_position(ARDOUR::Temporal::timepos_t(0));
-                    track->playlist()->add_region(region, ARDOUR::Temporal::timepos_t(0));
+                    region->set_position(Temporal::timepos_t(0));
+                    track->playlist()->add_region(region, Temporal::timepos_t(0));
                     session->set_dirty();
                     break;
                 }

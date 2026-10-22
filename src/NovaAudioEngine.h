@@ -134,8 +134,8 @@ public:
         if (m_androidEngine.tieneFicheroCargado()) {
             double sr = m_androidEngine.tasaSalidaReal() > 0 ? m_androidEngine.tasaSalidaReal() : 48000.0;
             double secs = static_cast<double>(m_androidEngine.currentFrame()) / sr;
-            double bpm = bpm() > 0 ? bpm() : 120.0;
-            return secs * (bpm / 60.0);
+            double bpmVal = this->bpm() > 0 ? this->bpm() : 120.0;
+            return secs * (bpmVal / 60.0);
         }
 #endif
         return m_transport.currentBeat();
