@@ -129,15 +129,28 @@ namespace ARDOUR {
 
     class ID {
     public:
-        std::string to_s() const { return "0"; }
+        ID() : m_val(0) {}
+        explicit ID(long long v) : m_val(v) {}
+        std::string to_s() const { return std::to_string(m_val); }
+        long long value() const { return m_val; }
+    private:
+        long long m_val;
     };
+
+    inline long long obtenerIdUnicoRegion() {
+        static std::atomic<long long> contador{1};
+        return contador.fetch_add(1);
+    }
 
     class Region {
     public:
+        Region() : m_regionId(obtenerIdUnicoRegion()) {}
         virtual ~Region() = default;
-        ID id() const { return ID(); }
+        ID id() const { return ID(m_regionId); }
         std::string name() const { return "Region"; }
         samplepos_t position_sample() const { return 0; }
+    private:
+        long long m_regionId = 0;
         samplecnt_t length_samples() const { return 0; }
         void set_position(Temporal::timepos_t) {}
         void set_length(Temporal::timecnt_t) {}
