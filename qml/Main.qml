@@ -8,8 +8,12 @@ import "dialogs"
 
 Window {
     id: mainWindow
-    width: 1280
-    height: 800
+    // En Android la UI se adapta a la pantalla y arranca en horizontal
+    // (landscape): el manifest ya fuerza landscape; aquí hacemos que la
+    // ventana ocupe toda la pantalla en vez de un tamaño fijo de escritorio.
+    width: (Qt.platform.os === "android") ? Screen.width : 1280
+    height: (Qt.platform.os === "android") ? Screen.height : 800
+    visibility: (Qt.platform.os === "android") ? Window.FullScreen : Window.Windowed
     visible: true
     title: "NOVA Studio v9.8 (Qt 6) - " + AudioEngine.currentProjectName + (AudioEngine.isDirty ? " *" : "")
     color: "#121212"

@@ -260,6 +260,7 @@ include(cmake/NovaQml.cmake)
 
 nova_mark_singletons()
 nova_collect_qml(NOVA_QML_FILES)
+nova_collect_resources(NOVA_QML_RESOURCES)
 
 qt_add_qml_module(nova_ui_qt
     URI NovaStudio
@@ -267,12 +268,7 @@ qt_add_qml_module(nova_ui_qt
     QML_FILES
         ${NOVA_QML_FILES}
     RESOURCES
-        qml/skins/bandlab/topbar/icons/svg/IconLoop.svg
-        qml/skins/bandlab/topbar/icons/svg/IconLoopActive.svg
-        qml/skins/logic/topbar/icons/svg/LogicIconChevron.svg
-        qml/skins/logic/topbar/icons/svg/LogicIconPencil.svg
-        qml/skins/logic/topbar/icons/svg/LogicIconPointer.svg
-        qml/skins/logic/topbar/icons/svg/LogicIconScissors.svg
+        ${NOVA_QML_RESOURCES}
 )
 
 # ---------------------------------------------------------------------------

@@ -172,9 +172,11 @@ int main(int argc, char *argv[])
         qDebug() << "Modo QRC (sin hot-reload de fuentes)";
         engine.addImportPath(QStringLiteral("qrc:/qt/qml/NovaStudio"));
 #if defined(Q_OS_ANDROID)
-        // En Android se carga la página del spike (forma de onda real y
-        // cabezal), no la app de escritorio.
-        engine.load(QUrl(QStringLiteral("qrc:/qt/qml/NovaStudio/qml/spike/SpikePage.qml")));
+        // Port completo: en Android se carga la misma UI de escritorio
+        // (Main.qml) que en Linux/Windows. El motor de audio se apoya en
+        // los stubs de Android (NovaAndroidStubs / NovaAndroidAudioEngine);
+        // la funcionalidad completa de pistas/sesiones se habilita por fases.
+        engine.load(QUrl(QStringLiteral("qrc:/qt/qml/NovaStudio/qml/Main.qml")));
 #else
         engine.load(QUrl(QStringLiteral("qrc:/qt/qml/NovaStudio/qml/Main.qml")));
 #endif
