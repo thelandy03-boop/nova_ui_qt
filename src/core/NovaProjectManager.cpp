@@ -70,6 +70,23 @@ bool NovaProjectManager::saveProject(void *session)
     } catch (const std::exception &e) {
         qCCritical(novaCore) << "Excepción crítica durante el guardado:" << e.what();
     }
+#elif defined(Q_OS_ANDROID)
+    {
+        ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
+        QString path = sanitizePath(QString::fromStdString(ardourSession->path()));
+        QString name = QString::fromStdString(ardourSession->name());
+        if (name.isEmpty()) name = QFileInfo(path).fileName();
+        QDir().mkpath(path);
+        // Marcador de proyecto Android (no hay .ardour; se guarda metadata minima).
+        QFile marker(path + QStringLiteral("/.nova_android"));
+        if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            marker.write(name.toUtf8());
+            marker.close();
+        }
+        addProjectToRecent(name, path);
+        qCDebug(novaCore) << "💾 [Android] Proyecto guardado:" << path;
+        return true;
+    }
 #endif
     return false;
 }
@@ -216,6 +233,32 @@ void* NovaProjectManager::openProject(void *engine, const QString &sessionPath)
         qCCritical(novaCore) << "❌ Error al abrir la sesión:" << e.what();
     }
 #endif
+
+#if defined(Q_OS_ANDROID)
+    {
+        ARDOUR::AudioEngine *androidEngine = static_cast<ARDOUR::AudioEngine*>(engine);
+        QString cleanPath = sanitizePath(sessionPath);
+        QFileInfo info(cleanPath);
+        QString name = info.isDir() ? info.fileName() : info.completeBaseName();
+        if (name.isEmpty()) name = QStringLiteral("Untitled");
+
+        QString sessionDir = info.isDir() ? cleanPath : info.absolutePath();
+        QDir().mkpath(sessionDir);
+
+        ARDOUR::BusProfile bus_profile;
+        bus_profile.master_out_channels = 2;
+
+        auto session = new ARDOUR::Session(*androidEngine, sessionDir.toStdString(),
+                                          name.toStdString(), &bus_profile, "", false);
+        if (session) {
+            androidEngine->set_session(session);
+            addProjectToRecent(name, sessionDir);
+            qCDebug(novaCore) << "📂 [Android] Proyecto abierto:" << sessionDir;
+            return session;
+        }
+    }
+#endif
+
     return nullptr;
 }
 
