@@ -75,6 +75,10 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
             this, &NovaAudioEngine::androidCargaTerminada);
     connect(&m_androidLoader, &NovaSpikeLoader::cargaFallida,
             this, &NovaAudioEngine::androidCargaFallida);
+
+    // Auto-advance: cuando un clip se agota, pasar al siguiente.
+    connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackFinished,
+            this, &NovaAudioEngine::androidAutoAdvance);
 #endif
 }
 
@@ -662,6 +666,47 @@ void NovaAudioEngine::androidCargaFallida(const QString &error)
     qCWarning(novaCore) << "🔊 Android: carga fallida:" << error;
     Q_EMIT androidImportFinished(false, error);
     Q_EMIT androidImportingChanged(false);
+}
+
+void NovaAudioEngine::androidAutoAdvance()
+{
+#if defined(Q_OS_ANDROID)
+    if (!m_androidEngine.tieneFicheroCargado()) return;
+
+    // Buscar la siguiente region (por startFrame) tras la actual.
+    double curFrame = currentFrame();
+    int nextIdx = -1;
+    double bestStart = -1;
+    for (int i = 0; i < (m_regionModel ? m_regionModel->rowCount() : 0); ++i) {
+        QModelIndex idx = m_regionModel->index(i, 0);
+        double rStart = m_regionModel->data(idx, NovaRegionModel::StartFrameRole).toDouble();
+        double rLen = m_regionModel->data(idx, NovaRegionModel::LengthFramesRole).toDouble();
+        if (rLen <= 0) continue;
+        if (rStart > curFrame + 1.0) {
+            if (bestStart < 0 || rStart < bestStart) {
+                bestStart = rStart;
+                nextIdx = i;
+            }
+        }
+    }
+
+    if (nextIdx >= 0) {
+        QModelIndex idx = m_regionModel->index(nextIdx, 0);
+        double rStart = m_regionModel->data(idx, NovaRegionModel::StartFrameRole).toDouble();
+        double rLen = m_regionModel->data(idx, NovaRegionModel::LengthFramesRole).toDouble();
+        m_androidEngine.setPlaybackRange(static_cast<qint64>(rStart),
+                                        static_cast<qint64>(rStart + rLen));
+        m_androidEngine.seekToFrame(static_cast<qint64>(rStart));
+        m_androidEngine.setPlaying(true);
+        m_transport.play();
+        qCDebug(novaCore) << "⏭️ [Android] Auto-advance a región" << nextIdx;
+    } else {
+        // No hay más regiones: parar.
+        m_androidEngine.setPlaying(false);
+        m_transport.stop();
+        qCDebug(novaCore) << "⏹️ [Android] Fin de la reproducción.";
+    }
+#endif
 }
 
 void NovaAudioEngine::importUltimaGrabacionAndroid()

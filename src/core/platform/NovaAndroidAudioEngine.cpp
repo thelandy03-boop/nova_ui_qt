@@ -500,9 +500,8 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
 void NovaAndroidAudioEngine::setPlaying(bool enabled) {
     m_isPlaying.store(enabled);
 #if defined(Q_OS_ANDROID)
-    // El fichero cargado sigue al transporte del motor: al ponerlo en
-    // marcha arranca el reproductor, y al pararlo se detiene.
     if (enabled) {
+        m_exhaustionNotified.store(false, std::memory_order_relaxed);
         m_player.play();
         // El stream de salida tiene que estar en marcha para que suene.
         if (m_outputStream) {
@@ -529,6 +528,7 @@ bool NovaAndroidAudioEngine::tieneFicheroCargado() const {
 }
 
 bool NovaAndroidAudioEngine::loadDecoded(NovaDecodedAudio&& audio, QString* error) {
+    m_exhaustionNotified.store(false, std::memory_order_relaxed);
 #if defined(Q_OS_ANDROID)
     // El reproductor no es seguro entre hilos (el llamante lo usa desde el
     // hilo de audio), así que el stream de salida se cierra mientras se
@@ -964,6 +964,7 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
 
     // Loop por rango (Fase 3): si el playhead supera el final del loop,
     // se vuelve al inicio del rango.
+    bool rangoLoopActivo = false;
     if (m_engine->m_loopEnabled.load(std::memory_order_relaxed)
         && m_engine->hasLoopRange()) {
         const qint64 endFrame = m_engine->loopEndFrame();
@@ -971,6 +972,20 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
         if (m_engine->m_currentFrame.load(std::memory_order_relaxed) >= endFrame) {
             m_engine->m_player.seekToFrame(startFrame);
             m_engine->m_currentFrame.store(startFrame, std::memory_order_relaxed);
+            rangoLoopActivo = true;
+        }
+    }
+
+    // Auto-advance: si el reproductor se ha agotado (sin loop activo que
+    // haya manejado el caso), se avisa una sola vez para que el hilo de la
+    // interfaz pueda pasar a la siguiente region.
+    if (emitidos == 0 && !m_engine->m_player.isPlaying()
+        && m_engine->m_player.durationFrames() > 0
+        && !rangoLoopActivo
+        && !m_engine->m_loopEnabled.load(std::memory_order_relaxed)) {
+        if (!m_engine->m_exhaustionNotified.load(std::memory_order_relaxed)) {
+            m_engine->m_exhaustionNotified.store(true, std::memory_order_relaxed);
+            QMetaObject::invokeMethod(m_engine, "playbackFinished", Qt::QueuedConnection);
         }
     }
 

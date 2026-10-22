@@ -216,6 +216,7 @@ private:
     void androidCargaFallida(const QString &error);
     bool androidPrepararMotor();
     void importUltimaGrabacionAndroid();
+    void androidAutoAdvance();
 #endif
 };
 

@@ -196,6 +196,8 @@ public:
 
 signals:
     void audioInitialized(bool success);
+    // Se emite cuando el fichero/rango se agota (y no hay loop).
+    void playbackFinished();
     void recordingStateChanged(bool recording);
     void playbackStateChanged(bool playing);
     void bufferUnderrun();
@@ -262,6 +264,9 @@ private:
     // Picos del último bloque de salida (para VU meters).
     std::atomic<float> m_peakLeft{0.0f};
     std::atomic<float> m_peakRight{0.0f};
+
+    // Evita emitir playbackFinished() en cada callback del Oboe.
+    std::atomic<bool> m_exhaustionNotified{false};
 
     int m_framesPerBurst = 0;
 
