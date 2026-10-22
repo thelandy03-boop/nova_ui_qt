@@ -76,13 +76,21 @@ android {
     // androiddeployqt into android-build/libs/arm64-v8a/. Se añaden como
     // jniLibs para que el APK las traiga (sin esto el APK salia con las
     // librerias nativas de Qt y la app sin el motor).
+    // OJO: este fichero NO lleva bloque externalNativeBuild a proposito. El
+    // motor de audio lo compila CMake (CMakeLists.txt de la raiz, con Oboe por
+    // FetchContent); Gradle solo empaqueta el .so que deja androiddeployqt.
+    // Anadir externalNativeBuild aqui hace que Gradle invoque un CMake que no
+    // existe y falle con "Could not find a package configuration file provided
+    // by oboe". Ver AGENTS.md, seccion 3.
     sourceSets {
         main {
             jniLibs.srcDirs = ['../libs']
         }
     }
     // Qt's CMake (build_android/) and androiddeployqt stages it into the APK.
-    // The old standalone cpp/CMakeLists.txt is stale (Qt 6.6 paths) and unused.
+    // El antiguo android/app/src/main/cpp/CMakeLists.txt era obsoleto (rutas de
+    // Qt 6.6 y un find_package(oboe) imposible) y se elimino: era una trampa
+    // para quien intentase compilar desde aqui.
     
     // Packaging for QML assets
     aaptOptions {
