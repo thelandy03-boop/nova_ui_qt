@@ -45,8 +45,20 @@ set(CMAKE_PREFIX_PATH "/usr/lib/qt6")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL Qml Quick QuickControls2)
 
-# Force Qt6 moc path
-set(CMAKE_AUTOMOC_EXECUTABLE "/usr/lib/qt6/libexec/moc" CACHE FILEPATH "Qt6 moc executable")
+# El moc de Qt. Qt6 ya fija CMAKE_AUTOMOC_EXECUTABLE en su propio paquete
+# (que es el que vale en cada plataforma: el de Qt para Android en Android, el
+# del escritorio en Linux).
+#
+# Antes se fijaba a pelo "/usr/lib/qt6/libexec/moc", que es la ruta del Qt de
+# escritorio de esta maquina. En un runner de CI (o en cualquier equipo sin
+# ese Qt de escritorio) la ruta no existe y el build falla con:
+#   "No rule to make target '/usr/lib/qt6/libexec/moc', needed by
+#    nova_ui_qt_autogen/timestamp"
+# Por eso la ruta fija solo se aplica si de verdad existe; si no, manda la que
+# dio Qt6.
+if(EXISTS "/usr/lib/qt6/libexec/moc")
+    set(CMAKE_AUTOMOC_EXECUTABLE "/usr/lib/qt6/libexec/moc" CACHE FILEPATH "Qt6 moc executable")
+endif()
 set(CMAKE_AUTOMOC_MOC_OPTIONS "-DQT_VERSION=0x060800")
 
 # Solo Linux Desktop enlaza las librerías compartidas de Ardour Core

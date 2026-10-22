@@ -86,6 +86,11 @@ jobs:
             "build-tools;35.0.0" \
             "platform-tools"
 
+          # El runner trae un NDK preinstalado (27.x) en ANDROID_NDK_ROOT, pero
+          # el CMakeLists pide el 26.1.10909125. Sin esto, el toolchain que
+          # usa CMake no es el que se quiere.
+          echo "ANDROID_NDK_ROOT=${SDK}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
       - name: Python (aqtinstall)
         uses: actions/setup-python@v5
         with:

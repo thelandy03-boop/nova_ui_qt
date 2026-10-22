@@ -54,12 +54,14 @@ echo "🚀 [NOVA ANDROID BUILD] Configurando entorno de compilación..."
 export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-${ANDROID_SDK_ROOT}/ndk/26.1.10909125}"
 
-if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
-    export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
-elif [ -d "/usr/lib/jvm/java-21-openjdk-amd64" ]; then
-    export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
-else
-    export JAVA_HOME="/usr/lib/jvm/default-java"
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/java" ]; then
+    if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+        export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+    elif [ -d "/usr/lib/jvm/java-21-openjdk-amd64" ]; then
+        export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
+    else
+        export JAVA_HOME="/usr/lib/jvm/default-java"
+    fi
 fi
 
 export PATH="${JAVA_HOME}/bin:${PATH}"
