@@ -38,6 +38,13 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(true);
 
+#if defined(Q_OS_ANDROID)
+    // Fase 5 (Touch UX): mejor escalado en pantallas de alta densidad y
+    // tamaños táctiles más consistentes en dispositivos Android.
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
+
     // 🎨 Registrar tipo nativo de formas de onda
     qmlRegisterType<NovaWaveformItem>("NovaStudio", 1, 0, "NovaWaveformItem");
 
