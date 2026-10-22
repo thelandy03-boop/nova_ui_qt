@@ -100,7 +100,13 @@ public:
         return m_transport.isPlaying();
 #endif
     }
-    bool isRecording() const { return m_recorder.isRecording(); }
+    bool isRecording() const {
+#if defined(Q_OS_ANDROID)
+        return m_androidGrabando;
+#else
+        return m_recorder.isRecording();
+#endif
+    }
     QString timecode() const {
 #if defined(Q_OS_ANDROID)
         if (m_androidEngine.tieneFicheroCargado()) {
@@ -196,6 +202,7 @@ private:
     NovaSpikeLoader m_androidLoader;
     bool m_androidMotorListo = false;
     bool m_androidParadaPedida = false;
+    bool m_androidGrabando = false;
     double m_androidDuracion = 0.0;
     int m_androidVersionPicos = 0;
 #endif
@@ -208,6 +215,7 @@ private:
     void androidCargaTerminada();
     void androidCargaFallida(const QString &error);
     bool androidPrepararMotor();
+    void importUltimaGrabacionAndroid();
 #endif
 };
 

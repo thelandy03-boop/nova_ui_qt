@@ -11,6 +11,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QDir>
+#include <QDirIterator>
 #include <cmath>
 #include <algorithm>
 
@@ -165,7 +166,33 @@ void NovaAudioEngine::stop() {
 #endif
 }
 void NovaAudioEngine::togglePlay() { m_transport.togglePlay(); }
-void NovaAudioEngine::toggleRecord() { m_recorder.toggleRecord(); }
+void NovaAudioEngine::toggleRecord() {
+#if defined(Q_OS_ANDROID)
+    // Fase 3 (grabación): en Android el grabador de Ardour (NovaRecordManager)
+    // es un stub. Aquí se captura con el motor Oboe (input stream ya abierto
+    // en initialize) y, al parar, se importa el WAV resultante al timeline.
+    if (m_androidGrabando) {
+        m_androidGrabando = false;
+        m_androidEngine.setPlaying(false);
+        m_transport.stop();
+        Q_EMIT isRecordingChanged();
+        // Importar el último WAV capturado (si existe) en el timeline.
+        importUltimaGrabacionAndroid();
+    } else {
+        // Asegurar que el motor está listo (abre el input stream).
+        if (!m_androidMotorListo) {
+            m_androidMotorListo = androidPrepararMotor();
+        }
+        m_androidGrabando = true;
+        m_androidEngine.setPlaying(true);
+        m_transport.play();
+        Q_EMIT isRecordingChanged();
+        qCDebug(novaCore) << "🎙️ [Android] Grabación iniciada (captura de micrófono).";
+    }
+#else
+    m_recorder.toggleRecord();
+#endif
+}
 void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
 void NovaAudioEngine::locateBeat(double beat) { m_transport.locateBeat(beat); }
 void NovaAudioEngine::setBpm(double bpm) { m_transport.setBpm(bpm); }
@@ -392,7 +419,7 @@ QString NovaAudioEngine::currentProjectPath() const
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     return QString::fromStdString(static_cast<ARDOUR::Session*>(session)->path());
 #else
-    return QString();
+    return QString::fromStdString(static_cast<ARDOUR::Session*>(session)->path());
 #endif
 }
 
@@ -611,6 +638,32 @@ void NovaAudioEngine::androidCargaFallida(const QString &error)
     qCWarning(novaCore) << "🔊 Android: carga fallida:" << error;
     Q_EMIT androidImportFinished(false, error);
     Q_EMIT androidImportingChanged(false);
+}
+
+void NovaAudioEngine::importUltimaGrabacionAndroid()
+{
+    // Busca el WAV mas reciente en la carpeta interchange del proyecto.
+    QString dir = currentProjectPath();
+    if (dir.isEmpty()) return;
+
+    QDir interchange(dir + QStringLiteral("/interchange"));
+    if (!interchange.exists()) return;
+
+    QStringList wavs;
+    // Recorrer subcarpetas (una por pista).
+    QDirIterator it(interchange.absolutePath(), QStringList() << QStringLiteral("*.wav"),
+                    QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        wavs.append(it.next());
+    }
+    if (wavs.isEmpty()) return;
+
+    // El mas reciente por fecha de modificacion.
+    std::sort(wavs.begin(), wavs.end(), [](const QString &a, const QString &b) {
+        return QFileInfo(a).lastModified() > QFileInfo(b).lastModified();
+    });
+
+    loadAndPlayAndroid(wavs.first());
 }
 
 #endif // Q_OS_ANDROID
