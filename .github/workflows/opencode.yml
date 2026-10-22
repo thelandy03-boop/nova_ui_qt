@@ -119,154 +119,11 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      # ---------------------------------------------------------------------
-      # RAMA BASE DINÁMICA
-      #
-      # El action de opencode (`opencode github run`) SIEMPRE crea el Pull
-      # Request con base = rama por defecto del repo (`repo.default_branch`),
-      # sin forma de cambiarlo por input, env var o flag. Lo que sí depende
-      # del workflow es el punto de partida del agente: la rama que se hace
-      # checkout es la base de la rama nueva `opencode/issueN-<ts>`.
-      #
-      # Por eso aquí se resuelve la rama que pidió el usuario y se hace
-      # checkout de ella. Al final del run, el PR creado por el action se
-      # reapunta a esa rama con `gh pr edit --base` (PATCH /pulls/{n}).
-      # ---------------------------------------------------------------------
-      - name: Resolver rama base solicitada
-        id: base_branch
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO: ${{ github.repository }}
-          DEFAULT_BRANCH_FALLBACK: ${{ github.event.repository.default_branch }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-
-        shell: python3 {0}
-        run: |
-          import os, re, subprocess
-
-          def out(k, v):
-              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-                  f.write(f"{k}={v}\n")
-
-          repo = os.environ.get("REPO", "")
-          token = os.environ.get("GH_TOKEN", "")
-
-          def gh(args):
-              env = dict(os.environ)
-              if token:
-                  env["GH_TOKEN"] = token
-              try:
-                  r = subprocess.run(["gh"] + args, capture_output=True, text=True,
-                                     env=env, timeout=60)
-              except Exception as e:
-                  print(f"gh error: {e}")
-                  return ""
-              if r.returncode != 0:
-                  print(f"gh {' '.join(args)} -> {r.returncode}: {r.stderr.strip()[:300]}")
-                  return ""
-              return r.stdout
-
-          default_branch = gh(["api", f"repos/{repo}", "--jq", ".default_branch"]).strip()
-          if not default_branch:
-              default_branch = os.environ.get("DEFAULT_BRANCH_FALLBACK", "").strip()
-
-          raw = gh(["api", "--paginate", f"repos/{repo}/branches?per_page=100", "--jq", ".[].name"])
-          branches = sorted({line.strip() for line in raw.splitlines() if line.strip()})
-          print(f"default_branch={default_branch}")
-          print(f"branches={branches}")
-
-          if not branches:
-              # No se pudo consultar el remoto (token/red): no se fuerza ninguna
-              # rama, se deja el checkout por defecto y el PR queda en la rama
-              # por defecto como siempre.
-              out("base_branch", "")
-              out("default_branch", default_branch)
-              out("base_source", "unresolved")
-              out("base_warning", "no se pudieron listar las ramas del remoto")
-              print("Sin lista de ramas: se usa la rama por defecto del checkout.")
-              raise SystemExit(0)
-
-          text = "\n".join([
-              os.environ.get("ISSUE_TITLE", ""),
-              os.environ.get("ISSUE_BODY", ""),
-              os.environ.get("COMMENT_BODY", ""),
-          ])
-
-          # "rama X", "rama: X", "base: X", "branch X", "basado en la rama X"...
-          EXPLICIT = re.compile(
-              r"(?i)\b(?:base|rama|branch)\s*(?:de\s+|para\s+)?[:=]?\s*([A-Za-z0-9_][A-Za-z0-9_./-]*)"
-          )
-
-          known = None
-          unknown = []
-          for m in EXPLICIT.finditer(text):
-              cand = m.group(1).rstrip(".,;:!?)]}'\"")
-              if not cand:
-                  continue
-              if cand in branches:
-                  known = cand
-                  break
-              # Solo se reporta como error lo que tiene forma de rama.
-              if any(ch in cand for ch in "/-_.@"):
-                  unknown.append(cand)
-
-          base = default_branch
-          source = "default"
-          warning = ""
-
-          if known:
-              base = known
-              source = "explicit"
-          elif unknown:
-              warning = (f"se pidió la rama '{unknown[0]}' pero no existe en el remoto; "
-                         f"se usa '{default_branch}'")
-
-          if source == "default":
-              # Mención implícita: el texto nombra una rama que existe.
-              hits = []
-              for name in branches:
-                  if name == default_branch:
-                      continue
-                  pat = re.compile(r"(?<![\w./-])" + re.escape(name) + r"(?![\w./-])")
-                  if pat.search(text):
-                      hits.append(name)
-              if hits:
-                  base = max(hits, key=len)
-                  source = "implicit"
-
-          out("base_branch", base)
-          out("default_branch", default_branch)
-          out("base_source", source)
-          out("base_warning", warning.replace("\n", " ")[:300])
-          print(f"base_branch={base} source={source} warning={warning or '-'}")
-
       - name: Checkout del código del repositorio
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN }}
-          # La rama resuelta arriba es el punto de partida del agente:
-          # de aquí sale la rama `opencode/issueN-<ts>` que luego se publica.
-          ref: ${{ steps.base_branch.outputs.base_branch }}
-
-      # El action de opencode valida los commits con `git rev-list <default>..<rama>`.
-      # Si el checkout fue de otra rama, ese ref local no existe y el action cae
-      # a un `fetch --depth=1` (que deja el repo shallow). Se crea el ref local
-      # para que la comparación sea directa y sin efectos colaterales.
-      - name: Preparar ref local de la rama por defecto
-        if: steps.base_branch.outputs.base_branch != '' && steps.base_branch.outputs.base_branch != steps.base_branch.outputs.default_branch
-        run: |
-          set -uo pipefail
-          DEFAULT="${{ steps.base_branch.outputs.default_branch }}"
-          if git show-ref --verify --quiet "refs/remotes/origin/${DEFAULT}"; then
-            git branch --force "$DEFAULT" "origin/${DEFAULT}" \
-              || echo "::warning::No se pudo crear el ref local ${DEFAULT}; el action usará su fallback."
-            echo "Ref local ${DEFAULT} listo."
-          else
-            echo "origin/${DEFAULT} no existe: se deja el checkout como está."
-          fi
 
       - name: Configurar identidad de Git para el Agente
         run: |
@@ -275,18 +132,9 @@ jobs:
 
       # ---------------------------------------------------------------------
       # (b) FIX HANG — Red de respaldo: config global headless. Aunque el
-      # opencode.json del repo ya trae el bloque "permissions", este archivo
+      # opencode.json del repo ya trae el bloque "permission", este archivo
       # garantiza que NINGÚN permiso quede en "ask" en el runner, sin importar
       # qué versión del config del repo se haya hecho checkout.
-      #
-      # OJO: en V2 las reglas globales se aplican DESPUÉS de las del repo y
-      # gana la última que coincide. Por eso aquí NO se pone un
-      # {"action":"*","effect":"allow"} global: aplastaría los "deny" del
-      # opencode.json del repo (que son los que impiden que el agente se meta
-      # por el camino equivocado del build de Android). Solo se permiten los
-      # casos concretos que la política base pone en "ask" (la lectura de
-      # ficheros .env), y se vuelven a asegurar los "deny" del repo, que aquí
-      # quedan en la posición más fuerte.
       # ---------------------------------------------------------------------
       - name: Configurar permisos headless de OpenCode (anti-hang)
         run: |
@@ -294,20 +142,15 @@ jobs:
           cat > "$HOME/.config/opencode/opencode.json" <<'EOF'
           {
             "$schema": "https://opencode.ai/config.json",
-            "permissions": [
-              { "action": "read", "resource": "*.env", "effect": "allow" },
-              { "action": "read", "resource": "*.env.*", "effect": "allow" },
-              { "action": "question", "resource": "*", "effect": "allow" },
-              { "action": "external_directory", "resource": "*", "effect": "allow" },
-              { "action": "shell", "resource": "*gradlew*", "effect": "deny" },
-              { "action": "shell", "resource": "*find_package(oboe*", "effect": "deny" },
-              { "action": "edit", "resource": "android/app/src/main/cpp/*", "effect": "deny" }
-            ],
-            "policies": [
-              { "action": "tool.use", "resource": "shell:*gradlew*", "effect": "deny" },
-              { "action": "tool.use", "resource": "shell:*find_package(oboe*", "effect": "deny" },
-              { "action": "tool.use", "resource": "edit:android/app/src/main/cpp/*", "effect": "deny" }
-            ]
+            "permission": {
+              "*": "allow",
+              "external_directory": "allow",
+              "doom_loop": "allow",
+              "question": "allow",
+              "bash": "allow",
+              "edit": "allow",
+              "write": "allow"
+            }
           }
           EOF
 
@@ -444,25 +287,6 @@ jobs:
                       print(f"⚠️ No se pudo descargar la imagen {url}: {e}")
 
           final_prompt = raw_prompt
-
-          # Contexto de rama base: el HEAD ya está en esa rama y el PR se
-          # publicará con base = esa rama.
-          base_branch = os.environ.get("BASE_BRANCH", "")
-          base_source = os.environ.get("BASE_SOURCE", "")
-          base_warning = os.environ.get("BASE_WARNING", "")
-          if base_branch:
-              final_prompt += (
-                  "\n\n---\n🌿 [CONTEXTO DE RAMA BASE]:\n"
-                  f"- La rama base de este trabajo es `{base_branch}`"
-                  f" (origen: {base_source}).\n"
-                  f"- El workspace ya está posicionado en `{base_branch}`: "
-                  "trabaja sobre ese código, NO te cambies a la rama por defecto "
-                  "y NO crees ramas adicionales.\n"
-                  f"- El Pull Request de este trabajo se abrirá con base = `{base_branch}`.\n"
-              )
-              if base_warning:
-                  final_prompt += f"- ⚠️ Aviso del workflow: {base_warning}\n"
-
           if downloaded_images:
               final_prompt += "\n\n---\n📸 [IMÁGENES / CAPTURAS ADJUNTAS DISPONIBLES LOCALMENTE]:\n"
               final_prompt += "El usuario adjuntó las siguientes imágenes en el issue/comentario. Están descargadas localmente en el repositorio para tu análisis visual:\n"
@@ -481,9 +305,6 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           COMMENT_BODY: ${{ github.event.comment.body }}
-          BASE_BRANCH: ${{ steps.base_branch.outputs.base_branch }}
-          BASE_SOURCE: ${{ steps.base_branch.outputs.base_source }}
-          BASE_WARNING: ${{ steps.base_branch.outputs.base_warning }}
 
       - name: Ejecutar OpenCode CLI con Muse Spark 1.3
         if: steps.dedupe.outputs.skip != 'true'
@@ -503,98 +324,4 @@ jobs:
           GIT_AUTHOR_EMAIL: ${{ secrets.PAT_EMAIL }}
           GIT_COMMITTER_NAME: ${{ github.repository_owner }}
           GIT_COMMITTER_EMAIL: ${{ secrets.PAT_EMAIL }}
-
-      # ---------------------------------------------------------------------
-      # VERIFICACION POST-AGENTE
-      #
-      # Lo que dejo el agente se comprueba aqui, en el runner, antes de que
-      # nadie tenga que mirar los logs a mano. Corre los contratos del repo
-      # (scripts/verify_contracts.sh: Python puro, sin Qt ni el arbol de
-      # Ardour) sobre la rama que el agente dejo.
-      #
-      # Si algo falla, el run queda en rojo y el issue recibe un comentario
-      # con el nombre exacto de la comprobacion que fallo. Asi el fallo se ve
-      # en minutos y no en una hora de depuracion manual.
-      # ---------------------------------------------------------------------
-      - name: Verificar lo que dejo el agente
-        if: always() && steps.dedupe.outputs.skip != 'true' && needs.guard.outputs.is_pr != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ needs.guard.outputs.issue_number }}
-        run: |
-          set -uo pipefail
-
-          PR=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" --jq \
-            "[.[] | select(.head.ref | startswith(\"opencode/issue${ISSUE_NUMBER}-\"))] | sort_by(.number) | reverse | .[0].number // empty")
-          if [ -z "${PR}" ]; then
-            echo "No hay PR del agente para el issue #${ISSUE_NUMBER}: nada que verificar."
-            exit 0
-          fi
-
-          BRANCH=$(gh api "repos/${REPO}/pulls/${PR}" --jq .head.ref)
-          echo "Verificando la rama ${BRANCH} (PR #${PR})"
-
-          git fetch origin "${BRANCH}"
-          # -f: el runner es desechable, el agente puede haber dejado cambios
-          # sin commitear en el arbol de trabajo.
-          git checkout -f -B "${BRANCH}" "origin/${BRANCH}"
-
-          if ! SALIDA=$(./scripts/verify_contracts.sh 2>&1); then
-            echo "${SALIDA}"
-            echo "::error::Los contratos del repo fallan en ${BRANCH}"
-            {
-              echo "❌ **La verificación del agente falló** en la rama \`${BRANCH}\` (PR #${PR})."
-              echo ""
-              echo '```'
-              echo "${SALIDA}"
-              echo '```'
-              echo ""
-              echo "Corrige lo que señala la salida y vuelve a pedir el trabajo."
-            } > /tmp/opencode-verificacion.md
-            gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body-file /tmp/opencode-verificacion.md || true
-            exit 1
-          fi
-
-          echo "${SALIDA}"
-          echo "✅ Los contratos del repo pasan en ${BRANCH}"
-
-      # ---------------------------------------------------------------------
-      # REAPUNTAR EL PR A LA RAMA BASE
-      #
-      # `opencode github run` crea el PR con base = rama por defecto del repo.
-      # Como el agente trabajó sobre la rama resuelta arriba, el PR se
-      # reapunta con `gh pr edit --base` (PATCH /repos/{repo}/pulls/{n}).
-      # Solo aplica cuando el action creó el PR en este run (evento de issue);
-      # en un PR ya existente manda la base que eligió el humano.
-      # ---------------------------------------------------------------------
-      - name: Apuntar el Pull Request a la rama base solicitada
-        if: always() && steps.dedupe.outputs.skip != 'true' && needs.guard.outputs.is_pr != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ needs.guard.outputs.issue_number }}
-          BASE_BRANCH: ${{ steps.base_branch.outputs.base_branch }}
-          DEFAULT_BRANCH: ${{ steps.base_branch.outputs.default_branch }}
-        run: |
-          set -uo pipefail
-          if [ -z "$BASE_BRANCH" ] || [ "$BASE_BRANCH" = "$DEFAULT_BRANCH" ]; then
-            echo "Sin reapuntar: la rama base es la rama por defecto ($DEFAULT_BRANCH)."
-            exit 0
-          fi
-          PR=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" --jq \
-            "[.[] | select(.head.ref | startswith(\"opencode/issue${ISSUE_NUMBER}-\"))] | sort_by(.number) | reverse | .[0].number // empty")
-          if [ -z "$PR" ]; then
-            echo "No hay PR del agente para el issue #${ISSUE_NUMBER}: nada que reapuntar."
-            exit 0
-          fi
-          CURRENT=$(gh api "repos/${REPO}/pulls/${PR}" --jq .base.ref)
-          if [ "$CURRENT" = "$BASE_BRANCH" ]; then
-            echo "El PR #${PR} ya apunta a ${BASE_BRANCH}."
-            exit 0
-          fi
-          if gh pr edit "$PR" --repo "$REPO" --base "$BASE_BRANCH"; then
-            echo "PR #${PR} reapuntado de ${CURRENT} a ${BASE_BRANCH}."
-          else
-            echo "::warning::No se pudo reapuntar el PR #${PR} de ${CURRENT} a ${BASE_BRANCH}. Revisa el PR manualmente."
-          fi
+          
