@@ -48,8 +48,11 @@ esac
 echo "🚀 [NOVA ANDROID BUILD] Configurando entorno de compilación..."
 
 # 1. Variables del sistema Android y Java 17 LTS (Oficial para AGP 8 / Qt 6.8)
-export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-export ANDROID_NDK_ROOT="$HOME/Android/Sdk/ndk/26.1.10909125"
+# El SDK y el NDK se respetan si el entorno ya los define (asi funciona en un
+# runner de CI, donde el SDK no esta en $HOME/Android/Sdk). Si no, se usan los
+# de por defecto de esta maquina.
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-${ANDROID_SDK_ROOT}/ndk/26.1.10909125}"
 
 if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
