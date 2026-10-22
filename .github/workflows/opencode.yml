@@ -275,9 +275,18 @@ jobs:
 
       # ---------------------------------------------------------------------
       # (b) FIX HANG — Red de respaldo: config global headless. Aunque el
-      # opencode.json del repo ya trae el bloque "permission", este archivo
+      # opencode.json del repo ya trae el bloque "permissions", este archivo
       # garantiza que NINGÚN permiso quede en "ask" en el runner, sin importar
       # qué versión del config del repo se haya hecho checkout.
+      #
+      # OJO: en V2 las reglas globales se aplican DESPUÉS de las del repo y
+      # gana la última que coincide. Por eso aquí NO se pone un
+      # {"action":"*","effect":"allow"} global: aplastaría los "deny" del
+      # opencode.json del repo (que son los que impiden que el agente se meta
+      # por el camino equivocado del build de Android). Solo se permiten los
+      # casos concretos que la política base pone en "ask" (la lectura de
+      # ficheros .env), y se vuelven a asegurar los "deny" del repo, que aquí
+      # quedan en la posición más fuerte.
       # ---------------------------------------------------------------------
       - name: Configurar permisos headless de OpenCode (anti-hang)
         run: |
@@ -285,15 +294,20 @@ jobs:
           cat > "$HOME/.config/opencode/opencode.json" <<'EOF'
           {
             "$schema": "https://opencode.ai/config.json",
-            "permission": {
-              "*": "allow",
-              "external_directory": "allow",
-              "doom_loop": "allow",
-              "question": "allow",
-              "bash": "allow",
-              "edit": "allow",
-              "write": "allow"
-            }
+            "permissions": [
+              { "action": "read", "resource": "*.env", "effect": "allow" },
+              { "action": "read", "resource": "*.env.*", "effect": "allow" },
+              { "action": "question", "resource": "*", "effect": "allow" },
+              { "action": "external_directory", "resource": "*", "effect": "allow" },
+              { "action": "shell", "resource": "*gradlew*", "effect": "deny" },
+              { "action": "shell", "resource": "*find_package(oboe*", "effect": "deny" },
+              { "action": "edit", "resource": "android/app/src/main/cpp/*", "effect": "deny" }
+            ],
+            "policies": [
+              { "action": "tool.use", "resource": "shell:*gradlew*", "effect": "deny" },
+              { "action": "tool.use", "resource": "shell:*find_package(oboe*", "effect": "deny" },
+              { "action": "tool.use", "resource": "edit:android/app/src/main/cpp/*", "effect": "deny" }
+            ]
           }
           EOF
 
@@ -489,6 +503,61 @@ jobs:
           GIT_AUTHOR_EMAIL: ${{ secrets.PAT_EMAIL }}
           GIT_COMMITTER_NAME: ${{ github.repository_owner }}
           GIT_COMMITTER_EMAIL: ${{ secrets.PAT_EMAIL }}
+
+      # ---------------------------------------------------------------------
+      # VERIFICACION POST-AGENTE
+      #
+      # Lo que dejo el agente se comprueba aqui, en el runner, antes de que
+      # nadie tenga que mirar los logs a mano. Corre los contratos del repo
+      # (scripts/verify_contracts.sh: Python puro, sin Qt ni el arbol de
+      # Ardour) sobre la rama que el agente dejo.
+      #
+      # Si algo falla, el run queda en rojo y el issue recibe un comentario
+      # con el nombre exacto de la comprobacion que fallo. Asi el fallo se ve
+      # en minutos y no en una hora de depuracion manual.
+      # ---------------------------------------------------------------------
+      - name: Verificar lo que dejo el agente
+        if: always() && steps.dedupe.outputs.skip != 'true' && needs.guard.outputs.is_pr != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.guard.outputs.issue_number }}
+        run: |
+          set -uo pipefail
+
+          PR=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" --jq \
+            "[.[] | select(.head.ref | startswith(\"opencode/issue${ISSUE_NUMBER}-\"))] | sort_by(.number) | reverse | .[0].number // empty")
+          if [ -z "${PR}" ]; then
+            echo "No hay PR del agente para el issue #${ISSUE_NUMBER}: nada que verificar."
+            exit 0
+          fi
+
+          BRANCH=$(gh api "repos/${REPO}/pulls/${PR}" --jq .head.ref)
+          echo "Verificando la rama ${BRANCH} (PR #${PR})"
+
+          git fetch origin "${BRANCH}"
+          # -f: el runner es desechable, el agente puede haber dejado cambios
+          # sin commitear en el arbol de trabajo.
+          git checkout -f -B "${BRANCH}" "origin/${BRANCH}"
+
+          if ! SALIDA=$(./scripts/verify_contracts.sh 2>&1); then
+            echo "${SALIDA}"
+            echo "::error::Los contratos del repo fallan en ${BRANCH}"
+            {
+              echo "❌ **La verificación del agente falló** en la rama \`${BRANCH}\` (PR #${PR})."
+              echo ""
+              echo '```'
+              echo "${SALIDA}"
+              echo '```'
+              echo ""
+              echo "Corrige lo que señala la salida y vuelve a pedir el trabajo."
+            } > /tmp/opencode-verificacion.md
+            gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body-file /tmp/opencode-verificacion.md || true
+            exit 1
+          fi
+
+          echo "${SALIDA}"
+          echo "✅ Los contratos del repo pasan en ${BRANCH}"
 
       # ---------------------------------------------------------------------
       # REAPUNTAR EL PR A LA RAMA BASE

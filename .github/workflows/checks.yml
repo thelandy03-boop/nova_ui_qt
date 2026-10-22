@@ -1,0 +1,60 @@
+name: Contratos
+
+# Corre los contratos del repo en cada push y en cada pull request.
+#
+# Son los invariantes que, si se rompen, hacen que algo deje de funcionar
+# (por ejemplo: que Gradle/intente compilar el nativo con un CMake que no
+# existe, o que Oboe vuelva a llegar por un find_package imposible).
+#
+# Solo Python: no necesita Qt, ni NDK, ni el arbol de Ardour. Tarda segundos.
+#
+# La parte de C++ (ctest) no corre aqui porque el build de escritorio enlaza
+# contra el arbol de Ardour, que esta fuera del repo. Esa se verifica en la
+# maquina de trabajo, con ./scripts/verify.sh.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contratos:
+    name: Contratos del repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Correr los contratos
+        run: ./scripts/verify_contracts.sh
+
+      - name: Comprobar que el JSON de OpenCode es valido
+        run: python3 -c "import json,sys; json.load(open('opencode.json'))"
+
+      - name: Comprobar la sintaxis de los workflows
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import glob, sys, yaml
+          fallos = 0
+          for ruta in sorted(glob.glob('.github/workflows/*.yml')):
+              try:
+                  yaml.safe_load(open(ruta, encoding='utf-8'))
+                  print(f"[OK]    {ruta}")
+              except Exception as error:
+                  fallos += 1
+                  print(f"[FALLO] {ruta}: {error}")
+          sys.exit(1 if fallos else 0)
+          PY
