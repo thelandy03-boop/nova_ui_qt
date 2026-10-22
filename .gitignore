@@ -130,3 +130,8 @@ venv/
 
 # ── Worktrees aislados (ramas de trabajo) ─────────────────────
 .worktrees/
+
+# Dependencias empaquetadas a proposito:
+# OpenSSL 3 para Android (HTTPS del updater) y bundle de CAs Mozilla.
+!third_party/android_openssl/ssl_3/**/*.so
+!third_party/cacert.pem

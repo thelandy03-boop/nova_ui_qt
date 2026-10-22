@@ -7,6 +7,8 @@
 #include <QUrl>
 #include <QDesktopServices>
 #include <QDebug>
+#include <QSslCertificate>
+#include <QSslConfiguration>
 
 namespace {
 // Token que identifica el ABI del binario en el nombre del asset del release.
@@ -33,6 +35,11 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
 
 void NovaUpdateChecker::check()
 {
+#if !defined(Q_OS_ANDROID)
+    // Los releases publican APKs: en escritorio no hay actualizacion que
+    // instalar, asi que no se consulta ni se bloquea la app.
+    return;
+#endif
     if (m_checking) return;
     m_checking = true;
     Q_EMIT checkingChanged();
@@ -42,6 +49,18 @@ void NovaUpdateChecker::check()
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-UpdateChecker"));
     req.setRawHeader("Accept", "application/vnd.github+json");
+
+    // Android no trae un almacen de CAs usable por OpenSSL: se usa el bundle
+    // Mozilla embebido en el binario.
+    const QList<QSslCertificate> caCerts =
+        QSslCertificate::fromPath(QStringLiteral(":/certs/cacert.pem"));
+    if (!caCerts.isEmpty()) {
+        QSslConfiguration ssl = req.sslConfiguration();
+        ssl.setCaCertificates(caCerts);
+        req.setSslConfiguration(ssl);
+    } else {
+        qCWarning(novaCore) << "UpdateChecker: no se pudo cargar el bundle de CAs";
+    }
 
     QNetworkReply *reply = m_nam.get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {

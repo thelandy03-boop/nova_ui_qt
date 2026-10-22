@@ -163,6 +163,20 @@ target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Co
 if(ANDROID)
     set_property(TARGET nova_ui_qt PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
 
+    # Qt para Android no incluye OpenSSL: sin estas libs el backend TLS no
+    # arranca y cualquier HTTPS (p. ej. NovaUpdateChecker) falla.
+    set(NOVA_OPENSSL_ABI_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/android_openssl/ssl_3/${ANDROID_ABI}")
+    if(EXISTS "${NOVA_OPENSSL_ABI_DIR}/libssl_3.so"
+       AND EXISTS "${NOVA_OPENSSL_ABI_DIR}/libcrypto_3.so")
+        set_property(TARGET nova_ui_qt APPEND PROPERTY QT_ANDROID_EXTRA_LIBS
+            "${NOVA_OPENSSL_ABI_DIR}/libssl_3.so"
+            "${NOVA_OPENSSL_ABI_DIR}/libcrypto_3.so")
+    else()
+        message(WARNING
+            "NOVA: faltan libssl_3/libcrypto_3 para ${ANDROID_ABI}; HTTPS no funcionara en el APK")
+    endif()
+
     # El controlador del spike (motor de Oboe + forma de onda) solo se
     # compila en Android: en el escritorio la app es la de siempre.
     target_sources(nova_ui_qt PRIVATE
@@ -271,6 +285,13 @@ qt_add_qml_module(nova_ui_qt
         ${NOVA_QML_FILES}
     RESOURCES
         ${NOVA_QML_RESOURCES}
+)
+
+# Bundle de CAs Mozilla: garantiza verificacion TLS tambien en Android, donde
+# el backend OpenSSL no lee el almacen del sistema por si solo.
+qt_add_resources(nova_ui_qt "nova_ca_bundle"
+    PREFIX "/certs"
+    FILES third_party/cacert.pem
 )
 
 # ---------------------------------------------------------------------------
