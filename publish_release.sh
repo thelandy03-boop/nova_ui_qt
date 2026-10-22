@@ -4,22 +4,23 @@
 # siempre la release marcada como "latest".
 #
 # Uso:
-#   ./publish_release.sh [patch|minor|major] [--with-x86]
+#   ./publish_release.sh [patch|minor|major] [--no-x86]
 #
 #   patch|minor|major  Tipo de incremento de version (por defecto: patch).
-#   --with-x86         Adjunta tambien el APK x86_64 debug (Waydroid/emulador).
-#                      OJO: no se adjunta por defecto porque el checker elige
-#                      el primer asset .apk y ese no sirve en telefonos ARM.
+#   --no-x86           No adjuntar el APK x86_64 debug (Waydroid/emulador).
+#                      Por defecto se adjuntan ambos APKs; la app elige el
+#                      asset que coincide con el ABI del dispositivo.
 set -e
 
 BUMP="patch"
-WITH_X86=0
+WITH_X86=1
 for arg in "$@"; do
     case "$arg" in
         patch|minor|major) BUMP="$arg" ;;
+        --no-x86) WITH_X86=0 ;;
         --with-x86) WITH_X86=1 ;;
         -h|--help)
-            echo "Uso: $0 [patch|minor|major] [--with-x86]"
+            echo "Uso: $0 [patch|minor|major] [--no-x86]"
             exit 0 ;;
         *) echo "❌ Opcion desconocida: $arg"; exit 1 ;;
     esac

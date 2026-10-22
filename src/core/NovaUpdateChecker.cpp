@@ -8,6 +8,24 @@
 #include <QDesktopServices>
 #include <QDebug>
 
+namespace {
+// Token que identifica el ABI del binario en el nombre del asset del release.
+QString currentAbiToken()
+{
+#if defined(Q_PROCESSOR_ARM_64)
+    return QStringLiteral("arm64");
+#elif defined(Q_PROCESSOR_X86_64)
+    return QStringLiteral("x86_64");
+#elif defined(Q_PROCESSOR_X86)
+    return QStringLiteral("x86");
+#elif defined(Q_PROCESSOR_ARM)
+    return QStringLiteral("armeabi");
+#else
+    return QString();
+#endif
+}
+} // namespace
+
 NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
     : QObject(parent)
 {
@@ -53,17 +71,24 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     // Quitar prefijo 'v' si lo tiene.
     if (tag.startsWith(QLatin1Char('v'))) tag = tag.mid(1);
 
-    // Buscar un asset .apk para descarga directa.
+    // Buscar un asset .apk para descarga directa, prefiriendo el ABI actual
+    // (arm64-v8a en telefonos, x86_64 en Waydroid/emulador).
     QString apkUrl;
+    QString fallbackApkUrl;
+    const QString abi = currentAbiToken();
     QJsonArray assets = obj.value(QStringLiteral("assets")).toArray();
     for (const QJsonValue &a : assets) {
         QJsonObject ao = a.toObject();
         QString name = ao.value(QStringLiteral("name")).toString();
-        if (name.endsWith(QStringLiteral(".apk"), Qt::CaseInsensitive)) {
-            apkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+        if (!name.endsWith(QStringLiteral(".apk"), Qt::CaseInsensitive)) continue;
+        const QString url = ao.value(QStringLiteral("browser_download_url")).toString();
+        if (fallbackApkUrl.isEmpty()) fallbackApkUrl = url;
+        if (!abi.isEmpty() && name.contains(abi, Qt::CaseInsensitive)) {
+            apkUrl = url;
             break;
         }
     }
+    if (apkUrl.isEmpty()) apkUrl = fallbackApkUrl;
     if (apkUrl.isEmpty()) {
         apkUrl = obj.value(QStringLiteral("html_url")).toString();
     }
@@ -73,12 +98,16 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     Q_EMIT latestVersionChanged();
     Q_EMIT downloadUrlChanged();
 
+#if defined(Q_OS_ANDROID)
+    // La actualizacion obligatoria solo aplica a Android: los releases
+    // publican APKs, no instaladores de escritorio.
     if (!tag.isEmpty() && isNewer(tag, m_currentVersion)) {
         m_updateRequired = true;
         Q_EMIT updateRequiredChanged();
         qCInfo(novaCore) << "UpdateChecker: nueva version disponible:" << tag
                          << "(instalada:" << m_currentVersion << ")";
     }
+#endif
 }
 
 bool NovaUpdateChecker::isNewer(const QString &latest, const QString &current) const
