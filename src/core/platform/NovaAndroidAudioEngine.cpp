@@ -941,13 +941,27 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
     }
     
     // Update frame counter
-    // El contador avanza con los fotogramas realmente escritos: los del
-    // fichero (el playhead marca su posición) o los que trae el ring
-    // buffer. Así el playhead nunca se adelanta al audio.
     if (emitidos > 0) {
         m_engine->m_currentFrame.fetch_add(emitidos, std::memory_order_relaxed);
     }
-    
+
+    // Picos del bloque escrito (VU meter). Se calculan sobre el buffer de
+    // salida real (lo que suena), canal L y R.
+    float pL = 0.0f, pR = 0.0f;
+    for (int i = 0; i < numFrames; ++i) {
+        int idx = i * channels;
+        float aL = std::fabs(outputBuffer[idx]);
+        if (aL > pL) pL = aL;
+        if (channels > 1) {
+            float aR = std::fabs(outputBuffer[idx + 1]);
+            if (aR > pR) pR = aR;
+        } else {
+            pR = pL;
+        }
+    }
+    m_engine->m_peakLeft.store(pL, std::memory_order_relaxed);
+    m_engine->m_peakRight.store(pR, std::memory_order_relaxed);
+
     return oboe::DataCallbackResult::Continue;
 }
 

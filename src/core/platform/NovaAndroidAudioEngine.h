@@ -145,6 +145,10 @@ public:
 
     // Transport info
     int64_t currentFrame() const { return m_currentFrame.load(); }
+
+    // Picos del último bloque escrito (VU meter). 0..1 aprox.
+    float peakLeft() const { return m_peakLeft.load(std::memory_order_relaxed); }
+    float peakRight() const { return m_peakRight.load(std::memory_order_relaxed); }
     double currentTimeSeconds() const
     {
         return static_cast<double>(m_currentFrame.load())
@@ -228,6 +232,10 @@ private:
     // todavía no se ha abierto ningún stream. La lee el hilo de la
     // interfaz; es atómica por si el motor se consulta desde otro hilo.
     std::atomic<int> m_tasaSalidaReal{0};
+
+    // Picos del último bloque de salida (para VU meters).
+    std::atomic<float> m_peakLeft{0.0f};
+    std::atomic<float> m_peakRight{0.0f};
 
     int m_framesPerBurst = 0;
 

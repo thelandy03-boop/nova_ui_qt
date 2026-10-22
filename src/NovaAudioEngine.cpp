@@ -384,7 +384,9 @@ QString NovaAudioEngine::currentProjectPath() const
 
 float NovaAudioEngine::masterPeakLeft() const
 {
-#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+#if defined(Q_OS_ANDROID)
+    return m_androidEngine.peakLeft();
+#elif defined(Q_OS_WIN)
     return 0.0f;
 #else
     auto session = m_sessionManager.session();
@@ -404,7 +406,9 @@ float NovaAudioEngine::masterPeakLeft() const
 
 float NovaAudioEngine::masterPeakRight() const
 {
-#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+#if defined(Q_OS_ANDROID)
+    return m_androidEngine.peakRight();
+#elif defined(Q_OS_WIN)
     return 0.0f;
 #else
     auto session = m_sessionManager.session();

@@ -93,12 +93,47 @@ public:
     Q_INVOKABLE void removeRecentProject(const QString &path);
 
     // Getters de Estado
-    bool isPlaying() const { return m_transport.isPlaying(); }
+    bool isPlaying() const {
+#if defined(Q_OS_ANDROID)
+        return m_androidEngine.isPlaying() || m_transport.isPlaying();
+#else
+        return m_transport.isPlaying();
+#endif
+    }
     bool isRecording() const { return m_recorder.isRecording(); }
-    QString timecode() const { return m_transport.timecode(); }
+    QString timecode() const {
+#if defined(Q_OS_ANDROID)
+        if (m_androidEngine.tieneFicheroCargado()) {
+            double secs = m_androidEngine.currentTimeSeconds();
+            int total = static_cast<int>(secs);
+            int mins = total / 60;
+            int secsR = total % 60;
+            int ms = static_cast<int>((secs - total) * 100.0);
+            return QString("%1:%2:%3").arg(mins,2,10,QChar('0')).arg(secsR,2,10,QChar('0')).arg(ms,2,10,QChar('0'));
+        }
+#endif
+        return m_transport.timecode();
+    }
     QString bbt() const { return m_transport.bbt(); }
-    double currentFrame() const { return m_transport.currentFrame(); }
-    double currentBeat() const { return m_transport.currentBeat(); }
+    double currentFrame() const {
+#if defined(Q_OS_ANDROID)
+        if (m_androidEngine.tieneFicheroCargado()) {
+            return static_cast<double>(m_androidEngine.currentFrame());
+        }
+#endif
+        return m_transport.currentFrame();
+    }
+    double currentBeat() const {
+#if defined(Q_OS_ANDROID)
+        if (m_androidEngine.tieneFicheroCargado()) {
+            double sr = m_androidEngine.tasaSalidaReal() > 0 ? m_androidEngine.tasaSalidaReal() : 48000.0;
+            double secs = static_cast<double>(m_androidEngine.currentFrame()) / sr;
+            double bpm = bpm() > 0 ? bpm() : 120.0;
+            return secs * (bpm / 60.0);
+        }
+#endif
+        return m_transport.currentBeat();
+    }
     double bpm() const { return m_transport.bpm(); }
     
     NovaTrackListModel* tracks() const { return m_trackModel; }
