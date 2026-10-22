@@ -84,6 +84,16 @@ android {
     // by oboe". Ver AGENTS.md, seccion 3.
     sourceSets {
         main {
+            // 🔒 Los RECURSOS de las librerías de Qt (res/values/libs.xml) los
+            // escribe androiddeployqt en <staging>/res. Sin esta linea, Gradle
+            // solo mira src/main/res y el APK sale sin esos recursos: QtLoader
+            // busca "use_local_qt_libs" con getIdentifier(), no lo encuentra
+            // (devuelve 0) y getString(0) lanza un Resources.NotFoundException
+            // al abrir la app -> crash. Es el equivalente al res.srcDirs de la
+            // plantilla de Qt (que apunta a qtAndroidDir+'/res' y a 'res':
+            // aqui el modulo app esta un nivel mas abajo, asi que el res de Qt
+            // esta en ../res y el de la app en src/main/res).
+            res.srcDirs = ['../res', 'src/main/res']
             // 🔒 Los assets (el bundle RCC con el metadata de los módulos QML:
             // los qmldir de QtQuick, QtQuick.Controls, QtQuick.Window...)
             // los deja androiddeployqt en <proyecto>/assets. Sin esta linea,

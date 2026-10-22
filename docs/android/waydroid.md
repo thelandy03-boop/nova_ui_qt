@@ -153,6 +153,36 @@ Captura de pantalla (para ver la onda y el cabezal):
 adb exec-out screencap -p > /tmp/spike.png
 ```
 
+### 6.1 Si la app se cierra al abrirla
+
+Las causas más frecuentes ocurren **antes** de que Qt arranque, en
+`MainActivity.onCreate()`, y cada una se shoota por su cuenta: arreglar una no
+tapa la siguiente. El logcat las distingue:
+
+```bash
+adb logcat -c
+adb shell am start -n com.novastudio.nova/com.novastudio.nova.MainActivity
+adb logcat -d | grep -E "FATAL|AndroidRuntime|NotFoundException|SecurityException|Qt" | head -30
+```
+
+| Qué sale en el logcat | Causa |
+|---|---|
+| `Resources$NotFoundException` en `QtLoader.useLocalQtLibs` | al APK no le llegan los recursos de las librerías de Qt (`res/values/libs.xml`): falta `res.srcDirs` en `android/app/build.gradle` |
+| `Loading main library failed` / `Can't find 'lib_…'` | al manifest efectivo le falta el meta-data `android.app.lib_name` |
+| `SecurityException … FOREGROUND_SERVICE_MEDIA_PLAYBACK` | al manifest efectivo le falta el permiso del tipo del servicio en primer plano |
+
+Y sobre el APK ya empaquetado, sin necesitar el dispositivo:
+
+```bash
+AAPT2="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/35.0.0/aapt2"
+"${AAPT2}" dump resources apks/NovaStudio-x86_64.apk | grep use_local_qt_libs
+"${AAPT2}" dump xmltree --file AndroidManifest.xml apks/NovaStudio-x86_64.apk \
+    | grep -E "lib_name|foregroundServiceType|MEDIA_PLAYBACK"
+```
+
+Las tres cosas las vigila `tests/check_android_pipeline.py` (y el workflow
+*APK Debug* las comprueba sobre el APK ya empaquetado).
+
 ## 7. Qué **no** se puede verificar en Waydroid
 
 Waydroid es un Android en un contenedor: sirve para lógica, decodificación,

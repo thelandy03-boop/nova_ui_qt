@@ -144,6 +144,39 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
     proceso**). El micro se pide el día que haya grabación. El spike lee de
     la carpeta propia de la app, que no necesita permisos.
 
+12. **El APK tiene que llevar los recursos de las librerías de Qt**
+    (`res/values/libs.xml`). `androiddeployqt` los escribe en
+    `<staging>/res/values/libs.xml`; el módulo Gradle `app` solo los empaqueta
+    si su `build.gradle` declara `res.srcDirs = ['../res', 'src/main/res']`
+    (desde el módulo `app`, el `res` de Qt está en `../res`). Los `.jar` de Qt
+    **no** llevan recursos, así que no hay otra fuente. Sin ellos, `QtLoader`
+    busca `use_local_qt_libs` con `getIdentifier()`, no lo encuentra (devuelve
+    0) y `getString(0)` lanza un `Resources.NotFoundException` al abrir la
+    app: **crash**. Ojo: al declarar `res.srcDirs` hay que volver a apuntar a
+    `src/main/res`, o los recursos propios de la app desaparecen.
+
+13. **El manifest que manda es el del módulo `app`**, no el de la raíz.
+    `androiddeployqt` parchea el manifest de la raíz
+    (`android/AndroidManifest.xml`) sustituyendo el *placeholder* del nombre de
+    la librería, pero AGP usa `android/app/src/main/AndroidManifest.xml`
+    (`build_android.sh` lo copia al staging). Por eso el manifest efectivo
+    tiene que declarar **a mano** el
+    `<meta-data android:name="android.app.lib_name" android:value="nova_ui_qt" />`
+    dentro del `<activity>`: sin él, `QtLoader` busca
+    `libnova_ui_qt.so`, no la encuentra ("Loading main library failed") y **la
+    app se cierra al abrirla**. El valor va **sin** el sufijo del ABI: Qt lo
+    añade (en un móvil de 64 bits carga `libnova_ui_qt_arm64-v8a.so`).
+
+14. **El tipo del servicio en primer plano y su permiso van juntos.** Con
+    `targetSdk 35`, llamar a `startForeground()` con un tipo cuyo permiso no
+    está declarado es un `SecurityException` que **mata el proceso**. Hoy el
+    tipo es `mediaPlayback` (no necesita permiso), así que el manifest declara
+    `FOREGROUND_SERVICE_MEDIA_PLAYBACK` y `android:foregroundServiceType="mediaPlayback"`.
+    El tipo `microphone` (que exige `RECORD_AUDIO` concedido) **no** se
+    declara hasta que haya grabador; el día que haya, se añade el tipo al
+    manifest, `FOREGROUND_SERVICE_MICROPHONE` al mismo manifest, y el servicio
+    lo pide solo (ya mira lo que declara el manifest antes de pedirlo).
+
 ---
 
 ## 4. Reglas del repo
