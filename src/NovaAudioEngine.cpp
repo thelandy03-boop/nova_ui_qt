@@ -643,10 +643,11 @@ void NovaAudioEngine::androidCargaTerminada()
     // Publicar la onda bajo el id de la region (en Android el stub devuelve
     // "0" para todas las regiones). Fase 2d: publicar bajo el id real.
     {
-        // Buscar el id de la region recien creada.
+        // Buscar el id de la region recien creada (la ultima del modelo).
         QString regionId = QStringLiteral("0");
         if (m_regionModel && m_regionModel->rowCount() > 0) {
-            QModelIndex idx = m_regionModel->index(0, 0);
+            int last = m_regionModel->rowCount() - 1;
+            QModelIndex idx = m_regionModel->index(last, 0);
             regionId = m_regionModel->data(idx, NovaRegionModel::RegionIdRole).toString();
             if (regionId.isEmpty()) regionId = QStringLiteral("0");
         }
