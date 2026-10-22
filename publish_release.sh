@@ -11,6 +11,7 @@
 #                      Por defecto se adjuntan ambos APKs; la app elige el
 #                      asset que coincide con el ABI del dispositivo.
 set -e
+trap 'echo "❌ Error en $0, linea $LINENO (codigo $?)" >&2' ERR
 
 BUMP="patch"
 WITH_X86=1

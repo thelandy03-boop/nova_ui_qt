@@ -113,7 +113,8 @@ else
     echo "       aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O \$HOME/Qt"
 fi
 
-BUILD_DIR="build_android"
+# Un directorio por ABI: alternar arm64/x86_64 ya no borra el build anterior.
+BUILD_DIR="${NOVA_ANDROID_BUILD_DIR:-build_android-${ABI}}"
 
 # El cache de CMake fija el ABI (CMAKE_ANDROID_ARCH_ABI) y no se puede cambiar
 # en caliente: si el directorio es de otro ABI, se regenera desde cero.

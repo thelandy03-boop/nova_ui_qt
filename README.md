@@ -88,12 +88,35 @@ cmake --build build -j$(nproc)
 | Script | Función |
 |--------|---------|
 | `build_android.sh` | Build completo de APK (staging Qt → CMake → Gradle) |
+| `build_apk.sh` | Atajo para compilar un APK con ABI/tipo configurables |
+| `publish_release.sh` | Incrementa versión, compila APKs y publica la release en GitHub |
 | `build_windows.sh` | Cross-compile a Windows x64 con MinGW |
 | `run.sh` | Lanza la app en Linux con PipeWire-JACK y rutas de libs de Ardour |
 | `release.sh` | Versiona, tagea y publica release en GitHub (se ejecuta desde la raíz del monorepo) |
 | `tools/qml2svg` | Exporta iconos vectoriales de QML a SVG |
 
 `ANDROID_BUILD.md` documenta el setup completo de Android.
+
+### Compilar un APK
+
+```bash
+./build_apk.sh --abi x86_64 --debug     # Waydroid / emulador
+./build_apk.sh --abi arm64-v8a --release # teléfonos
+```
+
+El APK queda en `apks/` (`NovaStudio-<abi>[-debug].apk`).
+
+### Publicar una actualización
+
+```bash
+./publish_release.sh patch              # 1.0.1 → 1.0.2 (también minor|major)
+./publish_release.sh minor --no-x86     # solo APK arm64
+```
+
+El script sella la versión en `NovaUpdateChecker.h` y `build.gradle`, compila
+los APKs, crea el tag `vX.Y.Z`, lo sube y publica la release con `gh`. La app
+Android compara su versión contra `releases/latest` y bloquea la UI hasta
+actualizar; el APK se elige según el ABI del dispositivo.
 
 ---
 
