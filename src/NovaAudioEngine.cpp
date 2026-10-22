@@ -58,6 +58,23 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
 
     // Conectar el grabador de pistas
     connect(&m_recorder, &NovaRecordManager::isRecordingChanged, this, &NovaAudioEngine::isRecordingChanged);
+
+#if defined(Q_OS_ANDROID)
+    // Puente: el import en Android se hace via AudioEngine (Oboe), pero la UI
+    // escucha las señales en NovaRegionModel (AudioEngine.regions).
+    connect(this, &NovaAudioEngine::androidImportFinished,
+            m_regionModel, &NovaRegionModel::importFinished);
+    connect(this, &NovaAudioEngine::androidImportingChanged,
+            m_regionModel, &NovaRegionModel::importingChanged);
+#endif
+
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: el cargador decodifica el fichero en un hilo aparte.
+    connect(&m_androidLoader, &NovaSpikeLoader::cargaTerminada,
+            this, &NovaAudioEngine::androidCargaTerminada);
+    connect(&m_androidLoader, &NovaSpikeLoader::cargaFallida,
+            this, &NovaAudioEngine::androidCargaFallida);
+#endif
 }
 
 NovaAudioEngine::~NovaAudioEngine()
@@ -82,13 +99,17 @@ bool NovaAudioEngine::initEngine()
     connectSessionSignals();
 
     // 🆕 Auto-crear proyecto temporal si no hay ninguno abierto.
-    // Vive en su propia carpeta (NovaStudio_TempSession) para no ensuciar la
-    // lista de proyectos del usuario ni dejar carpetas "Untitled 2" sueltas.
     if (m_sessionManager.session() == nullptr) {
         const QString scratchDir = NovaProjectManager::scratchDirectory();
         qCDebug(novaCore) << "🆕 Auto-creando proyecto temporal en:" << scratchDir;
         newProjectInternal(QStringLiteral("Untitled"), scratchDir, /*isScratch=*/true);
     }
+
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: motor de audio Oboe. Se prepara (initialize + start) de forma
+    // lazy en la primera reproduccion, como hace el spike.
+    qCDebug(novaCore) << "📱 Motor Android listo para cargar ficheros.";
+#endif
 
     return true;
 }
@@ -116,9 +137,33 @@ void NovaAudioEngine::connectSessionSignals()
 }
 
 // Controles de Transporte
-void NovaAudioEngine::play() { m_transport.play(); }
-void NovaAudioEngine::pause() { m_transport.stop(); }
-void NovaAudioEngine::stop() { m_transport.stop(); }
+void NovaAudioEngine::play() {
+    m_transport.play();
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: si hay un fichero cargado, arranca la salida Oboe.
+    if (m_androidEngine.tieneFicheroCargado()) {
+        if (!m_androidMotorListo) {
+            m_androidMotorListo = androidPrepararMotor();
+        }
+        if (m_androidMotorListo) {
+            m_androidEngine.setPlaying(true);
+        }
+    }
+#endif
+}
+void NovaAudioEngine::pause() {
+    m_transport.stop();
+#if defined(Q_OS_ANDROID)
+    m_androidEngine.setPlaying(false);
+#endif
+}
+void NovaAudioEngine::stop() {
+    m_transport.stop();
+#if defined(Q_OS_ANDROID)
+    m_androidEngine.setPlaying(false);
+    m_androidParadaPedida = true;
+#endif
+}
 void NovaAudioEngine::togglePlay() { m_transport.togglePlay(); }
 void NovaAudioEngine::toggleRecord() { m_recorder.toggleRecord(); }
 void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
@@ -416,3 +461,89 @@ void NovaAudioEngine::setMasterVolumeDb(float dB)
     Q_UNUSED(dB);
 #endif
 }
+#if defined(Q_OS_ANDROID)
+
+bool NovaAudioEngine::loadAndPlayAndroid(const QString &path)
+{
+    if (path.isEmpty()) return false;
+    m_androidParadaPedida = false;
+    m_androidLoader.cargar(path);
+    Q_EMIT androidImportingChanged(true);
+    return true;
+}
+
+bool NovaAudioEngine::androidPrepararMotor()
+{
+    if (m_androidMotorListo) return true;
+    if (!m_androidEngine.initialize(48000)) {
+        qCWarning(novaCore) << "🔊 Android: el motor no se ha podido inicializar";
+        return false;
+    }
+    if (!m_androidEngine.start()) {
+        qCWarning(novaCore) << "🔊 Android: el motor no se ha podido arrancar";
+        return false;
+    }
+    if (!m_androidEngine.openOutputStream(2)) {
+        qCWarning(novaCore) << "🔊 Android: la salida no tiene dos canales";
+    }
+    m_androidMotorListo = true;
+    return true;
+}
+
+void NovaAudioEngine::androidCargaTerminada()
+{
+    if (m_androidParadaPedida) {
+        m_androidLoader.tomarAudio();
+        Q_EMIT androidImportFinished(false, QStringLiteral("Parado"));
+        Q_EMIT androidImportingChanged(false);
+        return;
+    }
+
+    const PeakData &picos = m_androidLoader.picos();
+    NovaDecodedAudio audio = m_androidLoader.tomarAudio();
+    if (audio.channels <= 0 || audio.sampleRate <= 0) {
+        qCWarning(novaCore) << "🔊 Android: no se ha podido decodificar el fichero";
+        Q_EMIT androidImportFinished(false, QStringLiteral("No se pudo decodificar el fichero"));
+        Q_EMIT androidImportingChanged(false);
+        return;
+    }
+
+    m_androidDuracion = static_cast<double>(audio.frameCount()) / static_cast<double>(audio.sampleRate);
+
+    if (!androidPrepararMotor()) {
+        qCWarning(novaCore) << "🔊 Android: motor no listo, se ve la onda pero no suena";
+        Q_EMIT androidImportFinished(false, QStringLiteral("Motor de audio no listo"));
+        Q_EMIT androidImportingChanged(false);
+        return;
+    }
+
+    QString error;
+    if (!m_androidEngine.loadDecoded(std::move(audio), &error)) {
+        qCWarning(novaCore) << "🔊 Android: no se ha podido cargar el fichero en el motor:" << error;
+        Q_EMIT androidImportFinished(false, error.isEmpty() ? QStringLiteral("No se pudo cargar el fichero") : error);
+        Q_EMIT androidImportingChanged(false);
+        return;
+    }
+
+    // Publicar la onda en la caché bajo el id "spike" (el mismo que usa
+    // NovaWaveformItem en el timeline). Fase 2c: publicar bajo el id de la
+    // región para soportar varias pistas.
+    NovaWaveformCache::setPeaks(QStringLiteral("spike"), picos);
+    m_androidVersionPicos++;
+
+    // Arrancar la reproducción.
+    m_androidEngine.setPlaying(true);
+    m_transport.play();
+
+    Q_EMIT androidImportFinished(true, QStringLiteral("Importado"));
+    Q_EMIT androidImportingChanged(false);
+}
+
+void NovaAudioEngine::androidCargaFallida(const QString &error)
+{
+    qCWarning(novaCore) << "🔊 Android: carga fallida:" << error;
+    Q_EMIT androidImportFinished(false, error);
+    Q_EMIT androidImportingChanged(false);
+}
+
+#endif // Q_OS_ANDROID

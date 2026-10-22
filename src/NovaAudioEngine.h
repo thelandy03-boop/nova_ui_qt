@@ -12,6 +12,11 @@
 #include "models/NovaTrackListModel.h"
 #include "models/NovaRegionModel.h"
 
+#if defined(Q_OS_ANDROID)
+#include "core/platform/NovaAndroidAudioEngine.h"
+#include "audio/NovaSpikeLoader.h"
+#endif
+
 class NovaAudioEngine : public QObject
 {
     Q_OBJECT
@@ -49,6 +54,11 @@ public:
     ~NovaAudioEngine() override;
 
     Q_INVOKABLE bool initEngine();
+
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: carga (decodifica) y reproduce un fichero en Android.
+    Q_INVOKABLE bool loadAndPlayAndroid(const QString &path);
+#endif
 
     // Controles de Transporte
     Q_INVOKABLE void play();
@@ -129,6 +139,12 @@ signals:
     void recentProjectsChanged();
     void currentProjectChanged();
 
+#if defined(Q_OS_ANDROID)
+    // Puente para NovaRegionModel::importAudioFile en Android.
+    void androidImportFinished(bool success, const QString &message);
+    void androidImportingChanged(bool importing);
+#endif
+
 private:
     NovaSessionManager m_sessionManager;
     NovaTransportController m_transport;
@@ -138,8 +154,26 @@ private:
     NovaTrackListModel *m_trackModel = nullptr;
     NovaRegionModel *m_regionModel = nullptr;
 
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: motor de audio Oboe + cargador (decodifica en hilo aparte).
+    // El controlador es el dueño: nadie más los instancia en Android.
+    NovaAndroidAudioEngine m_androidEngine;
+    NovaSpikeLoader m_androidLoader;
+    bool m_androidMotorListo = false;
+    bool m_androidParadaPedida = false;
+    double m_androidDuracion = 0.0;
+    int m_androidVersionPicos = 0;
+#endif
+
     void connectSessionSignals();
     bool newProjectInternal(const QString &name, const QString &parentDir, bool isScratch);
+
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: callbacks del cargador (decodifica en hilo aparte).
+    void androidCargaTerminada();
+    void androidCargaFallida(const QString &error);
+    bool androidPrepararMotor();
+#endif
 };
 
 #endif // NOVAAUDIOENGINE_H

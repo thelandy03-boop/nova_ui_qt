@@ -1,4 +1,5 @@
 #include "NovaRegionModel.h"
+#include "NovaAudioEngine.h"
 #include "core/NovaLogging.h"
 #include "core/NovaTimeUtils.h"
 #include "core/NovaAudioUtils.h"
@@ -480,7 +481,19 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     // mantiene la ruta simple de import_files() de los stubs.
     // ─────────────────────────────────────────────────────────────────────
 
-#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+#if defined(Q_OS_ANDROID)
+    // Fase 2b: el import en Android se delega al motor de audio (Oboe) de
+    // NovaAudioEngine, que decodifica el fichero y lo reproduce. La UI sigue
+    // escuchando importFinished/importingChanged via el puente de señales.
+    if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
+        // parent() es NovaAudioEngine (NovaRegionModel se crea con `this`).
+        Q_EMIT importingChanged(true);
+        eng->loadAndPlayAndroid(cleanPath);
+        return true;
+    }
+    Q_EMIT importFinished(false, QStringLiteral("Motor de audio no disponible"));
+    return false;
+#elif defined(Q_OS_WIN)
     {
         auto finishedFlag = std::make_shared<std::atomic<bool>>(false);
         Q_EMIT importingChanged(true);
