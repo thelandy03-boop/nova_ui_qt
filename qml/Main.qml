@@ -76,6 +76,55 @@ Window {
         }
     }
 
+    // ── OVERLAY OBLIGATORIO: ACTUALIZACIÓN ──
+    Rectangle {
+        id: updateOverlay
+        anchors.fill: parent
+        z: 9999
+        color: "#CC000000"
+        visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.updateRequired
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 16
+            width: Math.min(parent.width * 0.8, 400)
+
+            Text {
+                text: "Actualización obligatoria"
+                color: "white"
+                font.pixelSize: 22
+                font.bold: true
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+            Text {
+                text: "Hay una nueva versión disponible (" + (typeof UpdateChecker !== "undefined" ? UpdateChecker.latestVersion : "") + ").\nDebes actualizar para continuar usando NOVA Studio."
+                color: "#CCCCCC"
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+            }
+            Rectangle {
+                width: parent.width
+                height: 44
+                radius: 8
+                color: "#4A90E2"
+                anchors.horizontalCenter: parent.horizontalCenter
+                Text {
+                    anchors.centerIn: parent
+                    text: "Descargar actualización"
+                    color: "white"
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { if (typeof UpdateChecker !== "undefined") UpdateChecker.openDownloadPage() }
+                }
+            }
+        }
+    }
+
     // ── OVERLAY MODAL: DIÁLOGO DE CAMBIOS SIN GUARDAR ──
     NovaUnsavedDialog {
         id: unsavedDialog

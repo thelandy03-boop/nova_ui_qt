@@ -15,6 +15,7 @@
 
 #include "src/NovaAudioEngine.h"
 #include "src/views/NovaWaveformItem.h"
+#include "src/core/NovaUpdateChecker.h"
 
 #if defined(Q_OS_ANDROID)
 // El controlador del spike (motor de audio + forma de onda) solo existe en
@@ -73,6 +74,9 @@ int main(int argc, char *argv[])
 
     // Instancia de audio Nova / Ardour Bridge
     NovaAudioEngine audioEngine;
+
+    // Comprobador de actualizaciones obligatorias
+    NovaUpdateChecker updateChecker;
     if (!audioEngine.initEngine()) {
         qCritical() << "❌ No se pudo inicializar el motor de audio.";
         qCritical() << "   Revisa que PipeWire/JACK este en marcha (pw-jack) y que no haya otra app usando el audio.";
@@ -83,6 +87,7 @@ int main(int argc, char *argv[])
 
     // Registrar audioEngine globalmente en QML
     engine.rootContext()->setContextProperty("AudioEngine", &audioEngine);
+    engine.rootContext()->setContextProperty("UpdateChecker", &updateChecker);
 
     QStringList candidates;
     candidates << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../qml")
@@ -137,7 +142,7 @@ int main(int argc, char *argv[])
 
         addAllPaths();
 
-        auto doReload = [&engine, url, addAllPaths, &audioEngine]() {
+        auto doReload = [&engine, url, addAllPaths, &audioEngine, &updateChecker]() {
             qDebug() << "HOT-RELOAD ejecutando...";
 
             const auto roots = engine.rootObjects();
@@ -149,6 +154,7 @@ int main(int argc, char *argv[])
 
             engine.clearComponentCache();
             engine.rootContext()->setContextProperty("AudioEngine", &audioEngine);
+    engine.rootContext()->setContextProperty("UpdateChecker", &updateChecker);
             addAllPaths();
 
             QTimer::singleShot(0, &engine, [&engine, url]() {
@@ -190,6 +196,9 @@ int main(int argc, char *argv[])
         if (engine.rootObjects().isEmpty())
             return -1;
     }
+
+    // Comprobar actualizaciones obligatorias al arrancar
+    updateChecker.check();
 
     return app.exec();
 }

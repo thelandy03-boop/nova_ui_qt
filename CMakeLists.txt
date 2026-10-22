@@ -118,6 +118,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/core/NovaRecordManager.cpp
     src/core/NovaAudioDeviceManager.h
     src/core/NovaAudioDeviceManager.cpp
+    src/core/NovaUpdateChecker.h
+    src/core/NovaUpdateChecker.cpp
     src/core/NovaHardwareSanitizer.h
     src/core/NovaHardwareSanitizer.cpp
     src/core/NovaTimeUtils.h
