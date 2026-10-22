@@ -510,6 +510,55 @@ void NovaAudioEngine::androidCargaTerminada()
 
     m_androidDuracion = static_cast<double>(audio.frameCount()) / static_cast<double>(audio.sampleRate);
 
+    // Fase 2c: crear una pista + region en la sesion stub para que el
+    // timeline muestre el clip (y su onda). Si no hay pistas, se crea una.
+    {
+        auto session = m_sessionManager.session();
+        if (session) {
+            auto routeList = session->get_routes();
+            bool hasTrack = false;
+            if (routeList) {
+                for (const auto &r : *routeList) {
+                    if (r && r->is_track()) { hasTrack = true; break; }
+                }
+            }
+            if (!hasTrack) {
+                ARDOUR::AudioTrackList newTracks = session->new_audio_track(
+                    2, 1, nullptr, 1, std::string("Audio 1"),
+                    ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+                Q_UNUSED(newTracks);
+            }
+            // Buscar la primera pista y añadir la region.
+            if (routeList) {
+                for (const auto &r : *routeList) {
+                    if (!r || !r->is_track()) continue;
+                    auto track = std::dynamic_pointer_cast<ARDOUR::Track>(r);
+                    if (!track || !track->playlist()) continue;
+                    auto region = std::make_shared<ARDOUR::AudioRegion>();
+                    region->set_length(ARDOUR::samplecnt_t(audio.frameCount()));
+                    region->set_position(ARDOUR::Temporal::timepos_t(0));
+                    track->playlist()->add_region(region, ARDOUR::Temporal::timepos_t(0));
+                    session->set_dirty();
+                    break;
+                }
+            }
+            m_regionModel->rebuildRegionCache();
+        }
+    }
+
+    // Publicar la onda bajo el id de la region (en Android el stub devuelve
+    // "0" para todas las regiones). Fase 2d: publicar bajo el id real.
+    {
+        // Buscar el id de la region recien creada.
+        QString regionId = QStringLiteral("0");
+        if (m_regionModel && m_regionModel->rowCount() > 0) {
+            QModelIndex idx = m_regionModel->index(0, 0);
+            regionId = m_regionModel->data(idx, NovaRegionModel::RegionIdRole).toString();
+            if (regionId.isEmpty()) regionId = QStringLiteral("0");
+        }
+        NovaWaveformCache::setPeaks(regionId, picos);
+    }
+
     if (!androidPrepararMotor()) {
         qCWarning(novaCore) << "🔊 Android: motor no listo, se ve la onda pero no suena";
         Q_EMIT androidImportFinished(false, QStringLiteral("Motor de audio no listo"));
