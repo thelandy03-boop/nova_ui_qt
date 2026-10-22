@@ -940,6 +940,23 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
         }
     }
     
+    // Loop (Fase 3): si el fichero se ha agotado y el loop está activo,
+    // se vuelve al principio y se sigue reproduciendo.
+    if (emitidos == 0 && m_engine->m_player.durationFrames() > 0
+        && m_engine->m_loopEnabled.load(std::memory_order_relaxed)) {
+        m_engine->m_player.reset();
+        m_engine->m_player.play();
+        m_engine->m_currentFrame.store(0, std::memory_order_relaxed);
+        int reintentados = m_engine->m_player.renderFrames(outputBuffer, numFrames);
+        if (reintentados < 0) reintentados = 0;
+        if (reintentados > numFrames) reintentados = numFrames;
+        if (reintentados < numFrames) {
+            std::fill(outputBuffer + static_cast<size_t>(reintentados) * static_cast<size_t>(channels),
+                      outputBuffer + muestras, 0.0f);
+        }
+        emitidos = reintentados;
+    }
+
     // Update frame counter
     if (emitidos > 0) {
         m_engine->m_currentFrame.fetch_add(emitidos, std::memory_order_relaxed);

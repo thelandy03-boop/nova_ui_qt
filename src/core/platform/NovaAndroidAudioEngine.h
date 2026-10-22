@@ -146,6 +146,9 @@ public:
     // Transport info
     int64_t currentFrame() const { return m_currentFrame.load(); }
 
+    void setLoopEnabled(bool enabled) { m_loopEnabled.store(enabled, std::memory_order_relaxed); }
+    bool loopEnabled() const { return m_loopEnabled.load(std::memory_order_relaxed); }
+
     // Picos del último bloque escrito (VU meter). 0..1 aprox.
     float peakLeft() const { return m_peakLeft.load(std::memory_order_relaxed); }
     float peakRight() const { return m_peakRight.load(std::memory_order_relaxed); }
@@ -232,6 +235,8 @@ private:
     // todavía no se ha abierto ningún stream. La lee el hilo de la
     // interfaz; es atómica por si el motor se consulta desde otro hilo.
     std::atomic<int> m_tasaSalidaReal{0};
+
+    std::atomic<bool> m_loopEnabled{false};
 
     // Picos del último bloque de salida (para VU meters).
     std::atomic<float> m_peakLeft{0.0f};
