@@ -7,7 +7,16 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- 🔒 El permiso que corresponde al tipo "mediaPlayback" del servicio en
+         primer plano. En Android 14+ (targetSdk 35) llamar a startForeground()
+         con un tipo cuyo permiso no esta declarado es un SecurityException que
+         mata el proceso: por eso va aqui, y no solo FOREGROUND_SERVICE. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- 🔒 FOREGROUND_SERVICE_MICROPHONE no va aqui (todavia): solo hace falta
+         si el servicio declara el tipo "microphone", y ese tipo se anade el dia
+         que haya grabador. Declararlo antes seria anunciar una capacidad que
+         la app no usa (la Device and Network Abuse policy de Play pide que el
+         audio lo inicie el usuario). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     
     <!-- Almacenamiento (Scoped Storage Android 10+) -->
@@ -70,13 +79,25 @@
                 <data android:pathPattern=".*\\.ardour" />
                 <data android:pathPattern=".*\\.nova" />
             </intent-filter>
+
+            <!-- 🔒 El nombre de la librería nativa principal. QtLoader lo lee
+                 del manifest (getMetaData("android.app.lib_name")) y le añade
+                 el ABI del dispositivo: carga libnova_ui_qt_arm64-v8a.so en un
+                 telefono de 64 bits. El valor va SIN el sufijo del ABI.
+                 Sin esto, Qt no encuentra la librería y la app se cierra al
+                 abrirla ("Loading main library failed"). -->
+            <meta-data android:name="android.app.lib_name" android:value="nova_ui_qt" />
         </activity>
 
         <!-- Foreground Service for audio recording/playback -->
+        <!-- 🔒 El tipo es solo "mediaPlayback": es el que no necesita permisos y
+             el que no obliga a que el usuario inicie el audio. El tipo
+             "microphone" se añade (aquí y en el permiso) el día que haya
+             grabador; hasta entonces, el servicio solo reproduce. -->
         <service
             android:name=".AudioForegroundService"
             android:exported="false"
-            android:foregroundServiceType="microphone|mediaPlayback"
+            android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="true" />
 
         <!-- USB MIDI Device Permission -->

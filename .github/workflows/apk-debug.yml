@@ -167,6 +167,60 @@ jobs:
             exit 1
           fi
 
+          # 🔒 Lo que hacia que la app se cerrara al abrirla en el movil. Las
+          # tres cosas se comprueban sobre el APK ya empaquetado: el recurso de
+          # las librerias de Qt, el nombre de la libreria nativa en el manifest
+          # y el permiso del servicio en primer plano.
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          AAPT2="${SDK}/build-tools/35.0.0/aapt2"
+          if [ ! -x "${AAPT2}" ]; then
+            AAPT2="$(find "${SDK}/build-tools" -maxdepth 2 -name aapt2 -type f | sort -V | tail -1)"
+          fi
+          if [ ! -x "${AAPT2}" ]; then
+            echo "::error::No se encuentra aapt2 en ${SDK}/build-tools"
+            exit 1
+          fi
+
+          # 1) Los recursos de las librerias de Qt (res/values/libs.xml). QtLoader
+          #    los busca con getIdentifier(): si no estan, getString(0) lanza un
+          #    Resources.NotFoundException al abrir la app. aapt2 los compila
+          #    dentro de la tabla de recursos (resources.arsc), asi que no se
+          #    ven con unzip: hay que mirar la tabla.
+          RECURSOS="$("${AAPT2}" dump resources "${APK}")"
+          if grep -q "string/use_local_qt_libs" <<< "${RECURSOS}"; then
+            echo "--- recursos de las librerias de Qt (libs.xml): presentes ---"
+          else
+            echo "::error::El APK no lleva los recursos de las librerias de Qt (res/values/libs.xml): QtLoader no encontrara 'use_local_qt_libs' y la app reventara al abrirla"
+            exit 1
+          fi
+
+          # 2) El manifest que usa AGP (no el que parchea androiddeployqt, que
+          #    AGP ignora) tiene que declarar el nombre de la libreria nativa:
+          #    QtLoader lo lee y le anade el ABI (libnova_ui_qt_arm64-v8a.so).
+          MANIFEST="$("${AAPT2}" dump xmltree --file AndroidManifest.xml "${APK}")"
+          if grep -q "android.app.lib_name" <<< "${MANIFEST}" \
+             && grep -qE 'android:value\(0x[0-9a-f]+\)="nova_ui_qt"' <<< "${MANIFEST}"; then
+            echo "--- nombre de la libreria nativa (android.app.lib_name): presente ---"
+          else
+            echo "::error::El manifest del APK no declara android.app.lib_name=nova_ui_qt: Qt no encontrara la libreria y la app se cerrara al abrirla"
+            exit 1
+          fi
+
+          # 3) El servicio en primer plano arranca con el tipo mediaPlayback
+          #    (0x2): sin el permiso FOREGROUND_SERVICE_MEDIA_PLAYBACK, en
+          #    Android 14+ startForeground() es un SecurityException que mata
+          #    la app. El tipo microphone (0x40) NO debe estar: exige
+          #    RECORD_AUDIO concedido y no se pide al abrir la app.
+          if ! grep -q "FOREGROUND_SERVICE_MEDIA_PLAYBACK" <<< "${MANIFEST}"; then
+            echo "::error::El manifest del APK no declara FOREGROUND_SERVICE_MEDIA_PLAYBACK: startForeground() con el tipo mediaPlayback sera un SecurityException en Android 14+"
+            exit 1
+          fi
+          if ! grep -qE "foregroundServiceType\(0x[0-9a-f]+\)=0x00000002" <<< "${MANIFEST}"; then
+            echo "::error::El servicio en primer plano del APK no declara el tipo mediaPlayback (0x2)"
+            exit 1
+          fi
+          echo "--- servicio en primer plano: tipo mediaPlayback con su permiso ---"
+
       - name: Subir el APK
         uses: actions/upload-artifact@v4
         with:

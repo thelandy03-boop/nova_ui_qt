@@ -45,6 +45,15 @@ CMAKE_OBSOLETO = ROOT / "android" / "app" / "src" / "main" / "cpp" / "CMakeLists
 ACTIVITY = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "MainActivity.java"
 SERVICIO = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "AudioForegroundService.java"
 
+# El manifest que usa de verdad AGP: el del modulo app. El de la raiz
+# (android/AndroidManifest.xml) lo parchea androiddeployqt, pero AGP lo
+# ignora: es codigo muerto. Por eso las comprobaciones de arranque leen
+# ESTE manifest y no el otro.
+MANIFEST_APP = ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
+
+# La copia muerta de la plantilla: se copiaba al staging y no la leia nadie.
+MANIFEST_DUPLICADO = ROOT / "android" / "src" / "main"
+
 
 def _exigir(condicion: bool, mensaje: str) -> None:
     if not condicion:
@@ -193,7 +202,184 @@ def la_app_no_salta_a_los_ajustes_al_arrancar() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. El script de build es el unico camino valido y sabe hacer APK Debug.
+# 3. El arranque en Android: los recursos de Qt, el nombre de la libreria
+#    nativa y el servicio en primer plano.
+#
+#    Son tres causas independientes del mismo crash: la app se cerraba al
+#    abrirla en el movil. Cada una se shoota por su cuenta, asi que arreglar
+#    una no tapa la siguiente.
+# ---------------------------------------------------------------------------
+
+
+def los_recursos_de_qt_estan_en_el_apk() -> None:
+    """El APK debe llevar los recursos de las librerias de Qt (libs.xml).
+
+    androiddeployqt escribe <staging>/res/values/libs.xml con los recursos
+    que QtLoader lee del APK (use_local_qt_libs, qt_libs, bundled_libs...). El
+    modulo app no los empaquetaba: sin res.srcDirs, Gradle solo miraba
+    src/main/res, que no tiene el libs.xml (los .jar de Qt tampoco llevan
+    recursos). En el movil, QtLoader busca "use_local_qt_libs" con
+    getIdentifier(), no lo encuentra (devuelve 0) y getString(0) lanza un
+    Resources.NotFoundException al abrir la app: crash.
+    """
+    texto = _leer(BUILD_GRADLE)
+    _exigir(
+        "res.srcDirs" in texto,
+        "android/app/build.gradle no declara res.srcDirs: el APK saldra sin "
+        "los recursos de las librerias de Qt (res/values/libs.xml) y en el "
+        "movil la app reventara al abrirla",
+    )
+    _exigir(
+        "'../res'" in texto or '"../res"' in texto,
+        "android/app/build.gradle no apunta a los recursos que deja "
+        "androiddeployqt (../res desde el modulo app)",
+    )
+    _exigir(
+        "'src/main/res'" in texto or '"src/main/res"' in texto,
+        "android/app/build.gradle no apunta a los recursos propios del modulo "
+        "app (src/main/res): al declarar res.srcDirs, Gradle deja de mirar el "
+        "sitio por defecto y los recursos de la app se perderian",
+    )
+
+
+def el_manifest_efectivo_declara_el_nombre_de_la_lib() -> None:
+    """El manifest que usa AGP tiene que decir como se llama la libreria.
+
+    QtLoader lee el meta-data "android.app.lib_name" del manifest de la
+    activity y le anade el ABI del dispositivo: en un telefono de 64 bits
+    carga libnova_ui_qt_arm64-v8a.so. El valor va SIN el sufijo del ABI (Qt
+    lo pone). Sin el meta-data, Qt dice "Loading main library failed" y la
+    app se cierra al abrirla.
+    """
+    manifest = _leer(MANIFEST_APP)
+
+    inicio = manifest.find("<activity")
+    fin = manifest.find("</activity>", inicio)
+    _exigir(inicio != -1 and fin != -1, "el manifest efectivo no declara <activity>")
+    activity = manifest[inicio:fin]
+
+    _exigir(
+        "android.app.lib_name" in activity,
+        "el meta-data android.app.lib_name tiene que estar dentro del "
+        "<activity> del manifest efectivo: QtLoader lo lee con getMetaData() "
+        "de la activity",
+    )
+
+    elementos = [
+        elemento
+        for elemento in re.findall(r"<meta-data\b[^>]*>", activity)
+        if "android.app.lib_name" in elemento
+    ]
+    _exigir(bool(elementos), "el meta-data android.app.lib_name no esta declarado")
+    valor = re.search(r'android:value\s*=\s*"([^"]*)"', elementos[0])
+    _exigir(valor is not None, "el meta-data android.app.lib_name no tiene android:value")
+    _exigir(
+        not re.search(r"_(arm64-v8a|armeabi-v7a|x86_64|x86)$", valor.group(1)),
+        f"el meta-data android.app.lib_name vale '{valor.group(1)}': el ABI lo "
+        "anade Qt, el valor va sin el (la libreria es "
+        "libnova_ui_qt_<abi>.so)",
+    )
+
+
+def el_manifest_efectivo_llega_al_staging() -> None:
+    """El manifest que usa AGP es el del modulo app, y va al staging.
+
+    androiddeployqt parchea el manifest de la raiz (android/AndroidManifest.xml),
+    que AGP ignora: el manifest efectivo es
+    android/app/src/main/AndroidManifest.xml, y build_android.sh lo copia al
+    staging. Si se deja de copiar, el APK se empaqueta con otro manifest (sin
+    el nombre de la libreria) y la app no arranca.
+    """
+    codigo = _codigo(_leer(BUILD_SCRIPT))
+    _exigir(
+        "android/app/src/main/AndroidManifest.xml" in codigo,
+        "build_android.sh ya no copia el manifest efectivo al staging: el APK "
+        "se empaquetara con otro manifest y la app no arrancara",
+    )
+
+
+def el_servicio_en_primer_plano_no_mata_la_app() -> None:
+    """El tipo del servicio en primer plano tiene que poder usarse de verdad.
+
+    En Android 14+ (targetSdk 35) llamar a startForeground() con un tipo cuyo
+    permiso no esta declarado es un SecurityException que mata el proceso. El
+    servicio arranca con el tipo "mediaPlayback", asi que el permiso
+    FOREGROUND_SERVICE_MEDIA_PLAYBACK tiene que estar en el manifest.
+
+    Y al reves: el tipo "microphone" exige RECORD_AUDIO concedido y no se
+    pide al abrir la app, asi que el manifest declara solo "mediaPlayback".
+    El tipo y su permiso van y vienen juntos (el dia que haya grabador).
+    """
+    manifest = _leer(MANIFEST_APP)
+
+    permisos = re.findall(
+        r'<uses-permission\s+android:name\s*=\s*"([^"]+)"', manifest
+    )
+    tipos = re.findall(r'android:foregroundServiceType\s*=\s*"([^"]+)"', manifest)
+
+    _exigir(
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" in permisos,
+        "el manifest efectivo no declara FOREGROUND_SERVICE_MEDIA_PLAYBACK: "
+        "startForeground() con el tipo mediaPlayback es un SecurityException "
+        "en Android 14+ y mata la app",
+    )
+    _exigir(
+        bool(tipos),
+        "el manifest efectivo no declara foregroundServiceType en el servicio",
+    )
+
+    for tipo in tipos:
+        _exigir(
+            "microphone" not in tipo,
+            f"el servicio declara el tipo '{tipo}': el tipo microphone exige "
+            "RECORD_AUDIO concedido (y no se pide al abrir la app), asi que "
+            "reventaria con un SecurityException",
+        )
+        if "microphone" in tipo:
+            _exigir(
+                "android.permission.FOREGROUND_SERVICE_MICROPHONE" in permisos,
+                f"el servicio declara el tipo '{tipo}' pero falta el permiso "
+                "FOREGROUND_SERVICE_MICROPHONE: Android 14+ lo exige",
+            )
+
+    if "android.permission.FOREGROUND_SERVICE_MICROPHONE" in permisos:
+        _exigir(
+            any("microphone" in tipo for tipo in tipos),
+            "el manifest declara FOREGROUND_SERVICE_MICROPHONE pero el servicio "
+            "no declara el tipo microphone: la app anuncia una capacidad de "
+            "microfono que no usa",
+        )
+
+    # El codigo tiene que mirar lo que declara el manifest antes de pedir el
+    # tipo microphone: startForeground() lanza IllegalArgumentException si el
+    # tipo pedido no es un subconjunto del declarado.
+    servicio = _leer(SERVICIO)
+    _exigir(
+        "getForegroundServiceType" in servicio,
+        "AudioForegroundService pide el tipo microphone sin mirar lo que "
+        "declara el manifest: startForeground() lanza IllegalArgumentException "
+        "si el tipo pedido no esta en el manifest",
+    )
+
+
+def no_vuelve_el_manifest_duplicado() -> None:
+    """android/src/main/ era una copia muerta de la plantilla.
+
+    AGP solo usa el manifest del modulo app (android/app/src/main/). El otro
+    (android/src/main/AndroidManifest.xml) se copiaba al staging y no lo leia
+    nadie: era una trampa (editar el manifest equivocado creyendo que es el
+    bueno) y ademas referenciaba un recurso (@mipmap/ic_launcher_round) que no
+    existe.
+    """
+    _exigir(
+        not MANIFEST_DUPLICADO.exists(),
+        "vuelve android/src/main/: es una copia muerta de la plantilla que "
+        "AGP no lee (el manifest efectivo es el de android/app/src/main/)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4. El script de build es el unico camino valido y sabe hacer APK Debug.
 # ---------------------------------------------------------------------------
 
 
@@ -311,6 +497,11 @@ COMPROBACIONES = (
     ("el_cmake_obsoleto_no_existe", el_cmake_obsoleto_no_existe),
     ("los_assets_qml_se_empaquetan", los_assets_qml_se_empaquetan),
     ("la_app_no_salta_a_los_ajustes_al_arrancar", la_app_no_salta_a_los_ajustes_al_arrancar),
+    ("los_recursos_de_qt_estan_en_el_apk", los_recursos_de_qt_estan_en_el_apk),
+    ("el_manifest_efectivo_declara_el_nombre_de_la_lib", el_manifest_efectivo_declara_el_nombre_de_la_lib),
+    ("el_manifest_efectivo_llega_al_staging", el_manifest_efectivo_llega_al_staging),
+    ("el_servicio_en_primer_plano_no_mata_la_app", el_servicio_en_primer_plano_no_mata_la_app),
+    ("no_vuelve_el_manifest_duplicado", no_vuelve_el_manifest_duplicado),
     ("el_script_de_build_sabe_hacer_debug", el_script_de_build_sabe_hacer_debug),
     ("el_script_de_build_pasa_el_qt_de_escritorio", el_script_de_build_pasa_el_qt_de_escritorio),
     ("el_arch_de_aqt_es_por_abi", el_arch_de_aqt_es_por_abi),

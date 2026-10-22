@@ -6,6 +6,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -18,6 +19,7 @@ import android.os.IBinder;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
@@ -58,23 +60,13 @@ public class AudioForegroundService extends Service {
     }
 
     private void startForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification notification = createNotification();
-            // 🔒 El tipo "microphone" de un servicio en primer plano exige que
-            // el permiso RECORD_AUDIO este CONCEDIDO (Android 14+ lanza
-            // SecurityException y mata el proceso de la app si no). Al
-            // arrancar no se pide ese permiso, asi que aqui solo se pide
-            // "mediaPlayback", que no necesita permiso. El microfono se
-            // anade al tipo cuando el permiso este concedido de verdad.
-            int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                       == PackageManager.PERMISSION_GRANTED) {
-                type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-            }
-            startForeground(NOTIFICATION_ID, notification, type);
+        Notification notification = createNotification();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // El overload con tipo (startForeground(id, notificacion, tipo))
+            // existe desde Android 10 (API 29).
+            startForeground(NOTIFICATION_ID, notification, resolveForegroundServiceType());
         } else {
-            Notification notification = createNotification();
+            // Android 8 y 9: todavia no hay overload con tipo.
             startForeground(NOTIFICATION_ID, notification);
         }
         
@@ -82,6 +74,46 @@ public class AudioForegroundService extends Service {
         requestAudioFocus();
         
         Log.i(TAG, "Foreground service started");
+    }
+
+    /**
+     * 🔒 El tipo del servicio en primer plano.
+     *
+     * "mediaPlayback" es el tipo base: no necesita ningun permiso y es el
+     * unico que declara el manifest ahora mismo. El tipo "microphone" solo se
+     * puede pedir si el manifest lo declara (startForeground lanza
+     * IllegalArgumentException si el tipo pedido no es un subconjunto del
+     * declarado) y si RECORD_AUDIO esta concedido de verdad.
+     *
+     * Asi el microfono aparece solo cuando haya grabador: el dia que el
+     * manifest declare "mediaPlayback|microphone" y el permiso este concedido,
+     * el servicio lo pide solo, sin tocar el codigo. Y mientras tanto la app
+     * no anuncia capacidad de microfono, que es lo que pide la Device and
+     * Network Abuse policy de Play (el audio tiene que iniciarlo el usuario).
+     */
+    private int resolveForegroundServiceType() {
+        int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && isMicrophoneTypeDeclared()
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                   == PackageManager.PERMISSION_GRANTED) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        }
+        return type;
+    }
+
+    /** Lo que el manifest declara para este servicio (no lo que se pide). */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private boolean isMicrophoneTypeDeclared() {
+        try {
+            ServiceInfo info = getPackageManager().getServiceInfo(
+                    new ComponentName(this, AudioForegroundService.class), 0);
+            return (info.getForegroundServiceType()
+                    & ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) != 0;
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.w(TAG, "No se encuentra el servicio en el manifest", e);
+            return false;
+        }
     }
 
     private Notification createNotification() {
