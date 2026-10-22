@@ -1,5 +1,6 @@
 #include "NovaAudioEngine.h"
 #include "core/NovaLogging.h"
+#include <QTimer>
 #include "core/NovaAudioDeviceManager.h"
 #include "core/NovaHardwareSanitizer.h"
 #include "core/NovaProjectManager.h"
@@ -204,12 +205,32 @@ void NovaAudioEngine::toggleRecord() {
         m_androidEngine.setPlaying(false);
         m_transport.stop();
         Q_EMIT isRecordingChanged();
-        // Importar el último WAV capturado (si existe) en el timeline.
-        importUltimaGrabacionAndroid();
+        // Dar tiempo al disk writer para volcar el último bloque.
+        QTimer::singleShot(400, this, [this]() {
+            importUltimaGrabacionAndroid();
+        });
+        qCDebug(novaCore) << "🎙️ [Android] Grabación detenida; importando captura.";
     } else {
         // Asegurar que el motor está listo (abre el input stream).
         if (!m_androidMotorListo) {
             m_androidMotorListo = androidPrepararMotor();
+        }
+        // Asegurar que hay al menos una pista para capturar.
+        {
+            auto session = m_sessionManager.session();
+            if (session) {
+                auto routes = session->get_routes();
+                bool hasTrack = false;
+                if (routes) {
+                    for (const auto &r : *routes) {
+                        if (r && r->is_track()) { hasTrack = true; break; }
+                    }
+                }
+                if (!hasTrack) {
+                    session->new_audio_track(2, 1, nullptr, 1, std::string("Audio 1"),
+                                            ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+                }
+            }
         }
         m_androidGrabando = true;
         m_androidEngine.setPlaying(true);
