@@ -157,6 +157,16 @@ jobs:
             exit 1
           fi
 
+          # El bundle RCC con el metadata de los modulos QML (los qmldir).
+          # Sin el, en el movil "import QtQuick.Controls" no resuelve, el QML
+          # no carga y la app se cierra al abrirla.
+          if unzip -l "${APK}" | grep -q "assets/android_rcc_bundle.rcc"; then
+            echo "--- bundle RCC de los modulos QML: presente ---"
+          else
+            echo "::error::El APK no lleva assets/android_rcc_bundle.rcc: en el movil el QML no va a cargar"
+            exit 1
+          fi
+
       - name: Subir el APK
         uses: actions/upload-artifact@v4
         with:

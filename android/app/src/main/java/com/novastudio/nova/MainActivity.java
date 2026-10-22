@@ -12,26 +12,17 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 import org.qtproject.qt.android.QtActivityBase;
 
 public class MainActivity extends QtActivityBase {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    
-    private static final String[] REQUIRED_PERMISSIONS = {
-        android.Manifest.permission.RECORD_AUDIO,
-        android.Manifest.permission.MODIFY_AUDIO_SETTINGS,
-        android.Manifest.permission.WAKE_LOCK,
-    };
-    
-    private static final String[] STORAGE_PERMISSIONS = {
-        android.Manifest.permission.READ_EXTERNAL_STORAGE,
-        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        android.Manifest.permission.MANAGE_EXTERNAL_STORAGE,
-    };
+
+    // 🔒 No se piden permisos al arrancar. Cuando haga falta uno (el microfono
+    // para grabar), se pide en ese momento: pedirlo al abrir la app mete un
+    // dialogo encima y, sin el permiso concedido, el servicio en primer plano
+    // de tipo "microphone" revienta en Android 14+.
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,11 +34,24 @@ public class MainActivity extends QtActivityBase {
         
         // Hide system bars for immersive experience
         hideSystemBars();
-        
-        // Request permissions
-        requestPermissionsIfNeeded();
 
-        // Start foreground service for audio
+        // 🔒 NO se pide NINGÚN permiso al arrancar.
+        //
+        // 1) MANAGE_EXTERNAL_STORAGE ("acceso a todos los archivos") abria la
+        //    pantalla de Ajustes del SISTEMA al arrancar: la app salia de
+        //    golpe y el usuario se encontraba en los Ajustes sin saber por
+        //    qué. Y no hace falta: el spike lee de la carpeta propia de la
+        //    app (/sdcard/Android/data/com.novastudio.nova/files/), que no
+        //    necesita ese permiso.
+        //
+        // 2) RECORD_AUDIO (microfono) abria un dialogo encima de la app y,
+        //    ademas, hasta que el usuario lo concede no se puede arrancar un
+        //    servicio en primer plano de tipo "microphone": en Android 14+
+        //    eso es un SecurityException y mata el proceso entero. El micro
+        //    se pedira cuando haya grabacion, no al abrir la app.
+        //
+        // El servicio en primer plano se arranca igualmente: sin microfono
+        // usa solo el tipo "mediaPlayback", que no necesita permiso.
         startAudioForegroundService();
     }
 
@@ -120,57 +124,20 @@ public class MainActivity extends QtActivityBase {
         }
     }
 
-    private void requestPermissionsIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Check and request audio permissions
-            boolean audioPermissionsNeeded = false;
-            for (String permission : REQUIRED_PERMISSIONS) {
-                if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                    audioPermissionsNeeded = true;
-                    break;
-                }
-            }
-            
-            if (audioPermissionsNeeded) {
-                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST_CODE);
-            }
-            
-            // Request storage permissions for Android 10+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                boolean storagePermissionsNeeded = false;
-                for (String permission : STORAGE_PERMISSIONS) {
-                    if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                        storagePermissionsNeeded = true;
-                        break;
-                    }
-                }
-                if (storagePermissionsNeeded) {
-                    ActivityCompat.requestPermissions(this, STORAGE_PERMISSIONS, PERMISSION_REQUEST_CODE + 1);
-                }
-            }
-            
-            // MANAGE_EXTERNAL_STORAGE for Android 11+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                if (!android.os.Environment.isExternalStorageManager()) {
-                    try {
-                        Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                        intent.setData(android.net.Uri.parse("package:" + getPackageName()));
-                        startActivityForResult(intent, PERMISSION_REQUEST_CODE + 2);
-                    } catch (Exception e) {
-                        Log.w(TAG, "Cannot request MANAGE_EXTERNAL_STORAGE", e);
-                    }
-                }
-            }
-        }
-    }
-
     private void startAudioForegroundService() {
-        Intent serviceIntent = new Intent(this, AudioForegroundService.class);
-        serviceIntent.setAction(AudioForegroundService.ACTION_START);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
+        // 🔒 Con try/catch: si el sistema rechaza el servicio (permisos, tipo
+        // no permitido, politica de bateria), la app NO debe morir por ello.
+        // El spike sigue funcionando sin el servicio en primer plano.
+        try {
+            Intent serviceIntent = new Intent(this, AudioForegroundService.class);
+            serviceIntent.setAction(AudioForegroundService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo arrancar el servicio en primer plano", e);
         }
     }
 

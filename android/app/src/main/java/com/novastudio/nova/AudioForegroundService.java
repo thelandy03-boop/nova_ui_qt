@@ -1,5 +1,6 @@
 package com.novastudio.nova;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -7,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
@@ -17,6 +19,7 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 public class AudioForegroundService extends Service {
     private static final String TAG = "AudioForegroundService";
@@ -57,10 +60,19 @@ public class AudioForegroundService extends Service {
     private void startForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification notification = createNotification();
-            startForeground(NOTIFICATION_ID, notification, 
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q 
-                    ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    : 0);
+            // 🔒 El tipo "microphone" de un servicio en primer plano exige que
+            // el permiso RECORD_AUDIO este CONCEDIDO (Android 14+ lanza
+            // SecurityException y mata el proceso de la app si no). Al
+            // arrancar no se pide ese permiso, asi que aqui solo se pide
+            // "mediaPlayback", que no necesita permiso. El microfono se
+            // anade al tipo cuando el permiso este concedido de verdad.
+            int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                       == PackageManager.PERMISSION_GRANTED) {
+                type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            }
+            startForeground(NOTIFICATION_ID, notification, type);
         } else {
             Notification notification = createNotification();
             startForeground(NOTIFICATION_ID, notification);

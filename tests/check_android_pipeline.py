@@ -40,6 +40,11 @@ CONTRATOS = ROOT / "scripts" / "verify_contracts.sh"
 # vuelve con el.
 CMAKE_OBSOLETO = ROOT / "android" / "app" / "src" / "main" / "cpp" / "CMakeLists.txt"
 
+# La parte Java: lo que decide si al abrir la app el usuario se queda en ella
+# o se la sacan (a los Ajustes del sistema, o con un crash).
+ACTIVITY = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "MainActivity.java"
+SERVICIO = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "AudioForegroundService.java"
+
 
 def _exigir(condicion: bool, mensaje: str) -> None:
     if not condicion:
@@ -125,6 +130,65 @@ def el_cmake_obsoleto_no_existe() -> None:
         "vuelve el CMakeLists obsoleto de android/app/src/main/cpp/: apunta a "
         "Qt 6.6 y a un find_package(oboe) imposible. Es una trampa para "
         "cualquiera que intente compilar desde ahi",
+    )
+
+
+def los_assets_qml_se_empaquetan() -> None:
+    """El APK debe llevar los modulos QML (el bundle RCC con los qmldir).
+
+    androiddeployqt deja el bundle en <proyecto>/assets. Si el build.gradle
+    del modulo app no declara assets.srcDirs, Gradle no lo empaqueta: el APK
+    sale sin el metadata de los modulos QML, "import QtQuick.Controls" no se
+    puede resolver en el movil, el QML no carga y la app se cierra al abrirla
+    (main() devuelve -1).
+    """
+    texto = _leer(BUILD_GRADLE)
+    _exigir(
+        "assets.srcDirs" in texto,
+        "android/app/build.gradle no declara assets.srcDirs: el APK saldra sin "
+        "los modulos QML (el bundle RCC) y en el movil el QML no cargara",
+    )
+    _exigir(
+        "../assets" in texto,
+        "android/app/build.gradle no apunta a los assets que deja "
+        "androiddeployqt (../assets desde el modulo app)",
+    )
+
+
+def la_app_no_salta_a_los_ajustes_al_arrancar() -> None:
+    """Abrir la app no debe sacar al usuario de ella.
+
+    La MainActivity pedia MANAGE_EXTERNAL_STORAGE al arrancar y abria la
+    pantalla de Ajustes del SISTEMA: la app desaparecia de golpe. Y ademas
+    pedia RECORD_AUDIO antes de que el usuario concediera nada, lo que en
+    Android 14+ hace que el servicio en primer plano de tipo "microphone"
+    lance SecurityException y mate el proceso.
+    """
+    actividad = _leer(ACTIVITY)
+    _exigir(
+        "ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" not in actividad,
+        "MainActivity sigue abriendo la pantalla de Ajustes del sistema para "
+        "pedir acceso a todos los archivos: al abrir la app, el usuario sale "
+        "de ella de golpe",
+    )
+    _exigir(
+        "requestPermissionsIfNeeded();" not in actividad,
+        "MainActivity sigue pidiendo permisos al arrancar: el dialogo de "
+        "microfono sale encima de la app y el servicio en primer plano de "
+        "tipo microphone revienta en Android 14+",
+    )
+
+    servicio = _leer(SERVICIO)
+    _exigir(
+        "FOREGROUND_SERVICE_TYPE_MICROPHONE" in servicio,
+        "AudioForegroundService ya no contempla el tipo microphone: si el "
+        "permiso esta concedido, el microfono tiene que poder activarse",
+    )
+    _exigir(
+        "checkSelfPermission" in servicio,
+        "AudioForegroundService no comprueba si RECORD_AUDIO esta concedido "
+        "antes de pedir el tipo microphone: en Android 14+ eso es un "
+        "SecurityException que mata la app",
     )
 
 
@@ -245,6 +309,8 @@ COMPROBACIONES = (
     ("el_target_de_oboe_es_el_correcto", el_target_de_oboe_es_el_correcto),
     ("gradle_no_compila_el_codigo_nativo", gradle_no_compila_el_codigo_nativo),
     ("el_cmake_obsoleto_no_existe", el_cmake_obsoleto_no_existe),
+    ("los_assets_qml_se_empaquetan", los_assets_qml_se_empaquetan),
+    ("la_app_no_salta_a_los_ajustes_al_arrancar", la_app_no_salta_a_los_ajustes_al_arrancar),
     ("el_script_de_build_sabe_hacer_debug", el_script_de_build_sabe_hacer_debug),
     ("el_script_de_build_pasa_el_qt_de_escritorio", el_script_de_build_pasa_el_qt_de_escritorio),
     ("el_arch_de_aqt_es_por_abi", el_arch_de_aqt_es_por_abi),

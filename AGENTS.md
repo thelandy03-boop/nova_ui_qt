@@ -127,6 +127,23 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
    ese, el toolchain no es el que se quiere. El workflow lo exporta
    explícitamente.
 
+10. **El APK tiene que llevar `assets/android_rcc_bundle.rcc`.** Ahí va el
+    metadata de los módulos QML (los `qmldir` de `QtQuick`, `QtQuick.Controls`,
+    `QtQuick.Window`…). `androiddeployqt` lo deja en `<proyecto>/assets`, y el
+    módulo Gradle `app` solo lo empaqueta si su `build.gradle` declara
+    `assets.srcDirs = ['../assets']`. La plantilla de Qt lo trae; al
+    sustituirla por la de este repo hay que reponerlo. Sin el bundle:
+    `import QtQuick.Controls` no resuelve en el móvil, el QML no carga y
+    **la app se cierra al abrirla** (`main()` devuelve -1).
+
+11. **Al abrir la app no se pide ningún permiso.** Ni el de "acceso a todos
+    los archivos" (abría la pantalla de Ajustes del *sistema*: el usuario se
+    encontraba fuera de la app sin saber por qué) ni el de micrófono (un
+    diálogo encima, y sin él concedido el servicio en primer plano de tipo
+    `microphone` es un `SecurityException` en Android 14+ que **mata el
+    proceso**). El micro se pide el día que haya grabación. El spike lee de
+    la carpeta propia de la app, que no necesita permisos.
+
 ---
 
 ## 4. Reglas del repo

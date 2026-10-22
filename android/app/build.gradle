@@ -84,6 +84,15 @@ android {
     // by oboe". Ver AGENTS.md, seccion 3.
     sourceSets {
         main {
+            // 🔒 Los assets (el bundle RCC con el metadata de los módulos QML:
+            // los qmldir de QtQuick, QtQuick.Controls, QtQuick.Window...)
+            // los deja androiddeployqt en <proyecto>/assets. Sin esta linea,
+            // Gradle no los empaqueta: el APK sale sin ellos y en el movil
+            // "import QtQuick.Controls 2.15" no se puede resolver -> el QML
+            // no carga -> main() devuelve -1 -> la app se cierra al abrirla.
+            // La plantilla de Qt lo trae (assets.srcDirs = ['assets']); al
+            // sustituirla por este build.gradle hay que reponerlo.
+            assets.srcDirs = ['../assets']
             jniLibs.srcDirs = ['../libs']
         }
     }
