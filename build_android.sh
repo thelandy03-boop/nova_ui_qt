@@ -73,13 +73,42 @@ echo "  - Java Home: ${JAVA_HOME} ($(${JAVA_HOME}/bin/java -version 2>&1 | head 
 # 2. Herramienta Qt CMake para Android. El kit se llama android_<abi> con
 #    guiones bajos (arm64-v8a -> android_arm64_v8a, x86_64 -> android_x86_64),
 #    así que el directorio se deriva del ABI, no al revés.
+QT_VERSION="${QT_VERSION:-6.8.3}"
 QT_ABI_DIR="${ABI//-/_}"
-QT_ANDROID_DIR="$HOME/Qt/6.8.3/android_${QT_ABI_DIR}"
+QT_ANDROID_DIR="$HOME/Qt/${QT_VERSION}/android_${QT_ABI_DIR}"
 QT_ANDROID_CMAKE="${QT_ANDROID_DIR}/bin/qt-cmake"
 
 if [ ! -f "$QT_ANDROID_CMAKE" ]; then
     echo "❌ Error: No se encontró qt-cmake en $QT_ANDROID_CMAKE"
+    echo "   Con aqtinstall:"
+    echo "     aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O \$HOME/Qt"
+    echo "     aqt install-qt linux android ${QT_VERSION} android_${QT_ABI_DIR} -O \$HOME/Qt"
+    echo "   OJO: para Android el arch es 'android_<abi>', no 'linux_gcc_64'."
     exit 1
+fi
+
+# Qt de escritorio (el "host"). Qt exige QT_HOST_PATH para compilar contra un
+# Qt cross-compilado: sin el, find_package(Qt6) falla con "To use a
+# cross-compiled Qt, please set the QT_HOST_PATH cache variable". El kit de
+# escritorio va junto al de Android, en $HOME/Qt/<version>/<host_arch>.
+QT_HOST_DIR="${QT_HOST_DIR:-}"
+if [ -z "${QT_HOST_DIR}" ]; then
+    for host_arch in gcc_64 mingw_64; do
+        if [ -d "${HOME}/Qt/${QT_VERSION}/${host_arch}" ]; then
+            QT_HOST_DIR="${HOME}/Qt/${QT_VERSION}/${host_arch}"
+            break
+        fi
+    done
+fi
+
+QT_HOST_PATH_ARG=""
+if [ -n "${QT_HOST_DIR}" ] && [ -d "${QT_HOST_DIR}" ]; then
+    QT_HOST_PATH_ARG="-DQT_HOST_PATH=${QT_HOST_DIR}"
+    echo "  - Qt host: ${QT_HOST_DIR}"
+else
+    echo "  ⚠️ No se encontró el Qt de escritorio en ${HOME}/Qt/${QT_VERSION}/{gcc_64,mingw_64}"
+    echo "     Si el build falla con QT_HOST_PATH, instálalo con:"
+    echo "       aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 -O \$HOME/Qt"
 fi
 
 BUILD_DIR="build_android"
@@ -96,7 +125,8 @@ echo "🔨 [NOVA ANDROID BUILD] Generando archivos CMake en ./${BUILD_DIR}..."
 ${QT_ANDROID_CMAKE} -B ${BUILD_DIR} \
     -DANDROID_ABI="${ABI}" \
     -DANDROID_PLATFORM="android-31" \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE=Release \
+    ${QT_HOST_PATH_ARG}
 
 echo "📦 [NOVA ANDROID BUILD] Compilando código nativo..."
 # Nota: el target `all` incluye el empaquetado APK (falla en Gradle hasta el

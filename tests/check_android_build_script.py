@@ -108,6 +108,9 @@ class Sandbox:
 
         _escribir_stub(self.bin / "cmake", STUB_CMAKE)
         if con_qt:
+            # Qt de escritorio (el "host"): Qt exige QT_HOST_PATH para
+            # compilar contra un Qt cross-compilado. Va junto al kit de Android.
+            (self.home / "Qt" / "6.8.3" / "gcc_64").mkdir(parents=True)
             for abi in ABIS_ADMITIDOS:
                 kit = self.home / "Qt" / "6.8.3" / f"android_{abi.replace('-', '_')}"
                 _escribir_stub(kit / "bin" / "qt-cmake", STUB_QT_CMAKE)
@@ -286,6 +289,11 @@ def genera_apk_con_el_abi_elegido() -> None:
         _exigir(
             "-DANDROID_ABI=arm64-v8a" in log,
             "sin argumentos no se pasa -DANDROID_ABI=arm64-v8a:\n%s" % log,
+        )
+        _exigir(
+            "-DQT_HOST_PATH=" in log,
+            "no se pasa QT_HOST_PATH: Qt exige el Qt de escritorio para "
+            "compilar contra un Qt cross-compilado:\n%s" % log,
         )
         _exigir(
             sandbox.apk(ABI_POR_DEFECTO).is_file(),

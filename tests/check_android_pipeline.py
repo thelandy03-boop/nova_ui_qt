@@ -142,6 +142,26 @@ def el_script_de_build_sabe_hacer_debug() -> None:
     )
 
 
+def el_script_de_build_pasa_el_qt_de_escritorio() -> None:
+    """Qt exige QT_HOST_PATH para compilar contra un Qt cross-compilado.
+
+    Sin el, find_package(Qt6) falla con "To use a cross-compiled Qt, please
+    set the QT_HOST_PATH cache variable to the location of your host Qt
+    installation". El Qt de escritorio va junto al kit de Android.
+    """
+    codigo = _codigo(_leer(BUILD_SCRIPT))
+    _exigir(
+        "QT_HOST_PATH" in codigo,
+        "build_android.sh no pasa QT_HOST_PATH: Qt exige el Qt de escritorio "
+        "para compilar contra un Qt cross-compilado",
+    )
+    _exigir(
+        "gcc_64" in codigo,
+        "build_android.sh no busca el Qt de escritorio (gcc_64) junto al kit "
+        "de Android",
+    )
+
+
 def el_arch_de_aqt_es_por_abi() -> None:
     """El nombre del kit de Qt para Android es android_<abi>, no linux_gcc_64."""
     fuentes = [_leer(BUILD_SCRIPT)]
@@ -226,6 +246,7 @@ COMPROBACIONES = (
     ("gradle_no_compila_el_codigo_nativo", gradle_no_compila_el_codigo_nativo),
     ("el_cmake_obsoleto_no_existe", el_cmake_obsoleto_no_existe),
     ("el_script_de_build_sabe_hacer_debug", el_script_de_build_sabe_hacer_debug),
+    ("el_script_de_build_pasa_el_qt_de_escritorio", el_script_de_build_pasa_el_qt_de_escritorio),
     ("el_arch_de_aqt_es_por_abi", el_arch_de_aqt_es_por_abi),
     ("el_agente_tiene_la_guide", el_agente_tiene_la_guide),
     ("hay_un_comando_unico_de_verificacion", hay_un_comando_unico_de_verificacion),
