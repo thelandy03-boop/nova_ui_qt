@@ -120,6 +120,14 @@ public:
     /** Vuelve al principio del audio y limpia el remuestreador. */
     void reset();
 
+    /**
+     * Salta a un fotograma de salida (en la tasa de salida vigente).
+     *
+     * Útil para el loop por rango y para seek. Si el valor está fuera de
+     * rango se acota a [0, durationFrames()].
+     */
+    void seekToFrame(qint64 outputFrame);
+
 private:
     /** Recalcula la duración con la tasa de salida vigente. */
     void recalcularDuracion();

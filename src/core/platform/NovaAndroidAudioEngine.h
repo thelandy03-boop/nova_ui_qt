@@ -149,6 +149,16 @@ public:
     void setLoopEnabled(bool enabled) { m_loopEnabled.store(enabled, std::memory_order_relaxed); }
     bool loopEnabled() const { return m_loopEnabled.load(std::memory_order_relaxed); }
 
+    void setLoopRangeFrames(qint64 startFrame, qint64 endFrame) {
+        m_loopStartFrame.store(startFrame, std::memory_order_relaxed);
+        m_loopEndFrame.store(endFrame, std::memory_order_relaxed);
+    }
+    qint64 loopStartFrame() const { return m_loopStartFrame.load(std::memory_order_relaxed); }
+    qint64 loopEndFrame() const { return m_loopEndFrame.load(std::memory_order_relaxed); }
+    bool hasLoopRange() const {
+        return m_loopEndFrame.load(std::memory_order_relaxed) > m_loopStartFrame.load(std::memory_order_relaxed);
+    }
+
     // Picos del último bloque escrito (VU meter). 0..1 aprox.
     float peakLeft() const { return m_peakLeft.load(std::memory_order_relaxed); }
     float peakRight() const { return m_peakRight.load(std::memory_order_relaxed); }
@@ -237,6 +247,9 @@ private:
     std::atomic<int> m_tasaSalidaReal{0};
 
     std::atomic<bool> m_loopEnabled{false};
+
+    std::atomic<qint64> m_loopStartFrame{0};
+    std::atomic<qint64> m_loopEndFrame{0};
 
     // Picos del último bloque de salida (para VU meters).
     std::atomic<float> m_peakLeft{0.0f};

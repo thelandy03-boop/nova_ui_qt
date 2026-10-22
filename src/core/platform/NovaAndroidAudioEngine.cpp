@@ -962,6 +962,18 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
         m_engine->m_currentFrame.fetch_add(emitidos, std::memory_order_relaxed);
     }
 
+    // Loop por rango (Fase 3): si el playhead supera el final del loop,
+    // se vuelve al inicio del rango.
+    if (m_engine->m_loopEnabled.load(std::memory_order_relaxed)
+        && m_engine->hasLoopRange()) {
+        const qint64 endFrame = m_engine->loopEndFrame();
+        const qint64 startFrame = m_engine->loopStartFrame();
+        if (m_engine->m_currentFrame.load(std::memory_order_relaxed) >= endFrame) {
+            m_engine->m_player.seekToFrame(startFrame);
+            m_engine->m_currentFrame.store(startFrame, std::memory_order_relaxed);
+        }
+    }
+
     // Picos del bloque escrito (VU meter). Se calculan sobre el buffer de
     // salida real (lo que suena), canal L y R.
     float pL = 0.0f, pR = 0.0f;

@@ -125,6 +125,25 @@ void NovaAudioPlayer::reset()
     m_remuestreador.reset();
 }
 
+void NovaAudioPlayer::seekToFrame(qint64 outputFrame)
+{
+    if (!m_cargado || m_fotogramasDuracion <= 0) {
+        return;
+    }
+    if (outputFrame < 0) outputFrame = 0;
+    if (outputFrame > m_fotogramasDuracion) outputFrame = m_fotogramasDuracion;
+
+    m_fotogramasPosicion = outputFrame;
+    // Se vuelve a alimentar desde el fotograma de entrada equivalente,
+    // dejando un margen para que el remuestreador interpole.
+    const double ratio = ratioEntradaPorSalida();
+    qint64 alimentados = static_cast<qint64>(std::floor(static_cast<double>(outputFrame) * ratio));
+    if (alimentados < 0) alimentados = 0;
+    if (alimentados > m_fotogramasEntrada) alimentados = m_fotogramasEntrada;
+    m_fotogramasAlimentados = alimentados;
+    m_remuestreador.reset();
+}
+
 int NovaAudioPlayer::renderFrames(float* interleavedOut, int frames)
 {
     if (!m_cargado || !m_sonando || interleavedOut == nullptr || frames <= 0) {

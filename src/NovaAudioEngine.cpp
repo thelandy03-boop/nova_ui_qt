@@ -177,7 +177,16 @@ void NovaAudioEngine::setLoopEnabled(bool enabled) {
     m_androidEngine.setLoopEnabled(enabled);
 #endif
 }
-void NovaAudioEngine::setLoopRange(double startBeat, double endBeat) { m_transport.setLoopRange(startBeat, endBeat); }
+void NovaAudioEngine::setLoopRange(double startBeat, double endBeat) {
+    m_transport.setLoopRange(startBeat, endBeat);
+#if defined(Q_OS_ANDROID)
+    double sr = m_androidEngine.tasaSalidaReal() > 0 ? m_androidEngine.tasaSalidaReal() : 48000.0;
+    double bpm = this->bpm() > 0 ? this->bpm() : 120.0;
+    qint64 startFrame = static_cast<qint64>(NovaTimeUtils::beatToFrame(startBeat, sr, bpm));
+    qint64 endFrame = static_cast<qint64>(NovaTimeUtils::beatToFrame(endBeat, sr, bpm));
+    m_androidEngine.setLoopRangeFrames(startFrame, endFrame);
+#endif
+}
 void NovaAudioEngine::toggleLoop() { m_transport.toggleLoop(); }
 
 // ✂️ HERRAMIENTA SPLIT: Dividir clip en el punto exacto del Playhead
