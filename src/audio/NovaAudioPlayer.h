@@ -128,6 +128,17 @@ public:
      */
     void seekToFrame(qint64 outputFrame);
 
+    /**
+     * Limita la reproducción a un rango de fotogramas de salida.
+     *
+     * Útil para reproducir un clip (split) sin tocar el resto del fichero.
+     * Si endFrame <= startFrame (o ambos 0), se reproduce el fichero entero.
+     */
+    void setPlaybackRange(qint64 startFrame, qint64 endFrame);
+
+    qint64 playbackRangeStart() const { return m_rangoInicio; }
+    qint64 playbackRangeEnd() const { return m_rangoFin; }  // 0 = hasta el final
+
 private:
     /** Recalcula la duración con la tasa de salida vigente. */
     void recalcularDuracion();
@@ -164,6 +175,10 @@ private:
 
     /** Fotogramas de salida que ocupa el fichero completo. */
     qint64 m_fotogramasDuracion = 0;
+
+    // Rango de reproducción (fotogramas de salida). 0,0 = fichero entero.
+    qint64 m_rangoInicio = 0;
+    qint64 m_rangoFin = 0;
 
     /** true si hay audio cargado. */
     bool m_cargado = false;

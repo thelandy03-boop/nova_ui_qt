@@ -144,15 +144,47 @@ void NovaAudioPlayer::seekToFrame(qint64 outputFrame)
     m_remuestreador.reset();
 }
 
+void NovaAudioPlayer::setPlaybackRange(qint64 startFrame, qint64 endFrame)
+{
+    if (startFrame < 0) startFrame = 0;
+    if (endFrame < 0) endFrame = 0;
+    if (endFrame > 0 && endFrame <= startFrame) {
+        // Rango invalido: se ignora (se mantiene el anterior).
+        return;
+    }
+    m_rangoInicio = startFrame;
+    m_rangoFin = endFrame;
+
+    // Si la posición actual queda fuera del nuevo rango, se recoloca.
+    const qint64 effEnd = (m_rangoFin > 0) ? m_rangoFin : m_fotogramasDuracion;
+    if (m_fotogramasPosicion < m_rangoInicio) {
+        m_fotogramasPosicion = m_rangoInicio;
+        const double ratio = ratioEntradaPorSalida();
+        qint64 alimentados = static_cast<qint64>(std::floor(static_cast<double>(m_rangoInicio) * ratio));
+        if (alimentados < 0) alimentados = 0;
+        if (alimentados > m_fotogramasEntrada) alimentados = m_fotogramasEntrada;
+        m_fotogramasAlimentados = alimentados;
+        m_remuestreador.reset();
+    } else if (m_fotogramasPosicion > effEnd) {
+        m_fotogramasPosicion = effEnd;
+    }
+}
+
 int NovaAudioPlayer::renderFrames(float* interleavedOut, int frames)
 {
     if (!m_cargado || !m_sonando || interleavedOut == nullptr || frames <= 0) {
         return 0;
     }
 
-    const qint64 restantes = m_fotogramasDuracion - m_fotogramasPosicion;
+    // Rango efectivo de reproducción.
+    const qint64 effEnd = (m_rangoFin > 0 && m_rangoFin <= m_fotogramasDuracion)
+                              ? m_rangoFin : m_fotogramasDuracion;
+    if (m_fotogramasPosicion < m_rangoInicio) {
+        m_fotogramasPosicion = m_rangoInicio;
+    }
+    const qint64 restantes = effEnd - m_fotogramasPosicion;
     if (restantes <= 0) {
-        // El fichero se ha agotado.
+        // El rango se ha agotado.
         m_sonando = false;
         return 0;
     }
@@ -218,7 +250,9 @@ int NovaAudioPlayer::renderFrames(float* interleavedOut, int frames)
     }
 
     m_fotogramasPosicion += escritos;
-    if (m_fotogramasPosicion >= m_fotogramasDuracion) {
+    const qint64 effEnd2 = (m_rangoFin > 0 && m_rangoFin <= m_fotogramasDuracion)
+                               ? m_rangoFin : m_fotogramasDuracion;
+    if (m_fotogramasPosicion >= effEnd2) {
         m_sonando = false;
     }
 

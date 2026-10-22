@@ -149,6 +149,14 @@ public:
     void setLoopEnabled(bool enabled) { m_loopEnabled.store(enabled, std::memory_order_relaxed); }
     bool loopEnabled() const { return m_loopEnabled.load(std::memory_order_relaxed); }
 
+#if defined(Q_OS_ANDROID)
+    void setPlaybackRange(qint64 startFrame, qint64 endFrame) {
+        m_player.setPlaybackRange(startFrame, endFrame);
+    }
+    void resetPlaybackRange() { m_player.setPlaybackRange(0, 0); }
+    void seekToFrame(qint64 frame) { m_player.seekToFrame(frame); m_currentFrame.store(frame, std::memory_order_relaxed); }
+#endif
+
     void setLoopRangeFrames(qint64 startFrame, qint64 endFrame) {
         m_loopStartFrame.store(startFrame, std::memory_order_relaxed);
         m_loopEndFrame.store(endFrame, std::memory_order_relaxed);

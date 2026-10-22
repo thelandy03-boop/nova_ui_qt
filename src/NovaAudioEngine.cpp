@@ -141,12 +141,36 @@ void NovaAudioEngine::connectSessionSignals()
 void NovaAudioEngine::play() {
     m_transport.play();
 #if defined(Q_OS_ANDROID)
-    // Fase 2b: si hay un fichero cargado, arranca la salida Oboe.
+    // Fase 2b/3: si hay un fichero cargado, arranca la salida Oboe.
     if (m_androidEngine.tieneFicheroCargado()) {
         if (!m_androidMotorListo) {
             m_androidMotorListo = androidPrepararMotor();
         }
         if (m_androidMotorListo) {
+            // Split real: si el playhead cae dentro de una region, se
+            // reproduce solo esa porcion (rango). Si no, fichero completo.
+            double curFrame = currentFrame();
+            qint64 rangeStart = 0;
+            qint64 rangeEnd = 0;
+            if (m_regionModel) {
+                for (int i = 0; i < m_regionModel->rowCount(); ++i) {
+                    QModelIndex idx = m_regionModel->index(i, 0);
+                    double rStart = m_regionModel->data(idx, NovaRegionModel::StartFrameRole).toDouble();
+                    double rLen = m_regionModel->data(idx, NovaRegionModel::LengthFramesRole).toDouble();
+                    if (curFrame >= rStart && curFrame < rStart + rLen && rLen > 0) {
+                        rangeStart = static_cast<qint64>(rStart);
+                        rangeEnd = static_cast<qint64>(rStart + rLen);
+                        break;
+                    }
+                }
+            }
+            if (rangeEnd > rangeStart) {
+                m_androidEngine.setPlaybackRange(rangeStart, rangeEnd);
+                if (curFrame < rangeStart) curFrame = rangeStart;
+                m_androidEngine.seekToFrame(static_cast<qint64>(curFrame));
+            } else {
+                m_androidEngine.resetPlaybackRange();
+            }
             m_androidEngine.setPlaying(true);
         }
     }
