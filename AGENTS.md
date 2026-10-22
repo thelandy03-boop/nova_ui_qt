@@ -110,6 +110,23 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
    `NovaSpikeController`. Quitar los stubs es trabajo de la Fase 1, no de un
    arreglo puntual.
 
+7. **El moc de Qt no se puede fijar a `/usr/lib/qt6/libexec/moc`.** Esa es la
+   ruta del Qt de escritorio de esta máquina. En un runner (o en otro equipo)
+   no existe y el build nativo para con *"No rule to make target
+   '/usr/lib/qt6/libexec/moc'"*. Deja que Qt6 ponga el suyo: el del kit de
+   Android en Android. (Por eso el `if(EXISTS ...)` en el `CMakeLists.txt`.)
+
+8. **Para compilar contra un Qt cross-compilado hace falta `QT_HOST_PATH`**, es
+   decir, el Qt **de escritorio** (el "host"), que va junto al kit de Android
+   en `$HOME/Qt/<version>/gcc_64`. Sin él, `find_package(Qt6)` falla con
+   *"To use a cross-compiled Qt, please set the QT_HOST_PATH cache variable"*.
+   `build_android.sh` lo busca y lo pasa solo.
+
+9. **El NDK tiene que ser el 26.1.10909125**, el que pide el `CMakeLists.txt`.
+   En un runner hay uno preinstalado (27.x) en `ANDROID_NDK_ROOT`: si se deja
+   ese, el toolchain no es el que se quiere. El workflow lo exporta
+   explícitamente.
+
 ---
 
 ## 4. Reglas del repo
@@ -152,6 +169,23 @@ donde no hay Qt ni el árbol de Ardour.
 Si el cambio toca Android, añade también el motivo en el PR: **qué invariante
 se mantiene** y **cómo se comprueba**. El revisor no va a reconstruir el
 pipeline de build desde cero.
+
+---
+
+## 5 bis. Los workflows de este repo
+
+| Workflow | Qué hace | Cuándo |
+|---|---|---|
+| `checks.yml` | Corre los contratos del repo y valida el JSON de OpenCode y el YAML de los workflows | En cada push a `main` y en cada PR. Tarda segundos |
+| `apk-debug.yml` | Compila el proyecto entero y produce el **APK Debug** | **Solo manual** (`workflow_dispatch`). Con la opción de cache |
+| `opencode.yml` | El asistente de OpenCode en GitHub Actions | Con `/oc` en un issue o comentario |
+
+El APK Debug se puede pedir desde la pestaña *Actions* → *APK Debug* →
+*Run workflow*. Tarda unos 8 minutos con la cache; sin ella, bastante más
+(descarga Qt para Android).
+
+Cuando toques el camino de build, **mira que `checks.yml` siga en verde**: es
+la red que avisa de que algo se rompió antes de que lo encuentre un humano.
 
 ---
 
