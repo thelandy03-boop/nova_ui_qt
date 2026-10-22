@@ -368,5 +368,13 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         # comprueban leyendo el codigo).
         add_test(NAME spike_contract
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_spike_contract.py)
+
+        # El contrato del pipeline de build de Android: CMake compila el
+        # nativo y Gradle solo empaqueta. Si alguien mezcla las dos etapas
+        # (un bloque externalNativeBuild, un find_package(oboe) imposible, el
+        # CMakeLists obsoleto de android/app/src/main/cpp/), el APK deja de
+        # construirse. Ver AGENTS.md.
+        add_test(NAME android_pipeline
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_android_pipeline.py)
     endif()
 endif()
