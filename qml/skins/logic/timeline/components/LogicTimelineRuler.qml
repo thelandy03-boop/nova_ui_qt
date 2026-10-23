@@ -5,6 +5,7 @@ Rectangle {
     implicitWidth: 60 * barWidth
     implicitHeight: 28
     color: "#25272E"
+    clip: true
 
     property real barWidth: 80.0
     property real contentX: 0
