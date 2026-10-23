@@ -273,6 +273,9 @@ bool decodeWavFile(const QString& path, NovaDecodedAudio& out, QString* error)
         const quint32 pedir = std::min<quint32>(tamanoDatos - leidos, 1024u * 1024u);
         bloque = archivo.read(pedir);
         if (bloque.isEmpty()) {
+            if (!archivo.atEnd()) {
+                return fallar(error, QStringLiteral("'%1': error de lectura en el chunk 'data'").arg(path));
+            }
             break; // el fichero se ha acabado antes de tiempo
         }
         leidos += static_cast<quint32>(bloque.size());

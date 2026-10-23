@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDir>
+#include <QSet>
 #include <QUrl>
 #include <QTimer>
 #include <algorithm>
@@ -625,14 +626,18 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
                 return;
             }
 
-            // Nombre único dentro de la carpeta de audio del proyecto
+            // Nombre único dentro de la carpeta de audio del proyecto. Se lista
+            // una sola vez la carpeta para no hacer hasta 1000 QFileInfo::exists.
             QString destPath;
+            QSet<QString> existentes;
+            for (const QString &f : QDir(destDir).entryList(QDir::Files)) existentes.insert(f);
             for (int i = 1; i < 1000; ++i) {
-                const QString candidate = QString("%1/%2%3.%4")
-                    .arg(destDir, baseName,
+                const QString candidateName = QString("%1%2.%3")
+                    .arg(baseName,
                          (i == 1 ? QString() : QString("-%1").arg(i)),
                          suffix);
-                if (!QFileInfo::exists(candidate)) {
+                const QString candidate = destDir + "/" + candidateName;
+                if (!existentes.contains(candidateName) && !QFileInfo::exists(candidate)) {
                     destPath = candidate;
                     break;
                 }
