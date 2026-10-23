@@ -93,21 +93,19 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     // Buscar un asset .apk para descarga directa, prefiriendo el ABI actual
     // (arm64-v8a en telefonos, x86_64 en Waydroid/emulador).
     QString apkUrl;
-    QString fallbackApkUrl;
     const QString abi = currentAbiToken();
     QJsonArray assets = obj.value(QStringLiteral("assets")).toArray();
     for (const QJsonValue &a : assets) {
         QJsonObject ao = a.toObject();
         QString name = ao.value(QStringLiteral("name")).toString();
         if (!name.endsWith(QStringLiteral(".apk"), Qt::CaseInsensitive)) continue;
-        const QString url = ao.value(QStringLiteral("browser_download_url")).toString();
-        if (fallbackApkUrl.isEmpty()) fallbackApkUrl = url;
         if (!abi.isEmpty() && name.contains(abi, Qt::CaseInsensitive)) {
-            apkUrl = url;
+            apkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
             break;
         }
     }
-    if (apkUrl.isEmpty()) apkUrl = fallbackApkUrl;
+    // Sin asset para este ABI: abrir la pagina de la release, nunca ofrecer
+    // un APK de otra arquitectura.
     if (apkUrl.isEmpty()) {
         apkUrl = obj.value(QStringLiteral("html_url")).toString();
     }

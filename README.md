@@ -111,14 +111,16 @@ El APK queda en `apks/` (`NovaStudio-<abi>[-debug].apk`).
 ### Publicar una actualización
 
 ```bash
-./publish_release.sh patch              # 1.0.1 → 1.0.2 (también minor|major)
-./publish_release.sh minor --no-x86     # solo APK arm64
+./publish_release.sh patch              # 1.0.2 → 1.0.3 (también minor|major)
+./publish_release.sh patch --with-x86   # incluye además el APK x86_64 debug
 ```
 
 El script sella la versión en `NovaUpdateChecker.h` y `build.gradle`, compila
-los APKs, crea el tag `vX.Y.Z`, lo sube y publica la release con `gh`. La app
-Android compara su versión contra `releases/latest` y bloquea la UI hasta
-actualizar; el APK se elige según el ABI del dispositivo.
+el **APK arm64 release** (único asset por defecto), crea el tag `vX.Y.Z`, lo
+sube y publica la release con `gh`. La app Android compara su versión contra
+`releases/latest` y bloquea la UI hasta actualizar; el APK se elige según el
+ABI del dispositivo. El APK x86_64 debug **no se publica** salvo que se pase
+`--with-x86` (pensado solo para Waydroid/emulador).
 
 ---
 
