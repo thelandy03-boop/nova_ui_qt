@@ -17,11 +17,11 @@ Item {
     width: 24
     z: 30
 
-    // 1. Aguja vertical roja
+    // 1. Aguja vertical roja (arranca a la altura de los números del compás)
     Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 13
+        anchors.topMargin: 12
         anchors.bottom: parent.bottom
         width: 2
         color: root.isDragging ? "#FFCC00" : "#FF3B30"

@@ -120,12 +120,22 @@ Rectangle {
                 }
             }
 
-            // 🎯 AGUJA DE TIEMPO INTERACTIVA
-            LogicPlayhead {
-                timelineX: root.currentPlayheadX
-                contentX: gridFlickable.contentX
-                barWidth: root.barWidth
-            }
+        }
+    }
+
+    // 🎯 AGUJA DE TIEMPO INTERACTIVA
+    // Vive por encima de la regla (no dentro del Flickable, que recorta) para
+    // que la línea suba hasta la altura de los números de compás.
+    Item {
+        id: playheadLayer
+        anchors.fill: parent
+        clip: true
+        z: 50
+
+        LogicPlayhead {
+            timelineX: root.currentPlayheadX
+            contentX: gridFlickable.contentX
+            barWidth: root.barWidth
         }
     }
 }
