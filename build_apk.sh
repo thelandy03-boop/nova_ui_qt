@@ -18,9 +18,13 @@ while [ $# -gt 0 ]; do
 done
 
 echo "🚀 Compilando APK (ABI=$ABI, tipo=$TYPE)..."
-./build_android.sh --abi "$ABI" $([ "$TYPE" = "debug" ] && echo "--debug")
-
-APK="apks/NovaStudio-${ABI}$([ "$TYPE" = "debug" ] && echo "-debug").apk"
+if [ "$TYPE" = "debug" ]; then
+    ./build_android.sh --abi "$ABI" --debug
+    APK="apks/NovaStudio-${ABI}-debug.apk"
+else
+    ./build_android.sh --abi "$ABI"
+    APK="apks/NovaStudio-${ABI}.apk"
+fi
 if [ -f "$APK" ]; then
     echo ""
     echo "✅ APK listo: $(pwd)/$APK ($(du -h "$APK" | cut -f1))"
