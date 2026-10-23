@@ -53,6 +53,6 @@ private:
     bool m_updateRequired = false;
     QString m_latestVersion;
     QString m_downloadUrl;
-    QString m_currentVersion = QStringLiteral("1.0.3");
+    QString m_currentVersion = QStringLiteral("1.0.4");
     bool m_checking = false;
 };
