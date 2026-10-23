@@ -62,9 +62,22 @@ public:
     // PeakData completo (que son decenas de KB por clip).
     static bool hasPeaks(const QString &regionId);
 
+    // Número de versión de los picos de una región. Cambia cada vez que se
+    // publican datos nuevos (por ejemplo, cuando los picos reales sustituyen
+    // a los de un fichero antiguo o a los simulados de una grabación). El
+    // renderizador lo compara para refrescar la onda sin copiar los picos en
+    // cada frame.
+    static quint64 generation(const QString &regionId);
+
 private:
-    static inline std::map<QString, PeakData> s_cache;
+    struct Entrada {
+        PeakData data;
+        quint64 generation = 0;
+    };
+
+    static inline std::map<QString, Entrada> s_cache;
     static inline std::mutex s_mutex;
+    static inline quint64 s_nextGeneration = 0;
 };
 
 class NovaRegionModel : public QAbstractListModel

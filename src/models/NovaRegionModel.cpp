@@ -70,7 +70,7 @@ static uint32_t crc32_peaks(const std::vector<PeakPoint>& peaks){
 void NovaWaveformCache::setPeaks(const QString &regionId, const PeakData &data)
 {
     std::lock_guard<std::mutex> lock(s_mutex);
-    s_cache[regionId] = data;
+    s_cache[regionId] = Entrada{data, ++s_nextGeneration};
 }
 
 bool NovaWaveformCache::getPeaks(const QString &regionId, PeakData &outData)
@@ -78,7 +78,7 @@ bool NovaWaveformCache::getPeaks(const QString &regionId, PeakData &outData)
     std::lock_guard<std::mutex> lock(s_mutex);
     auto it = s_cache.find(regionId);
     if (it != s_cache.end()) {
-        outData = it->second;
+        outData = it->second.data;
         return true;
     }
     return false;
@@ -89,7 +89,7 @@ bool NovaWaveformCache::getOverview(const QString &regionId, std::vector<PeakPoi
     std::lock_guard<std::mutex> lock(s_mutex);
     auto it = s_cache.find(regionId);
     if (it != s_cache.end()) {
-        outPeaks = it->second.overview;
+        outPeaks = it->second.data.overview;
         return true;
     }
     return false;
@@ -99,7 +99,14 @@ bool NovaWaveformCache::hasPeaks(const QString &regionId)
 {
     std::lock_guard<std::mutex> lock(s_mutex);
     auto it = s_cache.find(regionId);
-    return it != s_cache.end() && !it->second.peaks.empty();
+    return it != s_cache.end() && !it->second.data.peaks.empty();
+}
+
+quint64 NovaWaveformCache::generation(const QString &regionId)
+{
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto it = s_cache.find(regionId);
+    return (it != s_cache.end()) ? it->second.generation : 0;
 }
 
 void NovaWaveformCache::removePeaks(const QString &regionId)
@@ -126,37 +133,45 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
 
     if (channels == 0) return result;
 
-    auto source = audioRegion->audio_source(0);
-    if (!source) return result;
+    const uint32_t regionChannels = audioRegion->n_channels();
+    if (regionChannels == 0) return result;
+
+    auto source0 = audioRegion->audio_source(0);
+    if (!source0) return result;
 
     // 🛡️ La region se mide en muestras de la linea de tiempo de la SESION,
     // pero la fuente puede tener otra tasa (p.ej. un MP3 a 44,1 kHz en una
     // sesion a 48 kHz). Sin convertir, la lectura se sale del final del
     // archivo, source->read() devuelve 0 y la forma de onda sale VACIA.
     const double sessionRate = (sampleRate > 0) ? static_cast<double>(sampleRate) : 48000.0;
-    const double sourceRate  = (source->sample_rate() > 0)
-        ? static_cast<double>(source->sample_rate()) : sessionRate;
-    const double rateRatio   = sourceRate / sessionRate;   // muestras de fuente por muestra de sesion
+    const double sourceRate0 = (source0->sample_rate() > 0)
+        ? static_cast<double>(source0->sample_rate()) : sessionRate;
+    const double rateRatio0 = sourceRate0 / sessionRate;   // muestras de fuente por muestra de sesion
 
-    ARDOUR::samplepos_t startPos = static_cast<ARDOUR::samplepos_t> (audioRegion->start_sample() * rateRatio);
-    ARDOUR::samplecnt_t length   = static_cast<ARDOUR::samplecnt_t> (audioRegion->length_samples() * rateRatio);
-    if (length <= 0) return result;
+    const ARDOUR::samplepos_t startPos0 = static_cast<ARDOUR::samplepos_t> (audioRegion->start_sample() * rateRatio0);
+    const ARDOUR::samplecnt_t length0 = static_cast<ARDOUR::samplecnt_t> (audioRegion->length_samples() * rateRatio0);
+    if (length0 <= 0) return result;
+
+    // Resolucion adaptada a la duracion real del clip. Un tema de 4 minutos
+    // tiene ~43.000 puntos de detalle; un clip de 5 segundos conserva 8.192
+    // (mas que suficiente para su zoom maximo).
+    const double duracionSegundos = static_cast<double>(length0) / std::max(sourceRate0, 1.0);
+    const int detailPoints = novaDetailPeakPoints(duracionSegundos);
+    const int overviewPoints = novaOverviewPeakPoints(detailPoints);
 
     qCDebug(novaModel) << "📈 Picos: long. región:" << audioRegion->length_samples()
-                       << "| long. fuente:" << source->length().samples()
-                       << "| tasa:" << sourceRate << " (" << sessionRate << ")"
-                       << "| a leer:" << length << " desde" << startPos;
+                       << "| long. fuente:" << source0->length().samples()
+                       << "| tasa:" << sourceRate0 << " (" << sessionRate << ")"
+                       << "| canales:" << regionChannels
+                       << "| desde:" << startPos0
+                       << "| puntos:" << detailPoints << "/" << overviewPoints;
 
     result.sampleRate = sampleRate;
-    result.channels = channels;
+    result.channels = static_cast<int>(regionChannels);
 
-    constexpr int detailPoints = 4096;      // detalle al máximo zoom (tipo FL Studio)
-    constexpr int overviewPoints = 320;     // overview (zoom out)
     constexpr ARDOUR::samplecnt_t bufferSize = 8192;
 
     std::vector<ARDOUR::Sample> readBuffer(bufferSize);
-    ARDOUR::samplecnt_t remaining = length;
-    ARDOUR::samplepos_t currentPos = startPos;
 
     // Buffers de acumulación
     // 🛡️ El mínimo se inicializa a +FLT_MAX y el máximo a -FLT_MAX: el audio
@@ -168,27 +183,49 @@ static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &aud
     initPeakAccumulators(detailMin, detailMax, detailRms, detailCount, detailPoints);
     initPeakAccumulators(overviewMin, overviewMax, overviewRms, overviewCount, overviewPoints);
 
-    const double detailStep = static_cast<double>(length) / detailPoints;
-    const double overviewStep = static_cast<double>(length) / overviewPoints;
-
-    while (remaining > 0) {
-        ARDOUR::samplecnt_t toRead = std::min(remaining, bufferSize);
-        ARDOUR::samplecnt_t read = source->read(readBuffer.data(), currentPos, toRead, 0);
-        if (read <= 0) {
-            qCWarning(novaModel) << "📈 Picos: la fuente no devolvió datos en" << currentPos
-                                 << "(quedaban" << remaining << "muestras) -> la forma de onda quedará vacía";
-            break;
+    // 🎚️ Antes solo se leía el canal 0: un clip estéreo enseñaba la onda de
+    // la izquierda y podía parecer vacío si el sonido estaba en la derecha.
+    // Ahora se acumulan todos los canales de la región (min/max de todos y
+    // RMS de todas las muestras), que es lo que se espera de una sola pista
+    // de onda.
+    for (uint32_t ch = 0; ch < regionChannels; ++ch) {
+        auto source = audioRegion->audio_source(ch);
+        if (!source) {
+            qCWarning(novaModel) << "📈 Picos: la región no tiene fuente para el canal" << ch;
+            continue;
         }
 
-        // Procesamiento de picos usando SIMD si está disponible, de lo contrario escalar
-        processPeakBlockSimd(reinterpret_cast<const float*>(readBuffer.data()), read,
-                             static_cast<double>(currentPos - startPos), detailStep, overviewStep,
-                             detailPoints, overviewPoints,
-                             detailMin, detailMax, detailRms, detailCount,
-                             overviewMin, overviewMax, overviewRms, overviewCount);
+        const double sourceRate = (source->sample_rate() > 0)
+            ? static_cast<double>(source->sample_rate()) : sessionRate;
+        const double rateRatio = sourceRate / sessionRate;
+        const ARDOUR::samplepos_t startPos = static_cast<ARDOUR::samplepos_t> (audioRegion->start_sample() * rateRatio);
+        ARDOUR::samplecnt_t remaining = static_cast<ARDOUR::samplecnt_t> (audioRegion->length_samples() * rateRatio);
+        if (remaining <= 0) continue;
 
-        currentPos += read;
-        remaining -= read;
+        ARDOUR::samplepos_t currentPos = startPos;
+        const double detailStep = static_cast<double>(remaining) / detailPoints;
+        const double overviewStep = static_cast<double>(remaining) / overviewPoints;
+
+        while (remaining > 0) {
+            ARDOUR::samplecnt_t toRead = std::min(remaining, bufferSize);
+            ARDOUR::samplecnt_t read = source->read(readBuffer.data(), currentPos, toRead, 0);
+            if (read <= 0) {
+                qCWarning(novaModel) << "📈 Picos: la fuente no devolvió datos en" << currentPos
+                                     << "canal" << ch
+                                     << "(quedaban" << remaining << "muestras) -> la forma de onda quedará vacía";
+                break;
+            }
+
+            // Procesamiento de picos usando SIMD si está disponible, de lo contrario escalar
+            processPeakBlockSimd(reinterpret_cast<const float*>(readBuffer.data()), read,
+                                 static_cast<double>(currentPos - startPos), detailStep, overviewStep,
+                                 detailPoints, overviewPoints,
+                                 detailMin, detailMax, detailRms, detailCount,
+                                 overviewMin, overviewMax, overviewRms, overviewCount);
+
+            currentPos += read;
+            remaining -= read;
+        }
     }
 
     // Finalizar picos
@@ -1041,27 +1078,46 @@ bool NovaRegionModel::savePeakFile(const QString &peakFilePath, const PeakData &
 
 bool NovaRegionModel::loadPeakFile(const QString &peakFilePath, PeakData &outData)
 {
+    // 🧹 Importante: si el fichero no vale (versión antigua, corrupto...),
+    // outData tiene que quedar VACÍO. Antes se redimensionaba a pcount antes
+    // de comprobar la versión, y el llamador publicaba esos picos a cero en
+    // la caché: la onda se quedaba recta y ya no se refrescaba cuando
+    // llegaban los picos reales.
+    outData = PeakData{};
+
     std::ifstream in(peakFilePath.toStdString(), std::ios::binary);
     if (!in) return false;
 
     char magic[4];
-    in.read(magic, 4);
-    if (memcmp(magic, "NPK2", 4) != 0) return false;
+    if (!in.read(magic, 4) || memcmp(magic, "NPK2", 4) != 0) {
+        return false;
+    }
 
-    uint32_t ver, sr, ch, pcount, ocount, crc;
-    in.read(reinterpret_cast<char*>(&ver), 4);
-    in.read(reinterpret_cast<char*>(&sr), 4);
-    in.read(reinterpret_cast<char*>(&ch), 4);
-    in.read(reinterpret_cast<char*>(&pcount), 4);
-    in.read(reinterpret_cast<char*>(&ocount), 4);
-    in.read(reinterpret_cast<char*>(&crc), 4);
+    uint32_t ver = 0, sr = 0, ch = 0, pcount = 0, ocount = 0, crc = 0, dataSize = 0;
+    if (!in.read(reinterpret_cast<char*>(&ver), 4)
+        || !in.read(reinterpret_cast<char*>(&sr), 4)
+        || !in.read(reinterpret_cast<char*>(&ch), 4)
+        || !in.read(reinterpret_cast<char*>(&pcount), 4)
+        || !in.read(reinterpret_cast<char*>(&ocount), 4)
+        || !in.read(reinterpret_cast<char*>(&crc), 4)
+        || !in.read(reinterpret_cast<char*>(&dataSize), 4)) {
+        return false;
+    }
 
-    uint32_t dataSize;
-    in.read(reinterpret_cast<char*>(&dataSize), 4);
+    // La version del formato incluye la resolucion de los picos: si cambia,
+    // los ficheros antiguos se descartan y se recalculan.
+    if (ver != PeakData().version) {
+        return false;
+    }
 
-    size_t expectedUncompressed = pcount * sizeof(PeakPoint) + ocount * sizeof(PeakPoint);
+    // Un fichero corrupto no puede pedir gigabytes de memoria.
+    constexpr uint32_t kMaxPuntos = 2'000'000;
+    if (pcount > kMaxPuntos || ocount > kMaxPuntos) {
+        return false;
+    }
+
+    const size_t expectedUncompressed = pcount * sizeof(PeakPoint) + ocount * sizeof(PeakPoint);
     if (dataSize != expectedUncompressed) {
-        // Data size mismatch
         return false;
     }
 
@@ -1072,21 +1128,22 @@ bool NovaRegionModel::loadPeakFile(const QString &peakFilePath, PeakData &outDat
     outData.peaks.resize(pcount);
     outData.overview.resize(ocount);
 
-    // La version del formato incluye la resolucion de los picos: si cambia,
-    // los ficheros antiguos se descartan y se recalculan.
-    if (ver != PeakData().version) {
+    if (pcount > 0
+        && !in.read(reinterpret_cast<char*>(outData.peaks.data()), pcount * sizeof(PeakPoint))) {
+        outData = PeakData{};
+        return false;
+    }
+    if (ocount > 0
+        && !in.read(reinterpret_cast<char*>(outData.overview.data()), ocount * sizeof(PeakPoint))) {
+        outData = PeakData{};
         return false;
     }
 
-    if (pcount > 0) {
-        in.read(reinterpret_cast<char*>(outData.peaks.data()), pcount * sizeof(PeakPoint));
-    }
-    if (ocount > 0) {
-        in.read(reinterpret_cast<char*>(outData.overview.data()), ocount * sizeof(PeakPoint));
-    }
-
     // Verificar CRC
-    if (crc32_peaks(outData.peaks) != crc) return false;
+    if (crc32_peaks(outData.peaks) != crc) {
+        outData = PeakData{};
+        return false;
+    }
 
     return true;
 }
@@ -1277,11 +1334,12 @@ void NovaRegionModel::rebuildRegionCache()
                             item.clipGainDb = NovaAudioUtils::coeffToDb(audioRegion->scale_amplitude());
                         }
 
-                        std::vector<PeakPoint> cachedPeaks;
                         PeakData cachedData;
-                        if (!NovaWaveformCache::getPeaks(item.id, cachedData)) {
-                            QString peakFile = sessionPeaksDir + "/" + item.id + ".novapeak";
-                            if (!loadPeakFile(peakFile, cachedData)) {
+                        bool picosCargados = NovaWaveformCache::getPeaks(item.id, cachedData);
+                        if (!picosCargados || cachedData.peaks.empty()) {
+                            const QString peakFile = sessionPeaksDir + "/" + item.id + ".novapeak";
+                            picosCargados = loadPeakFile(peakFile, cachedData);
+                            if (!picosCargados) {
                                 if (audioRegion) {
                                     // 🧵 Calcular los picos.decodeando el audio
                                     // puede tardar varios segundos (un MP3 de
@@ -1293,7 +1351,10 @@ void NovaRegionModel::rebuildRegionCache()
                                                        channels, peakFile);
                                 }
                             }
-                            if (!cachedData.peaks.empty()) NovaWaveformCache::setPeaks(item.id, cachedData);
+                        }
+                        // Solo se publica lo que se ha cargado de verdad.
+                        if (picosCargados && !cachedData.peaks.empty()) {
+                            NovaWaveformCache::setPeaks(item.id, cachedData);
                         }
 
                         m_regions.push_back(item);

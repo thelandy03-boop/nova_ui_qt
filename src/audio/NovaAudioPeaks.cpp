@@ -23,7 +23,6 @@ PeakPoint puntoDeBin(float minimo, float maximo, float sumaCuadrados, int muestr
 PeakData buildPeakData(const NovaDecodedAudio& audio, int detailPoints, int overviewPoints)
 {
     PeakData data;
-    data.version = 2;
     data.sampleRate = audio.sampleRate;
     data.channels = audio.channels;
 

@@ -103,8 +103,16 @@ void NovaSpikeLoader::cargar(const QString& path)
         }
 
         // 2. Calcular los picos. También aquí, en el hilo de trabajo: es un
-        //    recorrido por todas las muestras del fichero.
-        const PeakData picos = buildPeakData(*audio, kPuntosDetalle, kPuntosVistaGeneral);
+        //    recorrido por todas las muestras del fichero. La resolucion se
+        //    adapta a la duracion: mas puntos en temas largos para que al
+        //    hacer zoom no aparezcan escalones.
+        const double duracionSegundos =
+            (audio->sampleRate > 0)
+                ? static_cast<double>(audio->frameCount()) / audio->sampleRate
+                : 0.0;
+        const int puntosDetalle = novaDetailPeakPoints(duracionSegundos);
+        const int puntosVistaGeneral = novaOverviewPeakPoints(puntosDetalle);
+        const PeakData picos = buildPeakData(*audio, puntosDetalle, puntosVistaGeneral);
 
         // 3. Entregar el resultado en el hilo del cargador (bajo el
         //    candado del estado, como arriba).

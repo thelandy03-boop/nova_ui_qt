@@ -6,6 +6,7 @@
 #include <QVector2D>
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 #include <QOpenGLFunctions>
 #include <QDebug>
 #ifndef Q_OS_ANDROID
@@ -222,8 +223,12 @@ void NovaWaveformRenderer::rebuildGeometry() {
     const double totalPx = (m_width > 0) ? static_cast<double>(m_width)
                                          : totalBeats * pxPerBeatSafe;
 
-    m_vertices.reserve(count * 4 * 3 + 12); // 4 vertices per peak (quad), 3 floats each
-    m_indices.reserve(count * 6 + 6);
+    // Una columna por píxel (con un tope para clips gigantes). Cada columna
+    // agrega todos los picos que caen dentro de ella, así que la onda se
+    // dibuja como una envolvente continua y no como escalones de "peakWidth".
+    const int columnas = std::max(1, std::min(m_width > 0 ? m_width : 1, 8192));
+    m_vertices.reserve(static_cast<size_t>(columnas) * 8 * 3 + 12);
+    m_indices.reserve(static_cast<size_t>(columnas) * 12 + 6);
 
     int vertexIdx = 0;
 
@@ -254,11 +259,32 @@ void NovaWaveformRenderer::rebuildGeometry() {
         return;
     }
 
-    const double peakWidthPx = (count > 0) ? std::max(1.0, totalPx / count) : 1.0;
-    for (int i = 0; i < count; ++i) {
-        float minVal = peaks[i].min;
-        float maxVal = peaks[i].max;
-        float rmsVal = peaks[i].rms;
+    const double anchoColumna = totalPx / columnas;
+
+    for (int col = 0; col < columnas; ++col) {
+        // Rango de picos que cubre esta columna. Al hacer zoom out entran
+        // varios picos por píxel; al hacer zoom in el mismo pico se repite
+        // en varias columnas, pero la envolvente ya no tiene saltos.
+        const int i0 = static_cast<int>((static_cast<int64_t>(col) * count) / columnas);
+        int i1 = static_cast<int>((static_cast<int64_t>(col + 1) * count) / columnas);
+        if (i1 <= i0) i1 = i0 + 1;
+        if (i1 > count) i1 = count;
+
+        float minVal = 0.0f;
+        float maxVal = 0.0f;
+        double rmsSumaCuadrados = 0.0;
+        int muestras = 0;
+
+        for (int i = i0; i < i1; ++i) {
+            minVal = std::min(minVal, peaks[i].min);
+            maxVal = std::max(maxVal, peaks[i].max);
+            rmsSumaCuadrados += static_cast<double>(peaks[i].rms) * peaks[i].rms;
+            ++muestras;
+        }
+
+        float rmsVal = (muestras > 0)
+            ? static_cast<float>(std::sqrt(rmsSumaCuadrados / muestras))
+            : 0.0f;
 
         // Apply gain
         minVal *= gain;
@@ -270,13 +296,13 @@ void NovaWaveformRenderer::rebuildGeometry() {
         maxVal = std::max(0.0f, std::min(1.0f, maxVal));
         rmsVal = std::max(0.0f, std::min(1.0f, rmsVal));
 
-        float yTop = centerY - maxVal * maxAmp;
-        float yBottom = centerY - minVal * maxAmp;
-        float yRmsTop = centerY - rmsVal * maxAmp;
-        float yRmsBottom = centerY + rmsVal * maxAmp;
+        const float yTop = centerY - maxVal * maxAmp;
+        const float yBottom = centerY - minVal * maxAmp;
+        const float yRmsTop = centerY - rmsVal * maxAmp;
+        const float yRmsBottom = centerY + rmsVal * maxAmp;
 
-        float x = static_cast<float>(i * peakWidthPx);
-        const float w = static_cast<float>(peakWidthPx);
+        const float x = static_cast<float>(col * anchoColumna);
+        const float w = static_cast<float>(anchoColumna);
 
         // Peak quad (type 0)
         m_vertices.push_back(x); m_vertices.push_back(yTop); m_vertices.push_back(0.0f);
@@ -284,7 +310,8 @@ void NovaWaveformRenderer::rebuildGeometry() {
         m_vertices.push_back(x + w); m_vertices.push_back(yBottom); m_vertices.push_back(0.0f);
         m_vertices.push_back(x); m_vertices.push_back(yBottom); m_vertices.push_back(0.0f);
 
-        // RMS quad (type 1) - draw behind peak
+        // RMS quad (type 1) - se dibuja después del pico para que el núcleo
+        // de RMS se vea como una banda más clara en el centro.
         m_vertices.push_back(x); m_vertices.push_back(yRmsTop); m_vertices.push_back(1.0f);
         m_vertices.push_back(x + w); m_vertices.push_back(yRmsTop); m_vertices.push_back(1.0f);
         m_vertices.push_back(x + w); m_vertices.push_back(yRmsBottom); m_vertices.push_back(1.0f);
@@ -335,6 +362,13 @@ void NovaWaveformRenderer::render() {
     }
 
     if (m_vertices.empty()) return;
+
+    // Estado explícito: el FBO no hereda el estado del scene graph. Sin
+    // desactivar BLEND, el núcleo RMS (que se pinta con alfa) podía quedar
+    // blanco sobre blanco y desaparecer según lo que hubiera hecho Qt antes.
+    m_glFuncs->glDisable(GL_BLEND);
+    m_glFuncs->glDisable(GL_DEPTH_TEST);
+    m_glFuncs->glDisable(GL_CULL_FACE);
 
     m_program->bind();
     m_program->setUniformValue("uViewportSize", QVector2D(m_width, m_height));
@@ -422,20 +456,32 @@ void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {
         m_lastRegionId = regionId;
         m_peaks.clear();
         m_overview.clear();
+        m_lastPeaksGeneration = 0;
         changed = true;
     }
     // Los picos pueden llegar despues (se calculan al cargar el proyecto):
-    // si aun no tenemos datos pero la cache los tiene, se recuperan.
-    if (!regionId.isEmpty() && (regionChanged || m_peaks.empty())) {
+    // si aun no tenemos datos pero la cache los tiene, se recuperan. La
+    // generacion cambia cuando se publican picos nuevos, asi que tambien se
+    // refresca si los picos reales sustituyen a unos antiguos o simulados.
+    const quint64 cacheGeneration = NovaWaveformCache::generation(regionId);
+    const bool peaksChanged = (cacheGeneration != m_lastPeaksGeneration);
+    if (!regionId.isEmpty() && (regionChanged || m_peaks.empty() || peaksChanged)) {
         if (NovaWaveformCache::hasPeaks(regionId)) {
             PeakData data;
             if (NovaWaveformCache::getPeaks(regionId, data)) {
                 m_peaks = data.peaks;
                 m_overview = data.overview;
+                m_lastPeaksGeneration = cacheGeneration;
                 changed = true;
                 qCDebug(novaModel) << "🎨 Onda: recibidos" << m_peaks.size()
                                    << "picos para" << regionId.toStdString();
             }
+        } else if (peaksChanged && !m_peaks.empty()) {
+            // Los picos se han retirado: no dejar la onda vieja congelada.
+            m_peaks.clear();
+            m_overview.clear();
+            m_lastPeaksGeneration = cacheGeneration;
+            changed = true;
         } else if (regionChanged) {
             qCDebug(novaModel) << "🎨 Onda: todavía sin picos para" << regionId.toStdString();
         }

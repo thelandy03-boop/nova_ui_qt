@@ -29,12 +29,6 @@ class NovaSpikeLoader : public QObject
     Q_OBJECT
 
 public:
-    /** Puntos del nivel de detalle de la forma de onda (zoom máximo). */
-    static constexpr int kPuntosDetalle = 2048;
-
-    /** Puntos de la vista general de la forma de onda (zoom out). */
-    static constexpr int kPuntosVistaGeneral = 256;
-
     explicit NovaSpikeLoader(QObject* parent = nullptr);
     ~NovaSpikeLoader() override;
 

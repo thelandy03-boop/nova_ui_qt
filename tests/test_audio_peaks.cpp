@@ -126,7 +126,8 @@ int main()
 
         CHECK_NAMED("picos_de_un_tono_coinciden_con_la_amplitud",
                     ok && !data.peaks.empty() && !data.overview.empty()
-                        && data.version == 2 && pico >= 0.45f && pico <= 0.55f,
+                        && data.version == PeakData().version
+                        && pico >= 0.45f && pico <= 0.55f,
                     "los picos del tono deben llevar su amplitud (0,45 a 0,55) y "
                     "llenar el detalle y la vista general");
     }
@@ -208,6 +209,23 @@ int main()
                     "en un fichero estéreo todos los bins deben tener muestras "
                     "(con el paso en fotogramas solo se llenaría la mitad y el "
                     "cálculo se queda colgado)");
+    }
+
+    // ------------------------------------------------------------------
+    // 5. La resolución de los picos se adapta a la duración: un clip corto
+    //    no necesita 32.000 puntos, pero un tema largo sí para que al hacer
+    //    zoom no se vean escalones. Los topes evitan disparar la memoria.
+    // ------------------------------------------------------------------
+    {
+        CHECK_NAMED("la_resolucion_de_picos_se_adapta_a_la_duracion",
+                    novaDetailPeakPoints(1.0) == 8192
+                        && novaDetailPeakPoints(60.0) == 10800
+                        && novaDetailPeakPoints(600.0) == 32768
+                        && novaOverviewPeakPoints(8192) == 512
+                        && novaOverviewPeakPoints(32768) == 2048,
+                    "el detalle debe tener un mínimo de 8.192 puntos, 180 puntos "
+                    "por segundo y un máximo de 32.768; la vista general, entre "
+                    "512 y 2.048 puntos");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);
