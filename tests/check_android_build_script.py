@@ -142,8 +142,9 @@ class Sandbox:
     def apk_debug(self, abi: str) -> pathlib.Path:
         return self.trabajo / "apks" / f"NovaStudio-{abi}-debug.apk"
 
-    def staging_gradle(self) -> pathlib.Path:
-        return self.trabajo / "build_android" / "android-build" / "app" / "build.gradle"
+    def staging_gradle(self, abi: str = "arm64-v8a") -> pathlib.Path:
+        return (self.trabajo / f"build_android-{abi}" / "android-build"
+                / "app" / "build.gradle")
 
     def lineas_de(self, fichero: pathlib.Path, patron: str) -> list:
         """Lineas del fichero que mencionan patron, sin sangria."""
@@ -325,7 +326,7 @@ def genera_apk_con_el_abi_elegido() -> None:
             sandbox.apk("x86_64").is_file(),
             "no se genera apks/NovaStudio-x86_64.apk",
         )
-        staging = sandbox.staging_gradle()
+        staging = sandbox.staging_gradle("x86_64")
         _exigir(
             sandbox.lineas_de(staging, "abiFilters") == ["abiFilters 'x86_64'"],
             "el staging no queda con un unico abiFilters 'x86_64':\n%s"

@@ -30,8 +30,10 @@ monorepo de NOVA-STUDIO para compilar en Android y Windows.
 
 ### Android (autocontenido)
 - Android SDK 35, NDK 26.1.10909125, JDK 17
-- Qt 6.8.3 para `android_arm64_v8a`
+- Qt 6.8.3 para `android_arm64_v8a` / `android_x86_64`
 - Oboe 1.7.0 (se descarga vía `FetchContent`)
+- OpenSSL 3.1.8 vendorizado en `third_party/android_openssl` (Apache-2.0),
+  necesario para HTTPS en el actualizador
 
 ### Windows (autocontenido)
 - Qt 6 para MSVC, toolchain MinGW-w64 (`cmake/mingw-w64-x86_64.cmake`)
