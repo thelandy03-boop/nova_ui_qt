@@ -197,7 +197,20 @@ void NovaAudioEngine::stop() {
     m_androidParadaPedida = true;
 #endif
 }
-void NovaAudioEngine::togglePlay() { m_transport.togglePlay(); }
+void NovaAudioEngine::togglePlay() {
+#if defined(Q_OS_ANDROID)
+    // En Android el motor Oboe se arranca/para por separado del transporte
+    // Ardour (que es un stub). Reutilizamos play()/stop() para no duplicar
+    // la logica de rangos de reproduccion.
+    if (isPlaying()) {
+        stop();
+    } else {
+        play();
+    }
+#else
+    m_transport.togglePlay();
+#endif
+}
 void NovaAudioEngine::toggleRecord() {
 #if defined(Q_OS_ANDROID)
     // Fase 3 (grabación): en Android el grabador de Ardour (NovaRecordManager)

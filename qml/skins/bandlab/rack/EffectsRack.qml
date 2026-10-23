@@ -26,7 +26,7 @@ Item {
             visible: root.showRack
             Layout.fillWidth: true
             Layout.preferredHeight: 220
-            trackName: root.trackNames[Math.min(root.activeTrack, root.trackNames.length - 1)]
+            trackName: root.trackNames[Math.max(0, Math.min(root.activeTrack, root.trackNames.length - 1))]
         }
 
         // 3. BARRA DE HERRAMIENTAS

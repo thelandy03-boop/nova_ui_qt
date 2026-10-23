@@ -8,6 +8,7 @@
 #include <QUrl>
 #include <QSettings>
 #include <QDateTime>
+#include <memory>
 
 // Include ARDOUR headers BEFORE private class definition so types are complete
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
@@ -140,14 +141,14 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = new ARDOUR::Session(*ardourEngine, sessionDir.toStdString(), projectName.toStdString(), &bus_profile, "", true);
+        auto session = std::make_unique<ARDOUR::Session>(*ardourEngine, sessionDir.toStdString(), projectName.toStdString(), &bus_profile, "", true);
 
         if (session) {
-            ardourEngine->set_session(session);
+            ardourEngine->set_session(session.get());
             session->config.set_session_monitoring(ARDOUR::MonitorDisk);
 
             qCDebug(novaCore) << "🆕 [OK] Nuevo proyecto instanciado correctamente en memoria.";
-            return session;
+            return session.release();
         }
     } catch (const std::exception &e) {
         qCCritical(novaCore) << "❌ Excepción durante la creación del proyecto:" << e.what();
@@ -167,12 +168,12 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = new ARDOUR::Session(*androidEngine, sessionDir.toStdString(),
+        auto session = std::make_unique<ARDOUR::Session>(*androidEngine, sessionDir.toStdString(),
                                           projectName.toStdString(), &bus_profile, "", true);
         if (session) {
-            androidEngine->set_session(session);
+            androidEngine->set_session(session.get());
             qCDebug(novaCore) << "📱 [Android] Sesion stub creada:" << sessionDir;
-            return session;
+            return session.release();
         }
     }
 #endif
@@ -220,15 +221,15 @@ void* NovaProjectManager::openProject(void *engine, const QString &sessionPath)
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = new ARDOUR::Session(*ardourEngine, pathStd, nameStd, &bus_profile, "", false);
+        auto session = std::make_unique<ARDOUR::Session>(*ardourEngine, pathStd, nameStd, &bus_profile, "", false);
 
         if (session) {
-            ardourEngine->set_session(session);
+            ardourEngine->set_session(session.get());
             session->config.set_session_monitoring(ARDOUR::MonitorDisk);
 
             qCDebug(novaCore) << "📂 [OK] Proyecto cargado con éxito:" << realSessionDir << "Snapshot:" << sessionName;
             addProjectToRecent(sessionName, realSessionDir);
-            return session;
+            return session.release();
         }
     } catch (const std::exception &e) {
         qCCritical(novaCore) << "❌ Error al abrir la sesión:" << e.what();
@@ -249,13 +250,13 @@ void* NovaProjectManager::openProject(void *engine, const QString &sessionPath)
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = new ARDOUR::Session(*androidEngine, sessionDir.toStdString(),
+        auto session = std::make_unique<ARDOUR::Session>(*androidEngine, sessionDir.toStdString(),
                                           name.toStdString(), &bus_profile, "", false);
         if (session) {
-            androidEngine->set_session(session);
+            androidEngine->set_session(session.get());
             addProjectToRecent(name, sessionDir);
             qCDebug(novaCore) << "📂 [Android] Proyecto abierto:" << sessionDir;
-            return session;
+            return session.release();
         }
     }
 #endif

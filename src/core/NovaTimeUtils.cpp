@@ -50,7 +50,7 @@ QString NovaTimeUtils::formatTimecode(double frame, double sampleRate)
     int totalSeconds = static_cast<int>(currentSeconds);
     int mins = totalSeconds / 60;
     int secs = totalSeconds % 60;
-    int ms = static_cast<int>((frame / (sr / 100.0))) % 100;
+    int ms = static_cast<int>((currentSeconds - totalSeconds) * 100.0) % 100;
 
     return QString("%1:%2:%3")
             .arg(mins, 2, 10, QChar('0'))

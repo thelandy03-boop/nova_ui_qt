@@ -126,12 +126,10 @@ void NovaWaveformCache::clear()
 static std::mutex s_peakJobsMutex;
 static std::set<QString> s_peakJobsInFlight;
 
-static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion, int sampleRate, int channels)
+static PeakData buildRegionPeaks(const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion, int sampleRate)
 {
     PeakData result;
     if (!audioRegion) return result;
-
-    if (channels == 0) return result;
 
     const uint32_t regionChannels = audioRegion->n_channels();
     if (regionChannels == 0) return result;
@@ -274,7 +272,7 @@ NovaRegionModel::~NovaRegionModel()
 
 void NovaRegionModel::requestRegionPeaks(const QString &regionId,
                                           const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion,
-                                          int sampleRate, int channels,
+                                          int sampleRate,
                                           const QString &peakFilePath)
 {
     if (!audioRegion) return;
@@ -287,8 +285,8 @@ void NovaRegionModel::requestRegionPeaks(const QString &regionId,
         s_peakJobsInFlight.insert(regionId);
     }
 
-    std::thread worker([this, regionId, audioRegion, sampleRate, channels, peakFilePath]() {
-        PeakData data = buildRegionPeaks(audioRegion, sampleRate, channels);
+    std::thread worker([this, regionId, audioRegion, sampleRate, peakFilePath]() {
+        PeakData data = buildRegionPeaks(audioRegion, sampleRate);
 
         if (!data.peaks.empty()) {
             savePeakFile(peakFilePath, data);
@@ -1285,20 +1283,6 @@ void NovaRegionModel::rebuildRegionCache()
 
     auto routeList = m_session->get_routes();
     double sampleRate = m_session->sample_rate() > 0 ? static_cast<double>(m_session->sample_rate()) : 48000.0;
-    int channels = 2; // Default, we'll update if we can get from the first track
-    // Try to get channels from the first audio track
-    if (routeList) {
-        for (const auto &route : *routeList) {
-            if (route && route->is_track()) {
-                auto track = std::dynamic_pointer_cast<ARDOUR::Track>(route);
-                if (track && track->playlist()) {
-                    // We could get the track's channel count from its audio source, but for simplicity we'll use 2.
-                    // In a real implementation, we would get the track's channel count.
-                    break;
-                }
-            }
-        }
-    }
     QString sessionPeaksDir = QString::fromStdString(m_session->path()) + "/peaks";
     QDir().mkpath(sessionPeaksDir);
 
@@ -1348,7 +1332,7 @@ void NovaRegionModel::rebuildRegionCache()
                                     // app se congela al importar.
                                     requestRegionPeaks(item.id, audioRegion,
                                                        static_cast<int>(sampleRate),
-                                                       channels, peakFile);
+                                                       peakFile);
                                 }
                             }
                         }

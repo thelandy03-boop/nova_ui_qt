@@ -158,7 +158,7 @@ signals:
 private:
     void requestRegionPeaks(const QString &regionId,
                              const std::shared_ptr<ARDOUR::AudioRegion> &audioRegion,
-                             int sampleRate, int channels,
+                             int sampleRate,
                              const QString &peakFilePath);
     void waitForPeakJobs();
     std::shared_ptr<ARDOUR::Track> findTrackByIndex(int trackIndex) const; // 🧹 Clean Code (CC-2)
