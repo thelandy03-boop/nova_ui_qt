@@ -2,12 +2,17 @@ import QtQuick
 
 Rectangle {
     id: root
-    implicitWidth: 4800
+    implicitWidth: 60 * barWidth
     implicitHeight: 28
     color: "#25272E"
 
     property real barWidth: 80.0
     property real contentX: 0
+
+    // Cuando el zoom está muy alejado, un número de compás es más ancho que
+    // su hueco y "atraviesa" al vecino. Mostramos solo uno de cada N para
+    // que los números no se solapen nunca.
+    property int labelEvery: barWidth >= 60 ? 1 : (barWidth >= 30 ? 5 : 10)
 
     // Borde inferior
     Rectangle {
@@ -100,13 +105,17 @@ Rectangle {
             Item {
                 width: root.barWidth
                 height: parent.height
+                clip: true
 
                 Text {
                     x: 4; y: 0
+                    width: Math.max(0, parent.width - 8)
                     text: (index + 1).toString()
+                    visible: (index % root.labelEvery === 0)
                     color: "#A0A5B5"
-                    font.pixelSize: 10
+                    font.pixelSize: root.barWidth < 40 ? 9 : 10
                     font.bold: true
+                    elide: Text.ElideRight
                 }
 
                 Rectangle {
