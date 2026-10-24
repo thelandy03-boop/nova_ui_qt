@@ -788,15 +788,19 @@ void NovaAndroidAudioEngine::writeWavFile(
     // Create interchange directory
     std::string sessionPath = m_session->path();
     std::string interchangeDir = sessionPath + "/interchange/" + track->name();
-    
-    // Create directory if needed
-    std::string cmd = "mkdir -p " + interchangeDir;
-    system(cmd.c_str());
-    
+
+    // Crear el directorio con Qt (sin llamar a system()) y comprobar el resultado.
+    QDir().mkpath(QString::fromStdString(interchangeDir));
+    if (!QDir(QString::fromStdString(interchangeDir)).exists()) {
+        LOGE("No se pudo crear el directorio de interchange: %s", interchangeDir.c_str());
+        return;
+    }
+
     // Generate filename with timestamp
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
-    struct tm* tm = localtime(&time_t);
+    struct tm tmBuf;
+    struct tm* tm = localtime_r(&time_t, &tmBuf);
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
     
@@ -828,7 +832,9 @@ void NovaAndroidAudioEngine::writeWavFile(
         header.dataSize = dataBytes;
         header.chunkSize = 36 + header.dataSize;
         
-        fwrite(&header, sizeof(WavHeader), 1, file);
+        if (fwrite(&header, sizeof(WavHeader), 1, file) != 1) {
+            LOGE("Error al escribir la cabecera WAV");
+        }
     } else {
         // Update existing header - need to update dataSize and chunkSize
         // Read current header
@@ -842,14 +848,18 @@ void NovaAndroidAudioEngine::writeWavFile(
         
         // Write updated header
         fseek(file, 0, SEEK_SET);
-        fwrite(&existingHeader, sizeof(WavHeader), 1, file);
+        if (fwrite(&existingHeader, sizeof(WavHeader), 1, file) != 1) {
+            LOGE("Error al actualizar la cabecera WAV");
+        }
         
         // Seek to end for appending
         fseek(file, 0, SEEK_END);
     }
     
     // Write audio data (32-bit IEEE float PCM)
-    fwrite(samples, sizeof(float), totalSamples, file);
+    if (fwrite(samples, sizeof(float), totalSamples, file) != totalSamples) {
+        LOGE("Error al escribir los datos de audio (disco lleno?)");
+    }
     
     fclose(file);
     
