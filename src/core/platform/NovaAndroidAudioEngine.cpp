@@ -21,6 +21,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <QDir>
 
 // ============================================================================
 // WAV Header (RIFF IEEE Float 32-bit)
