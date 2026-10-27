@@ -12,6 +12,13 @@
  * bloquear el uso de la app hasta que el usuario descargue e instale la
  * nueva version. La descarga se hace dentro de la app y la instalacion se
  * lanza mediante un Intent (ACTION_VIEW) con FileProvider.
+ *
+ * Robustez:
+ *  - La version instalada se lee del APK (PackageManager), no hardcodeada.
+ *  - El APK descargado se verifica con SHA256 (si el release lo publica).
+ *  - Se comprueba el permiso REQUEST_INSTALL_PACKAGES antes de instalar.
+ *  - Timeout explicito de 30s en la descarga.
+ *  - Limpieza de APKs antiguos del cache al iniciar.
  */
 class NovaUpdateChecker : public QObject
 {
@@ -25,6 +32,7 @@ class NovaUpdateChecker : public QObject
     Q_PROPERTY(bool downloading READ downloading NOTIFY downloadingChanged)
     Q_PROPERTY(int downloadProgress READ downloadProgress NOTIFY downloadProgressChanged)
     Q_PROPERTY(QString downloadError READ downloadError NOTIFY downloadErrorChanged)
+    Q_PROPERTY(bool installPermissionGranted READ installPermissionGranted NOTIFY installPermissionGrantedChanged)
 
 public:
     explicit NovaUpdateChecker(QObject *parent = nullptr);
@@ -37,6 +45,7 @@ public:
     bool downloading() const { return m_downloading; }
     int downloadProgress() const { return m_downloadProgress; }
     QString downloadError() const { return m_downloadError; }
+    bool installPermissionGranted() const { return m_installPermissionGranted; }
 
     /** Lanza la comprobacion (asincrona). */
     Q_INVOKABLE void check();
@@ -47,6 +56,9 @@ public:
     /** Descarga el APK e inicia la instalacion integrada (Android). */
     Q_INVOKABLE void downloadAndInstall();
 
+    /** Abre Ajustes para conceder el permiso de instalacion (Android). */
+    Q_INVOKABLE void requestInstallPermission();
+
 signals:
     void updateRequiredChanged();
     void latestVersionChanged();
@@ -55,6 +67,7 @@ signals:
     void downloadingChanged();
     void downloadProgressChanged();
     void downloadErrorChanged();
+    void installPermissionGrantedChanged();
 
 private slots:
     void onReplyFinished(QNetworkReply *reply);
@@ -64,6 +77,9 @@ private slots:
 private:
     bool isNewer(const QString &latest, const QString &current) const;
     void startDownload(const QString &url);
+    void cleanOldApks();
+    bool verifySha256(const QString &filePath, const QString &expectedHash);
+    void updateInstallPermission();
 
     QNetworkAccessManager m_nam;
     bool m_updateRequired = false;
@@ -74,6 +90,8 @@ private:
     bool m_downloading = false;
     int m_downloadProgress = 0;
     QString m_downloadError;
+    QString m_expectedSha256;
+    bool m_installPermissionGranted = false;
     QNetworkReply *m_downloadReply = nullptr;
     QString m_apkPath;
 };

@@ -155,6 +155,41 @@ public class MainActivity extends QtActivityBase {
      * Lanza el instalador de Android para un APK descargado.
      * Llamado desde C++ (NovaUpdateChecker) via JNI.
      */
+    /**
+     * Comprueba si el usuario ha concedido el permiso de instalacion de APKs.
+     */
+    public static boolean canInstallApks() {
+        try {
+            Activity activity = getInstance();
+            if (activity == null) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                return activity.getPackageManager().canRequestPackageInstalls();
+            }
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "canInstallApks: failed", e);
+            return false;
+        }
+    }
+
+    /**
+     * Abre Ajustes para que el usuario conceda el permiso de instalacion.
+     */
+    public static void openInstallPermissionSettings() {
+        try {
+            Activity activity = getInstance();
+            if (activity == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                intent.setData(android.net.Uri.parse("package:" + activity.getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(intent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "openInstallPermissionSettings: failed", e);
+        }
+    }
+
     public static void installApk(String apkPath) {
         try {
             Activity activity = getInstance();

@@ -13,6 +13,8 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QFileInfo>
+#include <QCryptographicHash>
+#include <QTimer>
 
 #if defined(Q_OS_ANDROID)
 #include <QJniObject>
@@ -60,8 +62,8 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
                     "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
                     pkgName.object<jstring>(), 0);
                 if (pkgInfo.isValid()) {
-                    QJniObject versionName = pkgInfo.getObjectField<jstring>(
-                        "versionName");
+                    QJniObject versionName = pkgInfo.getObjectField(
+                        "versionName", "Ljava/lang/String;");
                     QString v = versionName.toString();
                     if (!v.isEmpty()) {
                         m_currentVersion = v;
@@ -73,6 +75,12 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
     } catch (...) {
         qCWarning(novaCore) << "UpdateChecker: no se pudo leer la version del APK, usando valor compilado";
     }
+
+    // Comprobar permiso de instalacion.
+    updateInstallPermission();
+
+    // Limpiar APKs antiguos del cache.
+    cleanOldApks();
 #endif
 }
 
@@ -144,6 +152,11 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
         if (!name.endsWith(QStringLiteral(".apk"), Qt::CaseInsensitive)) continue;
         if (!abi.isEmpty() && name.contains(abi, Qt::CaseInsensitive)) {
             apkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+            // Extraer SHA256 del asset si esta disponible (API de GitHub).
+            QString digest = ao.value(QStringLiteral("digest")).toString();
+            if (digest.startsWith(QStringLiteral("sha256:"), Qt::CaseInsensitive)) {
+                m_expectedSha256 = digest.mid(7).toLower();
+            }
             break;
         }
     }
@@ -218,8 +231,9 @@ void NovaUpdateChecker::downloadAndInstall()
     QUrl url(m_downloadUrl);
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-UpdateChecker"));
+    // Timeout explicito de 30 segundos.
+    req.setTransferTimeout(30000);
     // Seguir redirecciones (GitHub redirige a S3).
-    // QNetworkRequest::RedirectPolicy (Qt 5.9+) o FollowRedirectsAttribute (Qt 5.6+)
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -274,6 +288,30 @@ void NovaUpdateChecker::onDownloadFinished()
 
     qCInfo(novaCore) << "UpdateChecker: APK descargado en" << m_apkPath;
 
+    // Verificar SHA256 si tenemos hash esperado.
+    if (!m_expectedSha256.isEmpty()) {
+        if (!verifySha256(m_apkPath, m_expectedSha256)) {
+            m_downloadError = QStringLiteral("El APK descargado no coincide con el hash esperado (SHA256). Descarga cancelada.");
+            Q_EMIT downloadErrorChanged();
+            QFile::remove(m_apkPath);
+            qCWarning(novaCore) << "UpdateChecker: SHA256 no coincide, APK eliminado";
+            return;
+        }
+        qCInfo(novaCore) << "UpdateChecker: SHA256 verificado correctamente";
+    }
+
+    // Comprobar permiso de instalacion antes de lanzar el intent.
+    updateInstallPermission();
+    if (!m_installPermissionGranted) {
+        // Abrir Ajustes para que el usuario conceda el permiso.
+        requestInstallPermission();
+        // No lanzar el instalador todavia; el usuario debera tocar "Instalar"
+        // de nuevo tras conceder el permiso.
+        m_downloadError = QStringLiteral("Concede el permiso de instalacion en Ajustes y vuelve a intentarlo.");
+        Q_EMIT downloadErrorChanged();
+        return;
+    }
+
     // Lanzar el instalador de Android via JNI.
 #if defined(Q_OS_ANDROID)
     QJniObject jPath = QJniObject::fromString(m_apkPath);
@@ -283,4 +321,56 @@ void NovaUpdateChecker::onDownloadFinished()
         "(Ljava/lang/String;)V",
         jPath.object<jstring>());
 #endif
+}
+
+void NovaUpdateChecker::requestInstallPermission()
+{
+#if defined(Q_OS_ANDROID)
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/MainActivity",
+        "openInstallPermissionSettings",
+        "()V");
+#endif
+}
+
+void NovaUpdateChecker::updateInstallPermission()
+{
+#if defined(Q_OS_ANDROID)
+    jboolean granted = QJniObject::callStaticMethod<jboolean>(
+        "com/novastudio/nova/MainActivity",
+        "canInstallApks",
+        "()Z");
+    bool newVal = (granted == JNI_TRUE);
+    if (newVal != m_installPermissionGranted) {
+        m_installPermissionGranted = newVal;
+        Q_EMIT installPermissionGrantedChanged();
+    }
+#endif
+}
+
+bool NovaUpdateChecker::verifySha256(const QString &filePath, const QString &expectedHash)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) return false;
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    if (!hash.addData(&file)) return false;
+    file.close();
+    QString actual = QString::fromLatin1(hash.result().toHex());
+    return actual.compare(expectedHash, Qt::CaseInsensitive) == 0;
+}
+
+void NovaUpdateChecker::cleanOldApks()
+{
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir dir(cacheDir);
+    if (!dir.exists()) return;
+    // Eliminar APKs antiguos (nova_update*.apk) excepto el actual.
+    QStringList filters;
+    filters << "nova_update*.apk";
+    QFileInfoList files = dir.entryInfoList(filters, QDir::Files);
+    for (const QFileInfo &fi : files) {
+        if (fi.absoluteFilePath() != m_apkPath) {
+            QFile::remove(fi.absoluteFilePath());
+        }
+    }
 }
