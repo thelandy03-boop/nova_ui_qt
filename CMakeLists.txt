@@ -41,7 +41,9 @@ set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 
 # Set Qt6 prefix path to help find_package
-set(CMAKE_PREFIX_PATH "/usr/lib/qt6")
+if(NOT CMAKE_PREFIX_PATH)
+  set(CMAKE_PREFIX_PATH "C:/QtAndroid/6.8.0/android_arm64_v8a")
+endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL Qml Quick QuickControls2)
 

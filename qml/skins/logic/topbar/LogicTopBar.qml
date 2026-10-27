@@ -8,10 +8,8 @@ Rectangle {
     implicitHeight: 70
     color: "#2C303A"
 
-    // Señal emitida cuando el usuario selecciona "Colaboración" en Tools
     signal collaborationRequested()
 
-    // Brillo sutil superior
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
@@ -20,47 +18,47 @@ Rectangle {
         color: "#3F4350"
     }
 
-    // ── 1. GRUPO IZQUIERDO (Logo + Herramientas) ──
     RowLayout {
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
+        anchors.fill: parent
+        anchors.leftMargin: 4
+        anchors.rightMargin: 16
         spacing: 0
 
-        LogicLogoBlock { Layout.fillHeight: true }
-        LogicToolBlock { Layout.fillHeight: true }
-        
-        LogicToolsButtonBlock { 
-            Layout.fillHeight: true 
-            onCollaborationRequested: root.collaborationRequested()
+        RowLayout {
+            spacing: 0
+            Layout.alignment: Qt.AlignVCenter
+            Layout.fillHeight: true
+
+            LogicLogoBlock { Layout.fillHeight: true }
+            LogicToolBlock { Layout.fillHeight: true }
+
+            LogicToolsButtonBlock {
+                Layout.fillHeight: true
+                onCollaborationRequested: root.collaborationRequested()
+            }
         }
+
+        Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }
+
+        RowLayout {
+            spacing: 12
+            Layout.alignment: Qt.AlignVCenter
+            Layout.minimumWidth: 260
+
+            LogicTransportBlock { Layout.alignment: Qt.AlignVCenter }
+            LogicLcdDisplayBlock { Layout.alignment: Qt.AlignVCenter }
+        }
+
+        Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }
+
+        Item { Layout.preferredWidth: 1; Layout.fillHeight: true }
     }
 
-    // ── 2. GRUPO CENTRAL (Transporte + LCD Centrados en Pantalla) ──
-    RowLayout {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 12
-
-        LogicTransportBlock { Layout.alignment: Qt.AlignVCenter }
-        LogicLcdDisplayBlock { Layout.alignment: Qt.AlignVCenter }
-    }
-
-    // ── 3. GRUPO DERECHO (Espacio limpio) ──
-    RowLayout {
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: 16
-        spacing: 10
-    }
-
-    // Borde inferior sutil
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: 1
         color: "#181A22"
-    } 
+    }
 }
