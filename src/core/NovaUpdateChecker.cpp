@@ -9,6 +9,15 @@
 #include <QDebug>
 #include <QSslCertificate>
 #include <QSslConfiguration>
+#include <QFile>
+#include <QDir>
+#include <QStandardPaths>
+#include <QFileInfo>
+
+#if defined(Q_OS_ANDROID)
+#include <QJniObject>
+#include <QJniEnvironment>
+#endif
 
 namespace {
 // Token que identifica el ABI del binario en el nombre del asset del release.
@@ -44,7 +53,7 @@ void NovaUpdateChecker::check()
     m_checking = true;
     Q_EMIT checkingChanged();
 
-    // Consulta la última release del repositorio en GitHub.
+    // Consulta la ultima release del repositorio en GitHub.
     QUrl url(QStringLiteral("https://api.github.com/repos/thelandy03-boop/nova_ui_qt/releases/latest"));
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-UpdateChecker"));
@@ -146,4 +155,98 @@ void NovaUpdateChecker::openDownloadPage()
     if (!m_downloadUrl.isEmpty()) {
         QDesktopServices::openUrl(QUrl(m_downloadUrl));
     }
+}
+
+void NovaUpdateChecker::downloadAndInstall()
+{
+#if !defined(Q_OS_ANDROID)
+    // En escritorio no hay instalacion integrada: abrir la pagina.
+    openDownloadPage();
+    return;
+#endif
+    if (m_downloading || m_downloadUrl.isEmpty()) return;
+
+    m_downloading = true;
+    m_downloadProgress = 0;
+    m_downloadError.clear();
+    Q_EMIT downloadingChanged();
+    Q_EMIT downloadProgressChanged();
+    Q_EMIT downloadErrorChanged();
+
+    // Directorio de cache de la app (escribible, persistente).
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(cacheDir);
+    m_apkPath = cacheDir + QStringLiteral("/nova_update.apk");
+
+    // Eliminar archivo anterior si existe.
+    QFile::remove(m_apkPath);
+
+    QUrl url(m_downloadUrl);
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-UpdateChecker"));
+    // Seguir redirecciones (GitHub redirige a S3).
+    // QNetworkRequest::RedirectPolicy (Qt 5.9+) o FollowRedirectsAttribute (Qt 5.6+)
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::NoLessSafeRedirectPolicy);
+#endif
+
+    m_downloadReply = m_nam.get(req);
+    connect(m_downloadReply, &QNetworkReply::downloadProgress,
+            this, &NovaUpdateChecker::onDownloadProgress);
+    connect(m_downloadReply, &QNetworkReply::finished,
+            this, &NovaUpdateChecker::onDownloadFinished);
+}
+
+void NovaUpdateChecker::onDownloadProgress(qint64 received, qint64 total)
+{
+    if (total > 0) {
+        m_downloadProgress = static_cast<int>((received * 100) / total);
+    } else {
+        m_downloadProgress = 0;
+    }
+    Q_EMIT downloadProgressChanged();
+}
+
+void NovaUpdateChecker::onDownloadFinished()
+{
+    m_downloading = false;
+    Q_EMIT downloadingChanged();
+
+    if (!m_downloadReply) return;
+
+    if (m_downloadReply->error() != QNetworkReply::NoError) {
+        m_downloadError = m_downloadReply->errorString();
+        Q_EMIT downloadErrorChanged();
+        qCWarning(novaCore) << "UpdateChecker: error descargando APK:" << m_downloadError;
+        m_downloadReply->deleteLater();
+        m_downloadReply = nullptr;
+        return;
+    }
+
+    // Guardar el APK en disco.
+    QFile file(m_apkPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        m_downloadError = QStringLiteral("No se pudo escribir el APK en disco");
+        Q_EMIT downloadErrorChanged();
+        m_downloadReply->deleteLater();
+        m_downloadReply = nullptr;
+        return;
+    }
+    file.write(m_downloadReply->readAll());
+    file.close();
+    m_downloadReply->deleteLater();
+    m_downloadReply = nullptr;
+
+    qCInfo(novaCore) << "UpdateChecker: APK descargado en" << m_apkPath;
+
+    // Lanzar el instalador de Android via JNI.
+#if defined(Q_OS_ANDROID)
+    QJniObject jPath = QJniObject::fromString(m_apkPath);
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/MainActivity",
+        "installApk",
+        "(Ljava/lang/String;)V",
+        jPath.object<jstring>());
+#endif
 }

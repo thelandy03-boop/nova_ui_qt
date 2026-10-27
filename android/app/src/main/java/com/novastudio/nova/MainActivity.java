@@ -18,6 +18,9 @@ import org.qtproject.qt.android.QtActivityBase;
 public class MainActivity extends QtActivityBase {
     private static final String TAG = "MainActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
+    private static MainActivity instance = null;
+
+    public static MainActivity getInstance() { return instance; }
 
     // 🔒 No se piden permisos al arrancar. Cuando haga falta uno (el microfono
     // para grabar), se pide en ese momento: pedirlo al abrir la app mete un
@@ -27,6 +30,7 @@ public class MainActivity extends QtActivityBase {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
         Log.i(TAG, "MainActivity onCreate");
         
         // Keep screen on during audio operations
@@ -145,5 +149,42 @@ public class MainActivity extends QtActivityBase {
         Intent serviceIntent = new Intent(this, AudioForegroundService.class);
         serviceIntent.setAction(AudioForegroundService.ACTION_STOP);
         stopService(serviceIntent);
+    }
+
+    /**
+     * Lanza el instalador de Android para un APK descargado.
+     * Llamado desde C++ (NovaUpdateChecker) via JNI.
+     */
+    public static void installApk(String apkPath) {
+        try {
+            Activity activity = getInstance();
+            if (activity == null) {
+                Log.e(TAG, "installApk: no activity available");
+                return;
+            }
+            java.io.File apkFile = new java.io.File(apkPath);
+            if (!apkFile.exists()) {
+                Log.e(TAG, "installApk: file not found: " + apkPath);
+                return;
+            }
+            android.net.Uri apkUri;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                apkUri = androidx.core.content.FileProvider.getUriForFile(
+                    activity,
+                    activity.getPackageName() + ".fileprovider",
+                    apkFile
+                );
+            } else {
+                apkUri = android.net.Uri.fromFile(apkFile);
+            }
+            Intent installIntent = new Intent(Intent.ACTION_VIEW);
+            installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(installIntent);
+            Log.i(TAG, "installApk: launched installer for " + apkPath);
+        } catch (Exception e) {
+            Log.e(TAG, "installApk: failed", e);
+        }
     }
 }
