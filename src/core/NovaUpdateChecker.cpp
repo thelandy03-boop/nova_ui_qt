@@ -40,6 +40,40 @@ QString currentAbiToken()
 NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
     : QObject(parent)
 {
+#if defined(Q_OS_ANDROID)
+    // Leer la version instalada directamente del APK (PackageManager) para
+    // que nunca desincronice con el release publicado. Si falla, se usa el
+    // valor por defecto compilado.
+    try {
+        QJniObject activity = QJniObject::callStaticObjectMethod(
+            "org/qtproject/qt/android/QtNative",
+            "activity",
+            "()Landroid/app/Activity;");
+        if (activity.isValid()) {
+            QJniObject pm = activity.callObjectMethod(
+                "getPackageManager",
+                "()Landroid/content/pm/PackageManager;");
+            if (pm.isValid()) {
+                QJniObject pkgName = QJniObject::fromString(QStringLiteral("com.novastudio.nova"));
+                QJniObject pkgInfo = pm.callObjectMethod(
+                    "getPackageInfo",
+                    "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+                    pkgName.object<jstring>(), 0);
+                if (pkgInfo.isValid()) {
+                    QJniObject versionName = pkgInfo.getObjectField<jstring>(
+                        "versionName");
+                    QString v = versionName.toString();
+                    if (!v.isEmpty()) {
+                        m_currentVersion = v;
+                        qCInfo(novaCore) << "UpdateChecker: version instalada leida del APK:" << m_currentVersion;
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        qCWarning(novaCore) << "UpdateChecker: no se pudo leer la version del APK, usando valor compilado";
+    }
+#endif
 }
 
 void NovaUpdateChecker::check()
