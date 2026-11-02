@@ -55,9 +55,20 @@ public:
     Q_INVOKABLE void setPan(int row, float pan);
     Q_INVOKABLE float peakLevel(int row) const;
 
+    // Gestión real de Plug-ins e inserciones de efectos (Ardour Core)
+    Q_INVOKABLE QVariantList trackPlugins(int trackRow) const;
+    Q_INVOKABLE QVariantList availablePlugins() const;
+    Q_INVOKABLE bool addPluginToTrack(int trackRow, const QString &pluginId);
+    Q_INVOKABLE bool removePluginFromTrack(int trackRow, int pluginIndex);
+    Q_INVOKABLE bool setPluginBypassed(int trackRow, int pluginIndex, bool bypassed);
+    Q_INVOKABLE bool setTrackPluginsBypassed(int trackRow, bool bypassed);
+    Q_INVOKABLE bool isTrackPluginsBypassed(int trackRow) const;
+    Q_INVOKABLE bool setPluginParameter(int trackRow, int pluginIndex, int paramIndex, float value);
+
 signals:
     void trackCountChanged(int count);
     void trackAddFailed(const QString &reason);
+    void trackPluginsChanged(int trackRow);
 
 private:
     void syncWithArdour();

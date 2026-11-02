@@ -10,6 +10,7 @@ Rectangle {
     property color accentColor: "#3B82F6"
 
     signal toggled(bool isEnabled)
+    signal removeRequested()
 
     default property alias content: contentSlot.data
 
@@ -29,6 +30,7 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 24
+            spacing: 6
 
             // Badge de categoría
             Rectangle {
@@ -57,6 +59,35 @@ Rectangle {
                 font.pixelSize: 11
                 font.bold: true
                 elide: Text.ElideRight
+            }
+
+            // Botón eliminar plugin
+            Rectangle {
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 18
+                radius: 4
+                color: deleteArea.containsMouse ? "#EF4444" : "#222530"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "✕"
+                    color: deleteArea.containsMouse ? "#FFFFFF" : "#64748B"
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+
+                MouseArea {
+                    id: deleteArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.removeRequested()
+                    }
+                }
             }
 
             // Interruptor ON / BYPASS

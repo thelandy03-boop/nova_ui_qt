@@ -33,6 +33,10 @@
 #include "ardour/types.h"
 #include "ardour/meter.h"
 #include "ardour/chan_count.h"
+#include "ardour/plugin_manager.h"
+#include "ardour/plugin_insert.h"
+#include "ardour/plugin.h"
+#include "ardour/processor.h"
 #include "pbd/signals.h"
 
 #pragma pop_macro("emit")
@@ -44,6 +48,15 @@
 // PIMPL implementation - class definition OUTSIDE macro protection
 class NovaTrackListModelPrivate {
 public:
+    struct PluginStubInfo {
+        QString id;
+        QString name;
+        QString category;
+        bool bypassed = false;
+        QVariantList parameters;
+    };
+    QMap<int, QList<PluginStubInfo>> stubPlugins;
+
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     ARDOUR::Session *session = nullptr;
     std::vector<std::shared_ptr<ARDOUR::Route>> routes;
@@ -512,4 +525,363 @@ float NovaTrackListModel::peakLevel(int row) const
 {
     if (row < 0 || row >= static_cast<int>(d_ptr->routes.size()) || !d_ptr->session) return 0.0f;
     return 0.0f;
+}
+
+QVariantList NovaTrackListModel::trackPlugins(int trackRow) const
+{
+    QVariantList result;
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            int pluginIdx = 0;
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    QVariantMap map;
+                    map[QStringLiteral("index")] = pluginIdx++;
+                    map[QStringLiteral("name")] = QString::fromStdString(pi->plugin()->name());
+                    map[QStringLiteral("uniqueId")] = QString::fromStdString(pi->plugin()->unique_id());
+                    map[QStringLiteral("bypassed")] = !pi->enabled();
+
+                    QString nameLower = map[QStringLiteral("name")].toString().toLower();
+                    if (nameLower.contains(QStringLiteral("eq")) || nameLower.contains(QStringLiteral("equal"))) {
+                        map[QStringLiteral("category")] = QStringLiteral("EQ");
+                    } else if (nameLower.contains(QStringLiteral("comp")) || nameLower.contains(QStringLiteral("limit"))) {
+                        map[QStringLiteral("category")] = QStringLiteral("DINÁMICA");
+                    } else if (nameLower.contains(QStringLiteral("reverb")) || nameLower.contains(QStringLiteral("room"))) {
+                        map[QStringLiteral("category")] = QStringLiteral("ESPACIO");
+                    } else if (nameLower.contains(QStringLiteral("delay")) || nameLower.contains(QStringLiteral("echo"))) {
+                        map[QStringLiteral("category")] = QStringLiteral("DELAY");
+                    } else {
+                        map[QStringLiteral("category")] = QStringLiteral("EFECTO");
+                    }
+
+                    QVariantList params;
+                    uint32_t count = pi->plugin()->parameter_count();
+                    uint32_t maxParams = std::min<uint32_t>(count, 8);
+                    for (uint32_t i = 0; i < maxParams; ++i) {
+                        QVariantMap pmap;
+                        pmap[QStringLiteral("index")] = static_cast<int>(i);
+                        pmap[QStringLiteral("name")] = QString::fromStdString(pi->plugin()->parameter_label(i));
+                        pmap[QStringLiteral("value")] = static_cast<double>(pi->plugin()->get_parameter(i));
+                        pmap[QStringLiteral("min")] = 0.0;
+                        pmap[QStringLiteral("max")] = 1.0;
+                        pmap[QStringLiteral("unit")] = QStringLiteral("");
+                        params.append(pmap);
+                    }
+                    map[QStringLiteral("parameters")] = params;
+                    result.append(map);
+                }
+            });
+        }
+    }
+    if (!result.isEmpty()) return result;
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow)) {
+        int idx = 0;
+        for (const auto &p : d_ptr->stubPlugins[trackRow]) {
+            QVariantMap map;
+            map[QStringLiteral("index")] = idx++;
+            map[QStringLiteral("name")] = p.name;
+            map[QStringLiteral("uniqueId")] = p.id;
+            map[QStringLiteral("category")] = p.category;
+            map[QStringLiteral("bypassed")] = p.bypassed;
+            map[QStringLiteral("parameters")] = p.parameters;
+            result.append(map);
+        }
+    }
+    return result;
+}
+
+QVariantList NovaTrackListModel::availablePlugins() const
+{
+    QVariantList list;
+
+    auto addPlug = [&](const QString &id, const QString &name, const QString &cat, const QString &desc) {
+        QVariantMap map;
+        map[QStringLiteral("id")] = id;
+        map[QStringLiteral("name")] = name;
+        map[QStringLiteral("category")] = cat;
+        map[QStringLiteral("description")] = desc;
+        list.append(map);
+    };
+
+    addPlug(QStringLiteral("urn:ardour:a-eq"), QStringLiteral("ACE EQ"), QStringLiteral("EQ"),
+            QStringLiteral("Ecualizador paramétrico oficial de 4 bandas con filtros paso alto y bajo"));
+    addPlug(QStringLiteral("urn:ardour:a-comp"), QStringLiteral("ACE Compressor"), QStringLiteral("DINÁMICA"),
+            QStringLiteral("Compresor analógico transparente con control de ataque, relajación y rodilla"));
+    addPlug(QStringLiteral("urn:ardour:a-delay"), QStringLiteral("ACE Delay"), QStringLiteral("DELAY"),
+            QStringLiteral("Efecto de retardo digital estéreo con sincronización al tempo del proyecto"));
+    addPlug(QStringLiteral("urn:ardour:a-reverb"), QStringLiteral("ACE Reverb"), QStringLiteral("ESPACIO"),
+            QStringLiteral("Procesador de reverberación espacial de sala y estudio de alta fidelidad"));
+
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    try {
+        ARDOUR::PluginManager &pm = ARDOUR::PluginManager::instance();
+        for (const auto &info : pm.lv2_plugin_info()) {
+            if (!info) continue;
+            QString uri = QString::fromStdString(info->unique_id);
+            if (uri.startsWith(QStringLiteral("urn:ardour:"))) continue;
+            QString name = QString::fromStdString(info->name);
+            QString cat = QString::fromStdString(info->category);
+            if (cat.isEmpty()) cat = QStringLiteral("LV2");
+            addPlug(uri, name, cat, QString::fromStdString(info->creator));
+        }
+    } catch (...) {}
+#endif
+
+    return list;
+}
+
+bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (d_ptr->session && trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            ARDOUR::PluginManager &pm = ARDOUR::PluginManager::instance();
+            std::shared_ptr<ARDOUR::PluginInfo> targetInfo;
+
+            for (const auto &info : pm.lv2_plugin_info()) {
+                if (info && (info->unique_id == pluginId.toStdString() || info->name == pluginId.toStdString())) {
+                    targetInfo = info;
+                    break;
+                }
+            }
+
+            if (targetInfo) {
+                ARDOUR::PluginPtr plug = targetInfo->load(*d_ptr->session);
+                if (plug) {
+                    std::shared_ptr<ARDOUR::PluginInsert> insert(
+                        new ARDOUR::PluginInsert(*d_ptr->session, *route, plug));
+                    route->add_processor(insert, ARDOUR::PostFader);
+                    Q_EMIT trackPluginsChanged(trackRow);
+                    return true;
+                }
+            }
+        }
+    }
+#endif
+
+    NovaTrackListModelPrivate::PluginStubInfo stub;
+    stub.id = pluginId;
+    if (pluginId.contains(QStringLiteral("a-eq"))) {
+        stub.name = QStringLiteral("ACE EQ");
+        stub.category = QStringLiteral("EQ");
+        stub.parameters = {
+            QVariantMap{{QStringLiteral("index"), 0}, {QStringLiteral("name"), QStringLiteral("Graves 80Hz")}, {QStringLiteral("value"), 0.0}, {QStringLiteral("min"), -12.0}, {QStringLiteral("max"), 12.0}, {QStringLiteral("unit"), QStringLiteral("dB")}},
+            QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Medios 1kHz")}, {QStringLiteral("value"), 0.0}, {QStringLiteral("min"), -12.0}, {QStringLiteral("max"), 12.0}, {QStringLiteral("unit"), QStringLiteral("dB")}},
+            QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Agudos 10kHz")}, {QStringLiteral("value"), 0.0}, {QStringLiteral("min"), -12.0}, {QStringLiteral("max"), 12.0}, {QStringLiteral("unit"), QStringLiteral("dB")}}
+        };
+    } else if (pluginId.contains(QStringLiteral("a-comp"))) {
+        stub.name = QStringLiteral("ACE Compressor");
+        stub.category = QStringLiteral("DINÁMICA");
+        stub.parameters = {
+            QVariantMap{{QStringLiteral("index"), 0}, {QStringLiteral("name"), QStringLiteral("Umbral")}, {QStringLiteral("value"), -12.0}, {QStringLiteral("min"), -40.0}, {QStringLiteral("max"), 0.0}, {QStringLiteral("unit"), QStringLiteral("dB")}},
+            QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Ratio")}, {QStringLiteral("value"), 3.0}, {QStringLiteral("min"), 1.0}, {QStringLiteral("max"), 20.0}, {QStringLiteral("unit"), QStringLiteral(":1")}},
+            QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Ganancia")}, {QStringLiteral("value"), 2.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 20.0}, {QStringLiteral("unit"), QStringLiteral("dB")}}
+        };
+    } else if (pluginId.contains(QStringLiteral("a-delay"))) {
+        stub.name = QStringLiteral("ACE Delay");
+        stub.category = QStringLiteral("DELAY");
+        stub.parameters = {
+            QVariantMap{{QStringLiteral("index"), 0}, {QStringLiteral("name"), QStringLiteral("Tiempo")}, {QStringLiteral("value"), 250.0}, {QStringLiteral("min"), 10.0}, {QStringLiteral("max"), 1000.0}, {QStringLiteral("unit"), QStringLiteral("ms")}},
+            QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Feedback")}, {QStringLiteral("value"), 30.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}},
+            QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Mezcla")}, {QStringLiteral("value"), 25.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
+        };
+    } else if (pluginId.contains(QStringLiteral("a-reverb"))) {
+        stub.name = QStringLiteral("ACE Reverb");
+        stub.category = QStringLiteral("ESPACIO");
+        stub.parameters = {
+            QVariantMap{{QStringLiteral("index"), 0}, {QStringLiteral("name"), QStringLiteral("Tamaño Sala")}, {QStringLiteral("value"), 45.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}},
+            QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Mezcla Wet")}, {QStringLiteral("value"), 20.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
+        };
+    } else {
+        stub.name = pluginId;
+        stub.category = QStringLiteral("EFECTO");
+    }
+
+    d_ptr->stubPlugins[trackRow].append(stub);
+    Q_EMIT trackPluginsChanged(trackRow);
+    return true;
+}
+
+bool NovaTrackListModel::removePluginFromTrack(int trackRow, int pluginIndex)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            int currentIdx = 0;
+            std::shared_ptr<ARDOUR::PluginInsert> targetPi;
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    if (currentIdx == pluginIndex) {
+                        targetPi = pi;
+                    }
+                    currentIdx++;
+                }
+            });
+            if (targetPi) {
+                route->remove_processor(targetPi);
+                Q_EMIT trackPluginsChanged(trackRow);
+                return true;
+            }
+        }
+    }
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow) &&
+        pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
+        d_ptr->stubPlugins[trackRow].removeAt(pluginIndex);
+        Q_EMIT trackPluginsChanged(trackRow);
+        return true;
+    }
+    return false;
+}
+
+bool NovaTrackListModel::setPluginBypassed(int trackRow, int pluginIndex, bool bypassed)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            int currentIdx = 0;
+            std::shared_ptr<ARDOUR::PluginInsert> targetPi;
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    if (currentIdx == pluginIndex) {
+                        targetPi = pi;
+                    }
+                    currentIdx++;
+                }
+            });
+            if (targetPi) {
+                targetPi->enable(!bypassed);
+                Q_EMIT trackPluginsChanged(trackRow);
+                return true;
+            }
+        }
+    }
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow) &&
+        pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
+        d_ptr->stubPlugins[trackRow][pluginIndex].bypassed = bypassed;
+        Q_EMIT trackPluginsChanged(trackRow);
+        return true;
+    }
+    return false;
+}
+
+bool NovaTrackListModel::setTrackPluginsBypassed(int trackRow, bool bypassed)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    pi->enable(!bypassed);
+                }
+            });
+            Q_EMIT trackPluginsChanged(trackRow);
+            return true;
+        }
+    }
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow)) {
+        for (auto &p : d_ptr->stubPlugins[trackRow]) {
+            p.bypassed = bypassed;
+        }
+        Q_EMIT trackPluginsChanged(trackRow);
+        return true;
+    }
+    return false;
+}
+
+bool NovaTrackListModel::isTrackPluginsBypassed(int trackRow) const
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            bool hasPlugin = false;
+            bool allBypassed = true;
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    hasPlugin = true;
+                    if (pi->enabled()) allBypassed = false;
+                }
+            });
+            if (hasPlugin) return allBypassed;
+        }
+    }
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow) && !d_ptr->stubPlugins[trackRow].isEmpty()) {
+        for (const auto &p : d_ptr->stubPlugins[trackRow]) {
+            if (!p.bypassed) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool NovaTrackListModel::setPluginParameter(int trackRow, int pluginIndex, int paramIndex, float value)
+{
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (trackRow >= 0 && trackRow < static_cast<int>(d_ptr->routes.size())) {
+        auto route = d_ptr->routes[static_cast<size_t>(trackRow)];
+        if (route) {
+            int currentIdx = 0;
+            bool ok = false;
+            route->foreach_processor([&](std::weak_ptr<ARDOUR::Processor> wp) {
+                auto proc = wp.lock();
+                if (!proc) return;
+                auto pi = std::dynamic_pointer_cast<ARDOUR::PluginInsert>(proc);
+                if (pi && pi->plugin()) {
+                    if (currentIdx == pluginIndex) {
+                        auto ac = pi->automation_control(Evoral::Parameter(ARDOUR::PluginAutomation, 0, paramIndex));
+                        if (ac) {
+                            ac->set_value(value, PBD::Controllable::NoGroup);
+                            ok = true;
+                        }
+                    }
+                    currentIdx++;
+                }
+            });
+            if (ok) return true;
+        }
+    }
+#endif
+
+    if (d_ptr->stubPlugins.contains(trackRow) &&
+        pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
+        auto &params = d_ptr->stubPlugins[trackRow][pluginIndex].parameters;
+        if (paramIndex >= 0 && paramIndex < params.size()) {
+            QVariantMap m = params[paramIndex].toMap();
+            m[QStringLiteral("value")] = value;
+            params[paramIndex] = m;
+            return true;
+        }
+    }
+    return false;
 }

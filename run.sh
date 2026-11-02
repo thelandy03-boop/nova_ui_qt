@@ -9,6 +9,7 @@ ALL_LIBS=$(find "${ROOT_DIR}/build" -type f -name "*.so*" -exec dirname {} \; | 
 export ARDOUR_DLL_PATH="${ROOT_DIR}/build/libs/backends:${ROOT_DIR}/build/libs/ardour:${ROOT_DIR}/build/libs/pbd"
 export ARDOUR_BACKEND_PATH="${ROOT_DIR}/build/libs/backends/jack:${ROOT_DIR}/build/libs/backends/alsa:${ROOT_DIR}/build/libs/backends/dummy"
 export ARDOUR_PANNER_PATH="${ROOT_DIR}/build/libs/panners"
+export LV2_PATH="${ROOT_DIR}/build/libs/LV2:/usr/lib/lv2:/usr/local/lib/lv2:${HOME}/.lv2${LV2_PATH:+:$LV2_PATH}"
 export LD_LIBRARY_PATH="${ALL_LIBS}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # 🎯 Calibrar entrada de micrófono de Linux al 45% (nivel limpio sin distorsión)
