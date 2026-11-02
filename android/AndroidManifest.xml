@@ -18,7 +18,7 @@
 
     <application
         android:name="org.qtproject.qt.android.bindings.QtApplication"
-        android:label="Nova Studio por mi"
+        android:label="NOVA Studio"
         android:icon="@android:drawable/sym_def_app_icon"
         android:allowBackup="true"
         android:fullBackupContent="true"
@@ -27,7 +27,7 @@
         <!-- 📱 ACTIVIDAD PRINCIPAL CONFIGURADA EN HORIZONTAL (LANDSCAPE) -->
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"
-            android:label="Nova Studio por mi"
+            android:label="NOVA Studio"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation"
             android:screenOrientation="sensorLandscape"
             android:launchMode="singleTop"
