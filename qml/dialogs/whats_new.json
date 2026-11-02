@@ -1,11 +1,17 @@
 {
   "releases": {
-    "1.0.11": {
+    "1.0.12": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
-      "description": "Hemos preparado importantes mejoras de edición táctil, importación y grabación para acelerar tu flujo musical:",
+      "description": "Nueva firma oficial permanente, edición táctil mejorada y estabilidad:",
       "buttonText": "¡Empezar a Crear! ➜",
       "features": [
+        {
+          "category": "ESTABLE",
+          "icon": "🔐",
+          "title": "Firma Oficial y Actualizaciones Fluidas",
+          "description": "Certificado digital permanente de Nova Studio para que todas las actualizaciones se instalen en un solo toque sin conflictos de paquetes."
+        },
         {
           "category": "NUEVO",
           "icon": "✦",
@@ -29,6 +35,26 @@
           "icon": "●",
           "title": "Grabación Estable y Autoconexión de Micrófono",
           "description": "Finalización precisa de tomas de grabación al parar el transporte, reconexión automática de entradas físicas y generación instantánea de clips en el carril activo."
+        }
+      ]
+    },
+    "1.0.11": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "Edición Táctil e Importación",
+      "description": "Mejoras de edición táctil, importación y grabación para acelerar tu flujo musical:",
+      "buttonText": "¡Continuar! ➜",
+      "features": [
+        {
+          "category": "NUEVO",
+          "icon": "✦",
+          "title": "Barra Flotante de Acciones Táctiles (Bubble Bar)",
+          "description": "Acciones rápidas circulares al seleccionar clips de audio."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "↔",
+          "title": "Tiradores Táctiles de Píldora",
+          "description": "Recorte cómodo con ranura vertical táctil."
         }
       ]
     },
