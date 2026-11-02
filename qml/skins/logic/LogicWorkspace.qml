@@ -22,6 +22,11 @@ Rectangle {
             Layout.preferredHeight: 70
 
             onCollaborationRequested: inviteCollaboratorsDialog.open()
+            onHomeRequested: {
+                if (root.parent && root.parent.parent && root.parent.parent.goBack) {
+                    root.parent.parent.goBack()
+                }
+            }
         }
 
         // ZONA MEDIA: TCP + ARRANGER

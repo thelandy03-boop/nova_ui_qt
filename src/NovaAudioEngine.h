@@ -100,6 +100,11 @@ public:
     Q_INVOKABLE QVariantMap inspectPatch(const QString &patchFilePath);
     Q_INVOKABLE bool applyPatch(const QString &patchFilePath, bool createNewTracks = true);
 
+    // 📳 Feedback háptico (vibración táctil de click) para controles móviles
+    Q_INVOKABLE void hapticFeedback();
+
+    static NovaAudioEngine* instance();
+
     // Getters de Estado
     bool isPlaying() const {
 #if defined(Q_OS_ANDROID)

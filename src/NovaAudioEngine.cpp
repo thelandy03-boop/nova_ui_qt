@@ -47,9 +47,61 @@ int vstfx_init(void*) { return 0; }
 void vstfx_exit() {}
 void vstfx_destroy_editor(_VSTState*) {}
 
+#if defined(Q_OS_ANDROID)
+#include <jni.h>
+#include <QJniObject>
+
+extern "C" {
+
+JNIEXPORT void JNICALL
+Java_com_novastudio_nova_AudioForegroundService_nativePauseAudio(JNIEnv*, jclass)
+{
+    if (NovaAudioEngine::instance()) {
+        QMetaObject::invokeMethod(NovaAudioEngine::instance(), &NovaAudioEngine::pause, Qt::QueuedConnection);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_novastudio_nova_AudioForegroundService_nativePlayAudio(JNIEnv*, jclass)
+{
+    if (NovaAudioEngine::instance()) {
+        QMetaObject::invokeMethod(NovaAudioEngine::instance(), &NovaAudioEngine::play, Qt::QueuedConnection);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_novastudio_nova_AudioForegroundService_nativeStopAudio(JNIEnv*, jclass)
+{
+    if (NovaAudioEngine::instance()) {
+        QMetaObject::invokeMethod(NovaAudioEngine::instance(), &NovaAudioEngine::stop, Qt::QueuedConnection);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novastudio_nova_AudioForegroundService_nativeIsPlaying(JNIEnv*, jclass)
+{
+    return (NovaAudioEngine::instance() && NovaAudioEngine::instance()->isPlaying()) ? JNI_TRUE : JNI_FALSE;
+}
+
+} // extern "C"
+#endif
+
+static NovaAudioEngine* s_instance = nullptr;
+
+NovaAudioEngine* NovaAudioEngine::instance()
+{
+    return s_instance;
+}
+
+void NovaAudioEngine::hapticFeedback()
+{
+    NovaPlatformUtils::hapticFeedback();
+}
+
 NovaAudioEngine::NovaAudioEngine(QObject *parent)
     : QObject(parent)
 {
+    s_instance = this;
     m_trackModel = new NovaTrackListModel(this);
     m_regionModel = new NovaRegionModel(this);
 
@@ -91,6 +143,7 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
 NovaAudioEngine::~NovaAudioEngine()
 {
     qCDebug(novaCore) << "Destruyendo NovaAudioEngine... Cierre seguro de recursos.";
+    if (s_instance == this) s_instance = nullptr;
     if (m_regionModel) m_regionModel->waitForImports();
     m_transport.setSession(nullptr);
 }
@@ -184,12 +237,22 @@ void NovaAudioEngine::play() {
             m_androidEngine.setPlaying(true);
         }
     }
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/AudioForegroundService",
+        "updateServicePlaybackState",
+        "(Z)V",
+        static_cast<jboolean>(true));
 #endif
 }
 void NovaAudioEngine::pause() {
     m_transport.stop();
 #if defined(Q_OS_ANDROID)
     m_androidEngine.setPlaying(false);
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/AudioForegroundService",
+        "updateServicePlaybackState",
+        "(Z)V",
+        static_cast<jboolean>(false));
 #endif
 }
 void NovaAudioEngine::stop() {
@@ -197,6 +260,11 @@ void NovaAudioEngine::stop() {
 #if defined(Q_OS_ANDROID)
     m_androidEngine.setPlaying(false);
     m_androidParadaPedida = true;
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/AudioForegroundService",
+        "updateServicePlaybackState",
+        "(Z)V",
+        static_cast<jboolean>(false));
 #endif
 }
 void NovaAudioEngine::togglePlay() {

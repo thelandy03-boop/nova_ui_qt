@@ -25,12 +25,11 @@
          la app no usa (la Device and Network Abuse policy de Play pide que el
          audio lo inicie el usuario). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     
     <!-- Almacenamiento (Scoped Storage Android 10+) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" 
-        tools:ignore="ScopedStorage" />
     
     <!-- MIDI USB/Bluetooth -->
     <uses-permission android:name="android.permission.USB_PERMISSION" />
@@ -58,8 +57,7 @@
         android:theme="@style/Theme.NovaStudio"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
-        android:largeHeap="true"
-        android:requestLegacyExternalStorage="true">
+        android:largeHeap="true">
 
         <!-- Main Activity -->
         <activity
@@ -67,7 +65,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|uiMode"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
             android:resizeableActivity="false"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.NovaStudio.NoActionBar">

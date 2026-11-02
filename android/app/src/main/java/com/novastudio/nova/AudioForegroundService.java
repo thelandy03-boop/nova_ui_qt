@@ -6,9 +6,11 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
@@ -27,22 +29,65 @@ public class AudioForegroundService extends Service {
     private static final String TAG = "AudioForegroundService";
     public static final String ACTION_START = "com.novastudio.nova.ACTION_START";
     public static final String ACTION_STOP = "com.novastudio.nova.ACTION_STOP";
+    public static final String ACTION_PLAY = "com.novastudio.nova.ACTION_PLAY";
+    public static final String ACTION_PAUSE = "com.novastudio.nova.ACTION_PAUSE";
+    public static final String ACTION_TOGGLE_PLAY = "com.novastudio.nova.ACTION_TOGGLE_PLAY";
     
     private static final String CHANNEL_ID = "nova_audio_channel";
     private static final int NOTIFICATION_ID = 1001;
-    
+
+    private static AudioForegroundService instance = null;
+    public static AudioForegroundService getInstance() { return instance; }
+
+    public static native void nativePauseAudio();
+    public static native void nativePlayAudio();
+    public static native void nativeStopAudio();
+    public static native boolean nativeIsPlaying();
+
     private NotificationManager notificationManager;
     private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private boolean isPlayingState = false;
+    private boolean isNoisyReceiverRegistered = false;
+
+    private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                Log.i(TAG, "Auriculares desconectados: pausando reproducción");
+                try {
+                    nativePauseAudio();
+                } catch (Throwable t) {
+                    Log.w(TAG, "nativePauseAudio no disponible", t);
+                }
+                updateNotification(false);
+            }
+        }
+    };
+
+    public static void updateServicePlaybackState(boolean isPlaying) {
+        if (instance != null) {
+            instance.updateNotification(isPlaying);
+        }
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         Log.i(TAG, "AudioForegroundService created");
         
         notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         
         createNotificationChannel();
+
+        try {
+            registerReceiver(noisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+            isNoisyReceiverRegistered = true;
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo registrar noisyReceiver", e);
+        }
     }
 
     @Override
@@ -51,7 +96,24 @@ public class AudioForegroundService extends Service {
             String action = intent.getAction();
             if (ACTION_START.equals(action)) {
                 startForeground();
+            } else if (ACTION_PLAY.equals(action)) {
+                try { nativePlayAudio(); } catch (Throwable ignored) {}
+                updateNotification(true);
+            } else if (ACTION_PAUSE.equals(action)) {
+                try { nativePauseAudio(); } catch (Throwable ignored) {}
+                updateNotification(false);
+            } else if (ACTION_TOGGLE_PLAY.equals(action)) {
+                boolean playing = false;
+                try { playing = nativeIsPlaying(); } catch (Throwable ignored) {}
+                if (playing) {
+                    try { nativePauseAudio(); } catch (Throwable ignored) {}
+                    updateNotification(false);
+                } else {
+                    try { nativePlayAudio(); } catch (Throwable ignored) {}
+                    updateNotification(true);
+                }
             } else if (ACTION_STOP.equals(action)) {
+                try { nativeStopAudio(); } catch (Throwable ignored) {}
                 stopForeground(true);
                 stopSelf();
             }
@@ -60,13 +122,10 @@ public class AudioForegroundService extends Service {
     }
 
     private void startForeground() {
-        Notification notification = createNotification();
+        Notification notification = createNotification(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // El overload con tipo (startForeground(id, notificacion, tipo))
-            // existe desde Android 10 (API 29).
             startForeground(NOTIFICATION_ID, notification, resolveForegroundServiceType());
         } else {
-            // Android 8 y 9: todavia no hay overload con tipo.
             startForeground(NOTIFICATION_ID, notification);
         }
         
@@ -116,7 +175,14 @@ public class AudioForegroundService extends Service {
         }
     }
 
-    private Notification createNotification() {
+    public void updateNotification(boolean isPlaying) {
+        isPlayingState = isPlaying;
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, createNotification(isPlaying));
+        }
+    }
+
+    private Notification createNotification(boolean isPlaying) {
         Intent notificationIntent = new Intent(this, MainActivity.class);
         notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         
@@ -127,15 +193,43 @@ public class AudioForegroundService extends Service {
                 : 0
         );
 
+        Intent toggleIntent = new Intent(this, AudioForegroundService.class);
+        toggleIntent.setAction(ACTION_TOGGLE_PLAY);
+        PendingIntent togglePendingIntent = PendingIntent.getService(
+            this, 1, toggleIntent,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                : PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        Intent stopIntent = new Intent(this, AudioForegroundService.class);
+        stopIntent.setAction(ACTION_STOP);
+        PendingIntent stopPendingIntent = PendingIntent.getService(
+            this, 2, stopIntent,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                : PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("NOVA Studio")
-            .setContentText("Grabación/Reproducción de audio activa")
+            .setContentText(isPlaying ? "Reproduciendo audio..." : "Reproducción en pausa")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
-            .setOngoing(true)
+            .setOngoing(isPlaying)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                isPlaying ? R.drawable.ic_pause : R.drawable.ic_play,
+                isPlaying ? "Pausar" : "Reproducir",
+                togglePendingIntent
+            )
+            .addAction(
+                R.drawable.ic_stop,
+                "Detener",
+                stopPendingIntent
+            )
             .build();
     }
 
@@ -154,6 +248,24 @@ public class AudioForegroundService extends Service {
         }
     }
 
+    private void handleAudioFocusChange(int focusChange) {
+        Log.i(TAG, "Audio focus change: " + focusChange);
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_LOSS:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                try {
+                    nativePauseAudio();
+                } catch (Throwable t) {
+                    Log.w(TAG, "nativePauseAudio no disponible", t);
+                }
+                updateNotification(false);
+                break;
+            case AudioManager.AUDIOFOCUS_GAIN:
+                break;
+        }
+    }
+
     private void requestAudioFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             AudioAttributes audioAttributes = new AudioAttributes.Builder()
@@ -162,12 +274,10 @@ public class AudioForegroundService extends Service {
                 .setFlags(AudioAttributes.FLAG_HW_AV_SYNC)
                 .build();
             
-            AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(audioAttributes)
                 .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener(focusChange -> {
-                    Log.i(TAG, "Audio focus change: " + focusChange);
-                })
+                .setOnAudioFocusChangeListener(this::handleAudioFocusChange)
                 .build();
             
             int result = audioManager.requestAudioFocus(focusRequest);
@@ -176,7 +286,7 @@ public class AudioForegroundService extends Service {
             }
         } else {
             int result = audioManager.requestAudioFocus(
-                focusChange -> Log.i(TAG, "Audio focus change: " + focusChange),
+                this::handleAudioFocusChange,
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN
             );
@@ -188,17 +298,25 @@ public class AudioForegroundService extends Service {
 
     private void abandonAudioFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Would need to keep reference to focusRequest
-            audioManager.abandonAudioFocusRequest(null);
+            if (focusRequest != null) {
+                audioManager.abandonAudioFocusRequest(focusRequest);
+            }
         } else {
-            audioManager.abandonAudioFocus(null);
+            audioManager.abandonAudioFocus(this::handleAudioFocusChange);
         }
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (isNoisyReceiverRegistered) {
+            try {
+                unregisterReceiver(noisyReceiver);
+                isNoisyReceiverRegistered = false;
+            } catch (Exception ignored) {}
+        }
         abandonAudioFocus();
+        instance = null;
         Log.i(TAG, "AudioForegroundService destroyed");
     }
 

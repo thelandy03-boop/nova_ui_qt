@@ -51,8 +51,14 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
+            anchors.margins: -4
             cursorShape: Qt.PointingHandCursor
-            onClicked: AudioEngine.tracks.setRecEnable(index, !model.recEnable)
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback();
+                }
+                AudioEngine.tracks.setRecEnable(index, !model.recEnable);
+            }
         }
     }
 
@@ -86,8 +92,14 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
+            anchors.margins: -3
             cursorShape: Qt.PointingHandCursor
-            onClicked: AudioEngine.tracks.setMute(index, !model.mute)
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback();
+                }
+                AudioEngine.tracks.setMute(index, !model.mute);
+            }
         }
     }
 
@@ -104,33 +116,52 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
+            anchors.margins: -3
             cursorShape: Qt.PointingHandCursor
-            onClicked: AudioEngine.tracks.setSolo(index, !model.solo)
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback();
+                }
+                AudioEngine.tracks.setSolo(index, !model.solo);
+            }
         }
     }
 
     // ── FILA INFERIOR ──
 
-    // 6. Eliminar Pista
-    Text {
-        x: 10; y: 40
-        text: "✕"
-        color: deleteMouseArea.containsMouse ? "#FF3B30" : "#666666"
-        font.pixelSize: 11
+    // 6. Eliminar Pista (Área táctil cómoda)
+    Rectangle {
+        x: 6; y: 37
+        width: 26; height: 26
+        radius: 13
+        color: deleteMouseArea.pressed ? "#5A1A1A" : "transparent"
+
+        Text {
+            anchors.centerIn: parent
+            text: "✕"
+            color: deleteMouseArea.containsMouse ? "#FF3B30" : "#777777"
+            font.pixelSize: 12
+            font.bold: true
+        }
 
         MouseArea {
             id: deleteMouseArea
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: AudioEngine.tracks.removeTrack(index)
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback();
+                }
+                AudioEngine.tracks.removeTrack(index);
+            }
         }
     }
 
     // 7. Perilla de Volumen
     Item {
-        x: 40; y: 38
-        width: 24; height: 24
+        x: 38; y: 38
+        width: 26; height: 26
         
         Rectangle {
             anchors.centerIn: parent
@@ -160,6 +191,7 @@ Rectangle {
         MouseArea {
             id: volDragArea
             anchors.fill: parent
+            anchors.margins: -4
             cursorShape: Qt.SizeVerCursor
             property real lastY: 0
             onPressed: (mouse) => lastY = mouse.y
@@ -175,8 +207,8 @@ Rectangle {
 
     // 8. Perilla de Paneo
     Item {
-        x: 74; y: 38
-        width: 24; height: 24
+        x: 72; y: 38
+        width: 26; height: 26
         
         Rectangle {
             anchors.centerIn: parent
@@ -206,6 +238,7 @@ Rectangle {
         MouseArea {
             id: panDragArea
             anchors.fill: parent
+            anchors.margins: -4
             cursorShape: Qt.SizeHorCursor
             property real lastY: 0
             onPressed: (mouse) => lastY = mouse.y
@@ -219,30 +252,36 @@ Rectangle {
         }
     }
 
-    // 9. Botón BOTÓN "🎵 Import Audio" (NUEVO)
+    // 9. Botón "🎵 Import" (Área táctil cómoda)
     Rectangle {
-        x: 112; y: 40
-        width: 76; height: 20
-        radius: 2
-        color: importMouseArea.containsMouse ? "#4B505E" : "#353535"
-        border.color: "#111111"
-        Rectangle { anchors.fill: parent; anchors.margins: 1; border.color: "#4A4A4A"; color: "transparent" }
+        x: 108; y: 39
+        width: 80; height: 24
+        radius: 3
+        color: importMouseArea.containsPress ? "#283548" : (importMouseArea.containsMouse ? "#3A4556" : "#323846")
+        border.color: "#1A222D"
+        border.width: 1
         
         Text {
             anchors.centerIn: parent
             text: AudioEngine.regions.importing ? "⏳ Importando…" : "🎵 Import"
-            color: "#E0E0E0"
-            font.pixelSize: 10
+            color: "#90CAF9"
+            font.pixelSize: 11
             font.weight: Font.Medium
         }
 
         MouseArea {
             id: importMouseArea
             anchors.fill: parent
+            anchors.margins: -3
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             enabled: !AudioEngine.regions.importing
-            onClicked: fileDialog.open()
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback();
+                }
+                fileDialog.open();
+            }
         }
     }
 

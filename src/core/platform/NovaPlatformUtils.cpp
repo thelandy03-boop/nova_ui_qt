@@ -8,6 +8,9 @@
 #include <QDebug>
 #include <QtGlobal>
 #include <cstring>
+#if defined(Q_OS_ANDROID)
+#include <QJniObject>
+#endif
 
 QString NovaPlatformUtils::getProjectsDirectory()
 {
@@ -153,5 +156,18 @@ bool NovaPlatformUtils::isMobilePlatform()
     return true;
 #else
     return false;
+#endif
+}
+
+void NovaPlatformUtils::hapticFeedback()
+{
+#if defined(Q_OS_ANDROID)
+    QJniObject activity = QJniObject::callStaticObjectMethod(
+        "com/novastudio/nova/MainActivity",
+        "getInstance",
+        "()Lcom/novastudio/nova/MainActivity;");
+    if (activity.isValid()) {
+        activity.callMethod<void>("vibrateTick");
+    }
 #endif
 }

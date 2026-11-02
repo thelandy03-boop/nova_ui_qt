@@ -1,10 +1,13 @@
 package com.novastudio.nova;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowInsets;
@@ -35,6 +38,13 @@ public class MainActivity extends QtActivityBase {
         
         // Keep screen on during audio operations
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        // Soporte para pantalla completa y recorte de pantalla (notch/cámara frontal)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
         
         // Hide system bars for immersive experience
         hideSystemBars();
@@ -220,6 +230,26 @@ public class MainActivity extends QtActivityBase {
             Log.i(TAG, "installApk: launched installer for " + apkPath);
         } catch (Exception e) {
             Log.e(TAG, "installApk: failed", e);
+        }
+    }
+
+    /**
+     * Feedback háptico nativo de pulsación táctil (click sutil).
+     */
+    public void vibrateTick() {
+        try {
+            Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK));
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    vibrator.vibrate(20);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "vibrateTick error", e);
         }
     }
 }

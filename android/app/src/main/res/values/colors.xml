@@ -13,4 +13,5 @@
     <color name="nova_accent">#FFF5C542</color>
     <color name="nova_text">#FFFFFFFF</color>
     <color name="nova_text_muted">#FF8E8E93</color>
+    <color name="ic_launcher_background">#FF18191E</color>
 </resources>

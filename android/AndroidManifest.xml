@@ -29,7 +29,7 @@
             android:name="org.qtproject.qt.android.bindings.QtActivity"
             android:label="Nova Studio por mi"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
             android:launchMode="singleTop"
             android:exported="true">
 

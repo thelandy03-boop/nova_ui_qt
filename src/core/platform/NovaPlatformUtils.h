@@ -17,6 +17,9 @@ public:
 
     // 📱 Detecta si el binario actual está ejecutándose en Android o móvil
     static bool isMobilePlatform();
+
+    // 📳 Dispara vibración táctil corta del sistema en dispositivos móviles
+    static void hapticFeedback();
 };
 
 #endif // NOVAPLATFORMUTILS_H

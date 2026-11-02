@@ -19,7 +19,15 @@ Rectangle {
         }
     }
 
-    // Soporte de teclado (Esc / Enter para cerrar)
+    function close() {
+        closeDialog()
+    }
+
+    // Soporte de navegación y teclado (Atrás en Android / Esc / Enter para cerrar)
+    Keys.onBackPressed: (event) => {
+        closeDialog()
+        event.accepted = true
+    }
     Keys.onEscapePressed: closeDialog()
     Keys.onReturnPressed: closeDialog()
 

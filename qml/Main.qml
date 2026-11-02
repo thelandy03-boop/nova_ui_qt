@@ -29,10 +29,61 @@ Window {
         }
     }
 
+    // 🔙 Gesto / Tecla "Atrás" de Android y Escape de escritorio
+    Shortcut {
+        sequence: "Back"
+        context: Qt.ApplicationShortcut
+        onActivated: handleBackNavigation()
+    }
+
+    Item {
+        anchors.fill: parent
+        focus: true
+        Keys.onBackPressed: (event) => {
+            if (handleBackNavigation()) {
+                event.accepted = true;
+            }
+        }
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Back) {
+                if (handleBackNavigation()) {
+                    event.accepted = true;
+                }
+            }
+        }
+    }
+
+    function handleBackNavigation() {
+        // 1. Cerrar diálogo de novedades si está abierto
+        if (whatsNewDialog && whatsNewDialog.visible) {
+            whatsNewDialog.close();
+            return true;
+        }
+        // 2. Cerrar diálogo modal de cambios sin guardar si está abierto
+        if (unsavedDialog && unsavedDialog.visible) {
+            unsavedDialog.visible = false;
+            return true;
+        }
+        // 3. Si estamos en el workspace con un proyecto abierto, volver al Hub
+        if (rootStack.depth > 1) {
+            if (AudioEngine.isDirty) {
+                unsavedDialog.closeActionType = "showHub";
+                unsavedDialog.visible = true;
+            } else {
+                AudioEngine.closeProject();
+                rootStack.pop();
+            }
+            return true;
+        }
+        return false;
+    }
+
     // Navegación principal del DAW (StackView de Alto Rendimiento)
     StackView {
         id: rootStack
         anchors.fill: parent
+        anchors.leftMargin: (Qt.platform.os === "android") ? 12 : 0
+        anchors.rightMargin: (Qt.platform.os === "android") ? 12 : 0
         
         initialItem: (AudioEngine.recentProjects && AudioEngine.recentProjects.length > 0) ? hubComponent : workspaceComponent
 

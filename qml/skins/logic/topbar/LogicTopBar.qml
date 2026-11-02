@@ -9,6 +9,7 @@ Rectangle {
     color: "#2C303A"
 
     signal collaborationRequested()
+    signal homeRequested()
 
     Rectangle {
         anchors.left: parent.left
@@ -20,7 +21,7 @@ Rectangle {
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 4
+        anchors.leftMargin: (Qt.platform.os === "android") ? 16 : 4
         anchors.rightMargin: 16
         spacing: 0
 
@@ -29,8 +30,14 @@ Rectangle {
             Layout.alignment: Qt.AlignVCenter
             Layout.fillHeight: true
 
-            LogicLogoBlock { Layout.fillHeight: true }
-            LogicToolBlock { Layout.fillHeight: true }
+            LogicLogoBlock {
+                Layout.fillHeight: true
+                onHomeRequested: root.homeRequested()
+            }
+            LogicToolBlock {
+                Layout.fillHeight: true
+                visible: root.width >= 860
+            }
 
             LogicToolsButtonBlock {
                 Layout.fillHeight: true
@@ -38,18 +45,21 @@ Rectangle {
             }
         }
 
-        Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }
+        Item { Layout.fillWidth: true; Layout.minimumWidth: 4 }
 
         RowLayout {
             spacing: 12
             Layout.alignment: Qt.AlignVCenter
-            Layout.minimumWidth: 260
+            Layout.minimumWidth: (root.width >= 720) ? 260 : 220
 
             LogicTransportBlock { Layout.alignment: Qt.AlignVCenter }
-            LogicLcdDisplayBlock { Layout.alignment: Qt.AlignVCenter }
+            LogicLcdDisplayBlock {
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.width >= 720
+            }
         }
 
-        Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }
+        Item { Layout.fillWidth: true; Layout.minimumWidth: 4 }
 
         Item { Layout.preferredWidth: 1; Layout.fillHeight: true }
     }

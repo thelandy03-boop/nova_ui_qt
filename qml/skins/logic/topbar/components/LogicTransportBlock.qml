@@ -40,6 +40,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (typeof AudioEngine !== "undefined") {
+                            AudioEngine.hapticFeedback();
                             AudioEngine.rewind();
                         }
                     }
@@ -69,6 +70,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (typeof AudioEngine !== "undefined") {
+                            AudioEngine.hapticFeedback();
                             AudioEngine.togglePlay();
                         }
                     }
@@ -96,6 +98,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (typeof AudioEngine !== "undefined") {
+                            AudioEngine.hapticFeedback();
                             AudioEngine.stop();
                         }
                     }
@@ -127,6 +130,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (typeof AudioEngine !== "undefined") {
+                            AudioEngine.hapticFeedback();
                             AudioEngine.toggleRecord();
                         }
                     }
@@ -156,6 +160,7 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         if (typeof AudioEngine !== "undefined") {
+                            AudioEngine.hapticFeedback();
                             AudioEngine.toggleLoop();
                         }
                     }
