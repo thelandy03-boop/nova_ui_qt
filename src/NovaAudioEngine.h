@@ -92,6 +92,14 @@ public:
     Q_INVOKABLE void quitApplication(); // 🛑 Apagado completo y salida de la app
     Q_INVOKABLE void removeRecentProject(const QString &path);
 
+    // 📦 Colaboración Local: Paquetes de Cambios (.novapatch)
+    Q_INVOKABLE bool exportPatch(const QString &targetFilePath,
+                                 const QString &notes,
+                                 const QString &author = QString(),
+                                 const QVariantList &trackIndices = QVariantList());
+    Q_INVOKABLE QVariantMap inspectPatch(const QString &patchFilePath);
+    Q_INVOKABLE bool applyPatch(const QString &patchFilePath, bool createNewTracks = true);
+
     // Getters de Estado
     bool isPlaying() const {
 #if defined(Q_OS_ANDROID)
@@ -179,6 +187,10 @@ signals:
     void isDirtyChanged();
     void recentProjectsChanged();
     void currentProjectChanged();
+
+    // Señales de colaboración local (.novapatch)
+    void patchExportFinished(bool success, const QString &message);
+    void patchApplyFinished(bool success, const QString &message);
 
 #if defined(Q_OS_ANDROID)
     // Puente para NovaRegionModel::importAudioFile en Android.

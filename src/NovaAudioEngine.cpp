@@ -8,6 +8,7 @@
 #include "core/NovaHardwareSanitizer.h"
 #include "core/NovaProjectManager.h"
 #include "core/NovaProjectPolicy.h"
+#include "core/NovaPatchManager.h"
 #include "core/platform/NovaPlatformUtils.h"
 #include "models/NovaTrackListModel.h"
 #include "models/NovaRegionModel.h"
@@ -30,6 +31,7 @@
 #undef foreach
 
 #include "ardour/session.h"
+#include "ardour/session_directory.h"
 #include "ardour/route.h"
 #include "ardour/meter.h"
 #include "ardour/gain_control.h"
@@ -218,6 +220,7 @@ void NovaAudioEngine::toggleRecord() {
     // en initialize) y, al parar, se importa el WAV resultante al timeline.
     if (m_androidGrabando) {
         m_androidGrabando = false;
+        m_androidEngine.setRecording(false);
         m_androidEngine.setPlaying(false);
         m_transport.stop();
         Q_EMIT isRecordingChanged();
@@ -249,6 +252,7 @@ void NovaAudioEngine::toggleRecord() {
             }
         }
         m_androidGrabando = true;
+        m_androidEngine.setRecording(true);
         m_androidEngine.setPlaying(true);
         m_transport.play();
         Q_EMIT isRecordingChanged();
@@ -774,3 +778,204 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
 }
 
 #endif // Q_OS_ANDROID
+
+// ── COLABORACIÓN LOCAL: PAQUETES DE CAMBIOS (.novapatch) ─────────────
+
+bool NovaAudioEngine::exportPatch(const QString &targetFilePath,
+                                  const QString &notes,
+                                  const QString &author,
+                                  const QVariantList &trackIndices)
+{
+    qCDebug(novaCore) << "📦 Exportando parche colaborativo a:" << targetFilePath;
+
+    std::vector<NovaPatchTrackInfo> patchTracks;
+    QString projName = currentProjectName();
+    double currentBpm = bpm();
+
+    // Obtener la carpeta de audio de la sesión
+    QString soundDir;
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    void *sess = m_sessionManager.session();
+    if (sess) {
+        ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(sess);
+        soundDir = QString::fromStdString(ardourSession->session_directory().sound_path());
+    }
+#endif
+    if (soundDir.isEmpty()) {
+        soundDir = currentProjectPath() + QStringLiteral("/audio");
+        if (!QDir(soundDir).exists()) {
+            soundDir = currentProjectPath() + QStringLiteral("/interchange");
+        }
+    }
+
+    // Filtrar pistas seleccionadas
+    QSet<int> includedIndices;
+    if (trackIndices.isEmpty()) {
+        int total = m_trackModel ? m_trackModel->rowCount() : 0;
+        for (int i = 0; i < total; ++i) includedIndices.insert(i);
+    } else {
+        for (const auto &v : trackIndices) includedIndices.insert(v.toInt());
+    }
+
+    int totalTracks = m_trackModel ? m_trackModel->rowCount() : 0;
+    int totalRegions = m_regionModel ? m_regionModel->rowCount() : 0;
+
+    for (int tIdx = 0; tIdx < totalTracks; ++tIdx) {
+        if (!includedIndices.contains(tIdx)) continue;
+
+        QModelIndex trkIdx = m_trackModel->index(tIdx, 0);
+        QString trkName = m_trackModel->data(trkIdx, NovaTrackListModel::TrackNameRole).toString();
+        QString trkColor = m_trackModel->data(trkIdx, NovaTrackListModel::ColorRole).toString();
+        float trkGain = m_trackModel->data(trkIdx, NovaTrackListModel::GainRole).toFloat();
+        float trkPan = m_trackModel->data(trkIdx, NovaTrackListModel::PanRole).toFloat();
+
+        NovaPatchTrackInfo patchTrack;
+        patchTrack.name = trkName;
+        patchTrack.color = trkColor;
+        patchTrack.gainDb = trkGain;
+        patchTrack.pan = trkPan;
+
+        // Buscar regiones asociadas a esta pista
+        for (int rIdx = 0; rIdx < totalRegions; ++rIdx) {
+            QModelIndex regIdx = m_regionModel->index(rIdx, 0);
+            int regionTrack = m_regionModel->data(regIdx, NovaRegionModel::TrackIndexRole).toInt();
+            if (regionTrack != tIdx) continue;
+
+            NovaPatchClipInfo clip;
+            clip.name = m_regionModel->data(regIdx, NovaRegionModel::RegionNameRole).toString();
+            clip.startBeat = m_regionModel->data(regIdx, NovaRegionModel::StartBeatRole).toDouble();
+            clip.lengthBeats = m_regionModel->data(regIdx, NovaRegionModel::LengthBeatsRole).toDouble();
+            clip.clipGainDb = m_regionModel->data(regIdx, NovaRegionModel::ClipGainDbRole).toFloat();
+            clip.fadeInBeats = m_regionModel->data(regIdx, NovaRegionModel::FadeInBeatsRole).toDouble();
+            clip.fadeOutBeats = m_regionModel->data(regIdx, NovaRegionModel::FadeOutBeatsRole).toDouble();
+
+            // Localizar archivo físico de audio
+            QString possiblePath;
+            QString candidate1 = soundDir + QStringLiteral("/") + clip.name;
+            QString candidate2 = soundDir + QStringLiteral("/") + clip.name + QStringLiteral(".wav");
+            QString candidate3 = soundDir + QStringLiteral("/") + clip.name + QStringLiteral(".mp3");
+
+            if (QFile::exists(candidate1)) possiblePath = candidate1;
+            else if (QFile::exists(candidate2)) possiblePath = candidate2;
+            else if (QFile::exists(candidate3)) possiblePath = candidate3;
+            else {
+                QDirIterator it(currentProjectPath(), QStringList() << (clip.name + QStringLiteral("*")), QDir::Files, QDirIterator::Subdirectories);
+                if (it.hasNext()) possiblePath = it.next();
+            }
+
+            clip.originalAudioPath = possiblePath;
+            patchTrack.clips.push_back(clip);
+        }
+
+        if (!patchTrack.clips.empty() || !trackIndices.isEmpty()) {
+            patchTracks.push_back(patchTrack);
+        }
+    }
+
+    QString errorStr;
+    bool ok = NovaPatchManager::exportPatch(targetFilePath, projName, author, notes, currentBpm, patchTracks, &errorStr);
+    if (ok) {
+        Q_EMIT patchExportFinished(true, QStringLiteral("Parche exportado exitosamente en: %1").arg(targetFilePath));
+    } else {
+        Q_EMIT patchExportFinished(false, errorStr);
+    }
+    return ok;
+}
+
+QVariantMap NovaAudioEngine::inspectPatch(const QString &patchFilePath)
+{
+    NovaPatchMetadata meta;
+    qint64 totalBytes = 0;
+    QString err;
+    if (!NovaPatchManager::inspectPatch(patchFilePath, meta, totalBytes, &err)) {
+        QVariantMap errMap;
+        errMap[QStringLiteral("valid")] = false;
+        errMap[QStringLiteral("error")] = err;
+        return errMap;
+    }
+    return NovaPatchManager::metadataToVariant(meta, totalBytes);
+}
+
+bool NovaAudioEngine::applyPatch(const QString &patchFilePath, bool createNewTracks)
+{
+    qCDebug(novaCore) << "📥 Aplicando parche colaborativo desde:" << patchFilePath;
+
+    NovaPatchMetadata meta;
+    qint64 totalAudioBytes = 0;
+    QString err;
+    if (!NovaPatchManager::inspectPatch(patchFilePath, meta, totalAudioBytes, &err)) {
+        qCCritical(novaCore) << "❌ Error al inspeccionar parche:" << err;
+        Q_EMIT patchApplyFinished(false, err);
+        return false;
+    }
+
+    // Carpeta destino del audio
+    QString soundDir;
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    void *sess = m_sessionManager.session();
+    if (sess) {
+        ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(sess);
+        soundDir = QString::fromStdString(ardourSession->session_directory().sound_path());
+    }
+#endif
+    if (soundDir.isEmpty()) {
+        soundDir = currentProjectPath() + QStringLiteral("/audio");
+        QDir().mkpath(soundDir);
+    }
+
+    QMap<QString, QString> extractedFiles;
+    if (!NovaPatchManager::extractAudioFiles(patchFilePath, soundDir, extractedFiles, &err)) {
+        qCCritical(novaCore) << "❌ Error al extraer audio del parche:" << err;
+        Q_EMIT patchApplyFinished(false, err);
+        return false;
+    }
+
+    int tracksImported = 0;
+    int clipsImported = 0;
+
+    for (const auto &trk : meta.tracks) {
+        int targetTrackIdx = -1;
+
+        if (!createNewTracks && m_trackModel) {
+            for (int i = 0; i < m_trackModel->rowCount(); ++i) {
+                QString existingName = m_trackModel->data(m_trackModel->index(i, 0), NovaTrackListModel::TrackNameRole).toString();
+                if (existingName.compare(trk.name, Qt::CaseInsensitive) == 0) {
+                    targetTrackIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (targetTrackIdx < 0 && m_trackModel) {
+            QString newTrkName = trk.name;
+            if (!meta.author.isEmpty() && meta.author != QStringLiteral("Colaborador")) {
+                newTrkName = QStringLiteral("%1 (%2)").arg(trk.name, meta.author);
+            }
+            m_trackModel->addAudioTrack(newTrkName);
+            targetTrackIdx = m_trackModel->rowCount() - 1;
+            tracksImported++;
+        }
+
+        if (targetTrackIdx >= 0 && m_regionModel) {
+            for (const auto &clip : trk.clips) {
+                QString extractedAudioPath = extractedFiles.value(clip.audioKey);
+                if (extractedAudioPath.isEmpty() || !QFile::exists(extractedAudioPath)) {
+                    qCWarning(novaCore) << "⚠️ Clip sin audio en el parche:" << clip.name;
+                    continue;
+                }
+
+                if (m_regionModel->importAudioFile(targetTrackIdx, extractedAudioPath, clip.startBeat)) {
+                    clipsImported++;
+                }
+            }
+        }
+    }
+
+    QString successMsg = QStringLiteral("Parche de %1 aplicado: %2 pistas y %3 clips importados.")
+                             .arg(meta.author.isEmpty() ? QStringLiteral("colaborador") : meta.author)
+                             .arg(tracksImported)
+                             .arg(clipsImported);
+    qCDebug(novaCore) << "✅" << successMsg;
+    Q_EMIT patchApplyFinished(true, successMsg);
+    return true;
+}

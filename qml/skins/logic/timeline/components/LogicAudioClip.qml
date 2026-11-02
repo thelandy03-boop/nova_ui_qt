@@ -29,6 +29,18 @@ Item {
     height: 66
     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
 
+    z: root.isSelected ? 100 : 1
+    onIsSelectedChanged: {
+        if (parent) {
+            parent.z = root.isSelected ? 50 : 1
+        }
+    }
+    Component.onCompleted: {
+        if (root.isSelected && parent) {
+            parent.z = 50
+        }
+    }
+
     Binding on x {
         when: !mainDragArea.drag.active && !leftHandleArea.pressed
         value: AudioEngine.beatToPixel(root.startBeat, root.barWidth)
@@ -45,7 +57,7 @@ Item {
         anchors.fill: parent
         radius: 4
         color: root.isLiveRecording ? "#D32F2F" : (mainDragArea.containsMouse || mainDragArea.drag.active ? Qt.lighter(clipColor, 1.15) : clipColor)
-        border.color: root.isLiveRecording ? "#FF1744" : (root.isSelected ? "#FFCC00" : (mainDragArea.drag.active ? "#FFFFFF" : Qt.lighter(clipColor, 1.3)))
+        border.color: root.isLiveRecording ? "#FF1744" : (root.isSelected ? "#FFFFFF" : (mainDragArea.drag.active ? "#FFFFFF" : Qt.lighter(clipColor, 1.3)))
         border.width: root.isLiveRecording || root.isSelected ? 2 : (mainDragArea.drag.active ? 2 : 1)
 
         // Relieve interno 3D
@@ -54,7 +66,7 @@ Item {
             anchors.margins: 1
             radius: 3
             color: "transparent"
-            border.color: root.isLiveRecording ? "#80FF5252" : (root.isSelected ? "#80FFCC00" : "#30FFFFFF")
+            border.color: root.isLiveRecording ? "#80FF5252" : (root.isSelected ? "#60FFFFFF" : "#30FFFFFF")
             border.width: 1
         }
 
@@ -65,9 +77,16 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             height: 20
-            color: root.isLiveRecording ? "#50000000" : (root.isSelected ? "#40FFCC00" : "#25000000")
+            color: root.isLiveRecording ? "#50000000" : (root.isSelected ? "#30FFFFFF" : "#25000000")
             radius: 3
             z: 20
+
+            // Clic en la barra selecciona el clip
+            MouseArea {
+                anchors.fill: parent
+                z: -1
+                onPressed: AudioEngine.regions.selectedRegionIndex = index
+            }
 
             Row {
                 anchors.left: parent.left
@@ -370,19 +389,41 @@ Item {
             }
         }
 
-        // ── TIRADORES TÁCTILES DE CORTE (RESIZE HANDLES) ──
+        // ── TIRADORES TÁCTILES DE CORTE (RESIZE HANDLES CON PÍLDORA) ──
         
-        // Tirador de recorte Izquierdo (Ancho 16px para dedos)
-        Rectangle {
+        // Tirador de recorte Izquierdo
+        Item {
             id: leftHandle
             anchors.left: parent.left
+            anchors.leftMargin: -5
             anchors.top: parent.top
             anchors.topMargin: 20
             anchors.bottom: parent.bottom
-            width: 16
-            color: leftHandleArea.containsMouse || leftHandleArea.pressed ? "#40FFFFFF" : "transparent"
-            z: 10
+            width: 22
+            z: 25
             visible: !root.isLiveRecording
+
+            // Píldora táctil visible al seleccionar
+            Rectangle {
+                id: leftPill
+                anchors.centerIn: parent
+                width: 10
+                height: 36
+                radius: 5
+                color: leftHandleArea.pressed ? "#FFFFFF" : (leftHandleArea.containsMouse ? "#E2E8F0" : "#CBD5E1")
+                border.color: "#8A9BA8"
+                border.width: 1
+                visible: root.isSelected
+
+                // Ranura vertical táctil
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 2
+                    height: 16
+                    radius: 1
+                    color: "#475569"
+                }
+            }
 
             MouseArea {
                 id: leftHandleArea
@@ -430,17 +471,39 @@ Item {
             }
         }
 
-        // Tirador de recorte Derecho (Ancho 16px para dedos)
-        Rectangle {
+        // Tirador de recorte Derecho
+        Item {
             id: rightHandle
             anchors.right: parent.right
+            anchors.rightMargin: -5
             anchors.top: parent.top
             anchors.topMargin: 20
             anchors.bottom: parent.bottom
-            width: 16
-            color: rightHandleArea.containsMouse || rightHandleArea.pressed ? "#40FFFFFF" : "transparent"
-            z: 10
+            width: 22
+            z: 25
             visible: !root.isLiveRecording
+
+            // Píldora táctil visible al seleccionar
+            Rectangle {
+                id: rightPill
+                anchors.centerIn: parent
+                width: 10
+                height: 36
+                radius: 5
+                color: rightHandleArea.pressed ? "#FFFFFF" : (rightHandleArea.containsMouse ? "#E2E8F0" : "#CBD5E1")
+                border.color: "#8A9BA8"
+                border.width: 1
+                visible: root.isSelected
+
+                // Ranura vertical táctil
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 2
+                    height: 16
+                    radius: 1
+                    color: "#475569"
+                }
+            }
 
             MouseArea {
                 id: rightHandleArea
@@ -475,8 +538,10 @@ Item {
         // ── ÁREA CENTRAL DE ARRASTRE (DRAG & DROP) ──
         MouseArea {
             id: mainDragArea
-            anchors.left: leftHandle.right
-            anchors.right: rightHandle.left
+            anchors.left: parent.left
+            anchors.leftMargin: 16
+            anchors.right: parent.right
+            anchors.rightMargin: 16
             anchors.top: parent.top
             anchors.topMargin: 20
             anchors.bottom: parent.bottom
@@ -501,6 +566,19 @@ Item {
                 AudioEngine.regions.moveRegion(index, snappedBeat)
             }
         }
+    }
+
+    // ── BARRA FLOTANTE DE ACCIONES MODULAR (ESTILO FL STUDIO / LOGIC MOBILE) ──
+    LogicClipBubbleBar {
+        id: clipBubbleBar
+        visible: root.isSelected && !root.isLiveRecording && !mainDragArea.drag.active && !leftHandleArea.pressed && !rightHandleArea.pressed
+        z: 200
+        clipIndex: index
+        startBeat: root.startBeat
+        snapGridBeats: root.snapGridBeats
+        anchors.bottom: clipBg.top
+        anchors.bottomMargin: 8
+        x: Math.max(8 - root.x, (root.width - width) / 2)
     }
 
     // Tooltip Flotante Táctil de Posición y Fades

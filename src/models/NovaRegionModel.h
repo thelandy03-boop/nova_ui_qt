@@ -128,6 +128,7 @@ public:
     Q_INVOKABLE bool moveRegion(int regionIndex, double newStartBeat);
     Q_INVOKABLE bool resizeRegion(int regionIndex, double newStartBeat, double newLengthBeats);
     Q_INVOKABLE void removeRegion(int regionIndex);
+    Q_INVOKABLE bool duplicateRegion(int regionIndex);
 
     // ✂️ Herramienta Split (Cortar Clips)
     Q_INVOKABLE bool splitRegion(int regionIndex, double splitBeat);

@@ -100,6 +100,11 @@ bool NovaSessionManager::initSession()
             qCDebug(novaCore) << "🛡️ Estado de transport masters publicado en memoria (evita clear() destructivo al arrancar).";
         }
 
+        if (ARDOUR::Config) {
+            ARDOUR::Config->set_input_auto_connect(ARDOUR::AutoConnectPhysical);
+            ARDOUR::Config->set_output_auto_connect(ARDOUR::AutoConnectPhysical);
+        }
+
         if (!ARDOUR::SessionEvent::has_per_thread_pool()) {
             ARDOUR::SessionEvent::create_per_thread_pool("GUI", 4096);
         }

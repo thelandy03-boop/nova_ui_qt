@@ -2,6 +2,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QVariantMap>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
@@ -33,6 +36,10 @@ class NovaUpdateChecker : public QObject
     Q_PROPERTY(int downloadProgress READ downloadProgress NOTIFY downloadProgressChanged)
     Q_PROPERTY(QString downloadError READ downloadError NOTIFY downloadErrorChanged)
     Q_PROPERTY(bool installPermissionGranted READ installPermissionGranted NOTIFY installPermissionGrantedChanged)
+    Q_PROPERTY(bool showWhatsNew READ showWhatsNew NOTIFY showWhatsNewChanged)
+    Q_PROPERTY(QVariantMap currentWhatsNew READ currentWhatsNew NOTIFY currentWhatsNewChanged)
+    Q_PROPERTY(QStringList availableVersions READ availableVersions NOTIFY availableVersionsChanged)
+    Q_PROPERTY(QString selectedWhatsNewVersion READ selectedWhatsNewVersion NOTIFY currentWhatsNewChanged)
 
 public:
     explicit NovaUpdateChecker(QObject *parent = nullptr);
@@ -46,6 +53,10 @@ public:
     int downloadProgress() const { return m_downloadProgress; }
     QString downloadError() const { return m_downloadError; }
     bool installPermissionGranted() const { return m_installPermissionGranted; }
+    bool showWhatsNew() const { return m_showWhatsNew; }
+    QVariantMap currentWhatsNew() const { return m_currentWhatsNew; }
+    QStringList availableVersions() const { return m_availableVersions; }
+    QString selectedWhatsNewVersion() const { return m_selectedWhatsNewVersion; }
 
     /** Lanza la comprobacion (asincrona). */
     Q_INVOKABLE void check();
@@ -59,6 +70,18 @@ public:
     /** Abre Ajustes para conceder el permiso de instalacion (Android). */
     Q_INVOKABLE void requestInstallPermission();
 
+    /** Cierra el diálogo de novedades y guarda la versión vista. */
+    Q_INVOKABLE void dismissWhatsNew();
+
+    /** Muestra manualmente la pantalla de novedades. */
+    Q_INVOKABLE void triggerWhatsNew();
+
+    /** Selecciona una versión específica del historial de novedades. */
+    Q_INVOKABLE void selectWhatsNewVersion(const QString &version);
+
+    /** Recarga el archivo de novedades desde disco/recursos. */
+    Q_INVOKABLE void reloadWhatsNew();
+
 signals:
     void updateRequiredChanged();
     void latestVersionChanged();
@@ -68,6 +91,9 @@ signals:
     void downloadProgressChanged();
     void downloadErrorChanged();
     void installPermissionGrantedChanged();
+    void showWhatsNewChanged();
+    void currentWhatsNewChanged();
+    void availableVersionsChanged();
 
 private slots:
     void onReplyFinished(QNetworkReply *reply);
@@ -81,6 +107,9 @@ private:
     bool verifySha256(const QString &filePath, const QString &expectedHash);
     void updateInstallPermission();
 
+    void loadWhatsNewData();
+    QVariantMap processReleaseData(const QJsonObject &releaseObj, const QString &ver);
+
     QNetworkAccessManager m_nam;
     bool m_updateRequired = false;
     QString m_latestVersion;
@@ -92,6 +121,11 @@ private:
     QString m_downloadError;
     QString m_expectedSha256;
     bool m_installPermissionGranted = false;
+    bool m_showWhatsNew = false;
+    QVariantMap m_currentWhatsNew;
+    QStringList m_availableVersions;
+    QString m_selectedWhatsNewVersion;
+    QJsonObject m_allReleases;
     QNetworkReply *m_downloadReply = nullptr;
     QString m_apkPath;
 };

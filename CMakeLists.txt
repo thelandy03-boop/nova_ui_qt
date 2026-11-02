@@ -122,6 +122,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/core/NovaAudioDeviceManager.cpp
     src/core/NovaUpdateChecker.h
     src/core/NovaUpdateChecker.cpp
+    src/core/NovaPatchManager.h
+    src/core/NovaPatchManager.cpp
     src/core/NovaHardwareSanitizer.h
     src/core/NovaHardwareSanitizer.cpp
     src/core/NovaTimeUtils.h
@@ -383,6 +385,16 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_audio_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(test_audio_loader PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME audio_loader COMMAND test_audio_loader)
+
+    # El gestor de parches de colaboración local (.novapatch)
+    add_executable(test_patch_manager
+        tests/test_patch_manager.cpp
+        src/core/NovaPatchManager.cpp
+        src/core/NovaLogging.cpp
+    )
+    target_link_libraries(test_patch_manager PRIVATE Qt6::Core)
+    target_include_directories(test_patch_manager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME patch_manager COMMAND test_patch_manager)
 
     # El contrato QML <-> C++ se comprueba con un script: detecta los botones
     # que llaman a metodos inexistentes (fallan en runtime con TypeError).

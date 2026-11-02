@@ -266,9 +266,24 @@ Rectangle {
     }
 
     // 📂 DIÁLOGO SELECTOR DE ARCHIVOS DE AUDIO
-    FileDialog {        id: fileDialog
+    FileDialog {
+        id: fileDialog
         title: "Seleccionar archivo de audio para " + model.trackName
-        nameFilters: ["Archivos de Audio (*.wav *.flac *.mp3 *.ogg *.aiff)"]
+        nameFilters: (Qt.platform.os === "android")
+            ? [
+                "Todos los archivos (*)",
+                "Archivos de Audio (*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.opus *.wma)",
+                "Audio MP3 (*.mp3)",
+                "Audio WAV (*.wav)",
+                "Audio M4A / AAC (*.m4a *.aac)",
+                "Audio FLAC / OGG (*.flac *.ogg *.opus)"
+              ]
+            : [
+                "Archivos de Audio (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.opus *.aiff)",
+                "Audio MP3 (*.mp3)",
+                "Audio WAV (*.wav)",
+                "Todos los archivos (*)"
+              ]
         onAccepted: {
             var selectedFile = fileDialog.selectedFile.toString()
             console.log("📂 [GUI] Archivo seleccionado:", selectedFile)

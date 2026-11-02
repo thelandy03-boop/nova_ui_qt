@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""
+NOVA STUDIO - Gestor CLI de Novedades ("Qué hay de nuevo")
+==========================================================
+Herramienta de línea de comandos para que cualquier usuario o Agente de IA
+pueda gestionar el historial de novedades de Nova Studio en formato JSON universal.
+
+Uso:
+  ./nova-news list
+  ./nova-news add --cat NUEVO --title "..." --desc "..." [--icon "✦"] [--version 1.0.11]
+  ./nova-news remove 0 [--version 1.0.11]
+  ./nova-news auto [--from-tag v1.0.10]
+"""
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
+JSON_PATH = BASE_DIR / "qml" / "dialogs" / "whats_new.json"
+CPP_HEADER = BASE_DIR / "src" / "core" / "NovaUpdateChecker.h"
+
+DEFAULT_ICONS = {
+    "NUEVO": "✦",
+    "MEJORA": "↔",
+    "CORRECCIÓN": "♫",
+    "CORRECCION": "♫",
+    "ESTABLE": "●",
+    "RENDIMIENTO": "⚡",
+    "AUDIO": "🎙️",
+    "MIDI": "🎹",
+}
+
+
+def get_current_app_version() -> str:
+    """Detecta la versión oficial del proyecto desde NovaUpdateChecker.h o Git."""
+    if CPP_HEADER.exists():
+        text = CPP_HEADER.read_text(encoding="utf-8")
+        m = re.search(r'm_currentVersion\s*=\s*QStringLiteral\("([^"]+)"\)', text)
+        if m:
+            return m.group(1)
+    try:
+        tag = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=str(BASE_DIR),
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+        return tag.lstrip("v")
+    except Exception:
+        return "1.0.11"
+
+
+def load_db() -> dict:
+    if not JSON_PATH.exists():
+        return {"releases": {}}
+    try:
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if "releases" not in data:
+                # Migración de formato plano a jerárquico
+                old_ver = data.get("version", get_current_app_version())
+                return {"releases": {old_ver: data}}
+            return data
+    except Exception as e:
+        print(f"⚠️ Error al leer {JSON_PATH}: {e}")
+        return {"releases": {}}
+
+
+def save_db(data: dict):
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def cmd_list(args):
+    db = load_db()
+    releases = db.get("releases", {})
+    current_ver = get_current_app_version()
+
+    print(f"\n📢 NOVA STUDIO - HISTORIAL DE NOVEDADES (Versión actual activa: v{current_ver})")
+    print("=" * 68)
+
+    if not releases:
+        print(" (No hay versiones ni novedades registradas en whats_new.json)")
+        print("=" * 68 + "\n")
+        return
+
+    for ver, info in releases.items():
+        is_current = " (ACTUAL)" if ver == current_ver else ""
+        badge = info.get("updateBadge", "✨ ACTUALIZACIÓN")
+        title = info.get("title", "")
+        features = info.get("features", [])
+
+        print(f"\n📦 VERSIÓN {ver}{is_current} — {badge}")
+        print(f"   Título: \"{title}\"")
+        print(f"   {len(features)} mejora(s) clave:")
+
+        for i, item in enumerate(features):
+            cat = item.get("category", "MEJORA")
+            icon = item.get("icon", "✦")
+            ftitle = item.get("title", "")
+            desc = item.get("description", "")
+            print(f"     [{i}] [{cat}] {icon}  {ftitle}")
+            print(f"         \"{desc}\"")
+
+    print("\n" + "=" * 68 + "\n")
+
+
+def cmd_add(args):
+    db = load_db()
+    releases = db.setdefault("releases", {})
+    ver = args.version or get_current_app_version()
+
+    release_info = releases.setdefault(ver, {
+        "updateBadge": "✨ ACTUALIZACIÓN",
+        "title": "¿Qué hay de nuevo en Nova?",
+        "description": "Hemos preparado importantes mejoras para acelerar tu flujo musical:",
+        "buttonText": "¡Empezar a Crear! ➜",
+        "features": []
+    })
+
+    cat = args.category.upper()
+    icon = args.icon if args.icon else DEFAULT_ICONS.get(cat, "✦")
+
+    new_item = {
+        "category": cat,
+        "icon": icon,
+        "title": args.title.strip(),
+        "description": args.desc.strip(),
+    }
+
+    release_info.setdefault("features", []).append(new_item)
+    save_db(db)
+
+    print(f"✅ Novedad agregada a la versión v{ver}:")
+    print(f"   [{cat}] {icon}  {args.title}")
+    print(f"   Total en v{ver}: {len(release_info['features'])}")
+
+
+def cmd_remove(args):
+    db = load_db()
+    releases = db.get("releases", {})
+    ver = args.version or get_current_app_version()
+
+    if ver not in releases:
+        print(f"❌ Error: La versión {ver} no existe en el historial.")
+        sys.exit(1)
+
+    features = releases[ver].get("features", [])
+    idx = args.index
+    if 0 <= idx < len(features):
+        removed = features.pop(idx)
+        save_db(db)
+        print(f"🗑️ Eliminada novedad [{idx}] de v{ver}: {removed.get('title')}")
+        print(f"   Restantes en v{ver}: {len(features)}")
+    else:
+        print(f"❌ Error: Índice {idx} fuera de rango en v{ver} (0 a {len(features)-1}).")
+        sys.exit(1)
+
+
+def cmd_auto(args):
+    """Autogenera tarjetas leyendo los conventional commits de git desde el último tag."""
+    db = load_db()
+    releases = db.setdefault("releases", {})
+    ver = args.version or get_current_app_version()
+
+    from_tag = args.from_tag
+    if not from_tag:
+        try:
+            from_tag = subprocess.check_output(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                cwd=str(BASE_DIR),
+                stderr=subprocess.DEVNULL,
+                text=True
+            ).strip()
+        except Exception:
+            from_tag = "HEAD~10"
+
+    print(f"🔍 Escaneando commits de Git desde {from_tag} hasta HEAD...")
+    try:
+        log_output = subprocess.check_output(
+            ["git", "log", f"{from_tag}..HEAD", "--pretty=format:%s"],
+            cwd=str(BASE_DIR),
+            text=True
+        )
+    except Exception as e:
+        print(f"❌ Error al consultar git log: {e}")
+        sys.exit(1)
+
+    commits = [line.strip() for line in log_output.splitlines() if line.strip()]
+    if not commits:
+        print("ℹ️ No se encontraron commits nuevos desde el tag.")
+        return
+
+    release_info = releases.setdefault(ver, {
+        "updateBadge": "✨ ACTUALIZACIÓN",
+        "title": f"Novedades de la versión {ver}",
+        "description": "Nuevas mejoras, correcciones y optimizaciones integradas:",
+        "buttonText": "¡Empezar a Crear! ➜",
+        "features": []
+    })
+
+    added_count = 0
+    for c in commits:
+        # Detectar convencional commits: feat(...): ..., fix(...): ..., perf(...): ...
+        match = re.match(r"^(feat|fix|perf|refactor)(?:\((.*?)\))?:\s*(.+)$", c, re.IGNORECASE)
+        if match:
+            ctype, scope, desc = match.groups()
+            ctype = ctype.lower()
+            if ctype == "feat":
+                category = "NUEVO"
+            elif ctype == "fix":
+                category = "CORRECCIÓN"
+            elif ctype == "perf":
+                category = "RENDIMIENTO"
+            else:
+                category = "MEJORA"
+
+            scope_title = f" ({scope.capitalize()})" if scope else ""
+            title = f"{desc[:1].upper() + desc[1:]}{scope_title}"
+            icon = DEFAULT_ICONS.get(category, "✦")
+
+            item = {
+                "category": category,
+                "icon": icon,
+                "title": title,
+                "description": desc,
+            }
+            release_info["features"].append(item)
+            added_count += 1
+            print(f"  + [{category}] {title}")
+
+    save_db(db)
+    print(f"\n🎉 {added_count} novedades autogeneradas desde Git para la versión v{ver}.")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Gestor CLI de Novedades ('Qué hay de nuevo') para Nova Studio"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # list
+    p_list = subparsers.add_parser("list", help="Listar las novedades por versión")
+    p_list.set_defaults(func=cmd_list)
+
+    # add
+    p_add = subparsers.add_parser("add", help="Agregar una novedad a una versión")
+    p_add.add_argument("--cat", "--category", dest="category", required=True,
+                       help="Categoría: NUEVO, MEJORA, CORRECCIÓN, ESTABLE, RENDIMIENTO")
+    p_add.add_argument("--title", dest="title", required=True, help="Título de la novedad")
+    p_add.add_argument("--desc", "--description", dest="desc", required=True, help="Descripción")
+    p_add.add_argument("--icon", dest="icon", default=None, help="Icono / emoji (ej: ✦, ↔, ♫, ⚡)")
+    p_add.add_argument("--version", dest="version", default=None, help="Versión destino (por defecto: activa)")
+    p_add.set_defaults(func=cmd_add)
+
+    # remove
+    p_remove = subparsers.add_parser("remove", help="Eliminar una novedad por su índice")
+    p_remove.add_argument("index", type=int, help="Índice de la novedad")
+    p_remove.add_argument("--version", dest="version", default=None, help="Versión destino")
+    p_remove.set_defaults(func=cmd_remove)
+
+    # auto
+    p_auto = subparsers.add_parser("auto", help="Autogenerar novedades desde los commits de Git")
+    p_auto.add_argument("--from-tag", dest="from_tag", default=None, help="Tag inicial de Git (ej: v1.0.10)")
+    p_auto.add_argument("--version", dest="version", default=None, help="Versión destino")
+    p_auto.set_defaults(func=cmd_auto)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

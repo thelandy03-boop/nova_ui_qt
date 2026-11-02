@@ -301,6 +301,13 @@ private:
     // Abre (o reabre) el stream de salida con el número de canales dado.
     bool abrirStreamSalida(int canales, QString* error);
 
+    // Abre el stream de entrada (micrófono) si no estaba abierto.
+    bool abrirStreamEntrada();
+
+    // Timestamp fijo de la toma de grabación actual (para no fraccionar el WAV)
+    std::string m_tomaGrabacionTimestamp;
+    std::mutex m_recordMutex;
+
     // Vuelve a abrir el stream de salida con los canales que tenía y lo
     // deja como estaba (arrancado o parado). Se usa cuando una operación
     // falla a mitad y el motor tiene que quedarse como estaba.

@@ -31,6 +31,7 @@ function(nova_collect_resources out_var)
         "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.jpg"
         "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.jpeg"
         "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.ico"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qml/*.json"
     )
     list(FILTER _abs_res_files EXCLUDE REGEX ".*/build/.*")
     list(FILTER _abs_res_files EXCLUDE REGEX ".*\\.bak$")

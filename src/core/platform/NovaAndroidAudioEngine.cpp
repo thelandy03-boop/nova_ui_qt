@@ -26,6 +26,7 @@
 // ============================================================================
 // WAV Header (RIFF IEEE Float 32-bit)
 // ============================================================================
+#pragma pack(push, 1)
 struct WavHeader {
     char riff[4] = {'R', 'I', 'F', 'F'};
     uint32_t chunkSize;
@@ -41,6 +42,7 @@ struct WavHeader {
     char data[4] = {'d', 'a', 't', 'a'};
     uint32_t dataSize;
 };
+#pragma pack(pop)
 
 // ============================================================================
 // RingBuffer Implementation
@@ -215,40 +217,8 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
         LOGE("%s", qPrintable(errorCanales));
         closeStreams();
         Q_EMIT audioInitialized(false);
-        return false;
-    }
-
     // ── Entrada de audio (micro): OPCIONAL ───────────────────────────────
-    // El micro NO es imprescindible para reproducir: si no se puede abrir
-    // (permiso sin conceder, dispositivo ocupado...) se sigue sin grabar,
-    // pero la salida de audio -que es lo que usa el spike- queda abierta.
-    //
-    // Antes esto cerraba la salida y devolvía false, y en el móvil el
-    // permiso de micro se pide DESPUÉS de arrancar la app: el motor se
-    // quedaba muerto en el primer arranque y no había forma de que volviera.
-    oboe::AudioStreamBuilder inputBuilder;
-    inputBuilder.setDirection(oboe::Direction::Input);
-    inputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
-    inputBuilder.setSharingMode(oboe::SharingMode::Exclusive);
-    inputBuilder.setFormat(oboe::AudioFormat::Float);
-    inputBuilder.setChannelCount(2);
-    inputBuilder.setSampleRate(sampleRate);
-    inputBuilder.setFramesPerCallback(m_framesPerBurst);
-    inputBuilder.setCallback(m_inputCallback.get());
-
-    oboe::Result result = inputBuilder.openStream(m_inputStream);
-    if (result != oboe::Result::OK) {
-        // Oboe deja el stream a null cuando no puede abrirlo.
-        LOGW("⚠️ No se pudo abrir la entrada de audio (micro): se sigue sin grabar (%s)",
-             oboe::convertToText(result));
-        m_inputStream.reset();
-    } else {
-        LOGD("Input stream opened: %d Hz, %d frames/burst, %d channels",
-             m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
-
-        // Initialize ring buffers
-        crearBuffersEntrada(m_inputStream->getChannelCount());
-    }
+    abrirStreamEntrada();
 
     crearBuffersSalida(m_outputStream->getChannelCount());
 
@@ -439,6 +409,10 @@ void NovaAndroidAudioEngine::stop() {
 #if defined(Q_OS_ANDROID)
     m_isPlaying = false;
     m_isRecording = false;
+    {
+        std::lock_guard<std::mutex> lock(m_recordMutex);
+        m_tomaGrabacionTimestamp.clear();
+    }
     m_player.stop();
     
     // stop() para el transporte, no libera el dispositivo: los streams se
@@ -460,6 +434,38 @@ void NovaAndroidAudioEngine::stop() {
 
 void NovaAndroidAudioEngine::setSession(ARDOUR::Session* session) {
     m_session = session;
+}
+
+bool NovaAndroidAudioEngine::abrirStreamEntrada() {
+#if defined(Q_OS_ANDROID)
+    if (m_inputStream) return true;
+    if (!m_inputCallback) return false;
+
+    oboe::AudioStreamBuilder inputBuilder;
+    inputBuilder.setDirection(oboe::Direction::Input);
+    inputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
+    inputBuilder.setSharingMode(oboe::SharingMode::Exclusive);
+    inputBuilder.setFormat(oboe::AudioFormat::Float);
+    inputBuilder.setChannelCount(2);
+    inputBuilder.setSampleRate(m_sampleRate > 0 ? m_sampleRate : 48000);
+    inputBuilder.setFramesPerCallback(m_framesPerBurst > 0 ? m_framesPerBurst : 256);
+    inputBuilder.setCallback(m_inputCallback.get());
+
+    oboe::Result result = inputBuilder.openStream(m_inputStream);
+    if (result != oboe::Result::OK) {
+        LOGW("⚠️ No se pudo abrir la entrada de audio (micro): %s", oboe::convertToText(result));
+        m_inputStream.reset();
+        return false;
+    }
+
+    LOGD("Input stream opened: %d Hz, %d frames/burst, %d channels",
+         m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
+
+    crearBuffersEntrada(m_inputStream->getChannelCount());
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool NovaAndroidAudioEngine::openInputStream(int channelCount) {
@@ -494,6 +500,34 @@ void NovaAndroidAudioEngine::closeStreams() {
 }
 
 void NovaAndroidAudioEngine::setRecording(bool enabled) {
+    if (enabled) {
+#if defined(Q_OS_ANDROID)
+        if (!m_inputStream) {
+            abrirStreamEntrada();
+        }
+        if (m_inputStream && m_isPlaying) {
+            const oboe::StreamState st = m_inputStream->getState();
+            if (st != oboe::StreamState::Started && st != oboe::StreamState::Starting) {
+                m_inputStream->requestStart();
+            }
+        }
+#endif
+        {
+            std::lock_guard<std::mutex> lock(m_recordMutex);
+            if (m_tomaGrabacionTimestamp.empty()) {
+                auto now = std::chrono::system_clock::now();
+                auto time_t = std::chrono::system_clock::to_time_t(now);
+                struct tm tmBuf;
+                struct tm* tm = localtime_r(&time_t, &tmBuf);
+                char timestamp[64];
+                strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
+                m_tomaGrabacionTimestamp = timestamp;
+            }
+        }
+    } else {
+        std::lock_guard<std::mutex> lock(m_recordMutex);
+        m_tomaGrabacionTimestamp.clear();
+    }
     m_isRecording.store(enabled);
     Q_EMIT recordingStateChanged(enabled);
 }
@@ -797,13 +831,21 @@ void NovaAndroidAudioEngine::writeWavFile(
         return;
     }
 
-    // Generate filename with timestamp
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    struct tm tmBuf;
-    struct tm* tm = localtime_r(&time_t, &tmBuf);
-    char timestamp[64];
-    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
+    // Obtener el timestamp de la toma actual para mantener el mismo fichero durante toda la grabación
+    std::string timestamp;
+    {
+        std::lock_guard<std::mutex> lock(m_recordMutex);
+        timestamp = m_tomaGrabacionTimestamp;
+    }
+    if (timestamp.empty()) {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        struct tm tmBuf;
+        struct tm* tm = localtime_r(&time_t, &tmBuf);
+        char tsBuf[64];
+        strftime(tsBuf, sizeof(tsBuf), "%Y%m%d_%H%M%S", tm);
+        timestamp = tsBuf;
+    }
     
     std::string filename = interchangeDir + "/" + track->name() + "_" + timestamp + ".wav";
     

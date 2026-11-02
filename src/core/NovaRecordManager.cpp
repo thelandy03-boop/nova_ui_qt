@@ -20,6 +20,7 @@
 
 #include "ardour/session.h"
 #include "ardour/track.h"
+#include "ardour/audio_track.h"
 #include "ardour/route.h"
 #include "ardour/playlist.h"
 #include "ardour/region.h"
@@ -88,18 +89,11 @@ void NovaRecordManager::toggleRecord()
     const bool alreadyRecording = m_isRecording || m_liveRegionActive;
 
     if (alreadyRecording) {
-        m_isRecording = false;
-        m_liveRegionActive = false;
-
         if (m_transport) {
             m_transport->stop();
+        } else {
+            onTransportStopped();
         }
-
-        if (m_regionModel) {
-            m_regionModel->finalizeLiveRecordingClip();
-        }
-
-        Q_EMIT isRecordingChanged();
         qCDebug(novaRecord) << "Grabación detenida limpiamente (STOP Stub).";
         return;
     }
@@ -114,23 +108,17 @@ void NovaRecordManager::toggleRecord()
     Q_EMIT isRecordingChanged();
     qCDebug(novaRecord) << "Grabación en vivo iniciada (ROLL Stub).";
 #else
-    const bool alreadyRecording = m_isRecording || d_ptr->session->get_record_enabled() || m_liveRegionActive;
+    const bool alreadyRecording = m_isRecording || (d_ptr->session && d_ptr->session->get_record_enabled()) || m_liveRegionActive;
 
     if (alreadyRecording) {
-        // Parar grabación
-        d_ptr->session->disable_record(false, false);  // RecordAction::Stop, RecordAction::PunchOut
-        m_isRecording = false;
-        m_liveRegionActive = false;
-
+        // Al parar, delegamos en el transporte. El slot onTransportStopped
+        // se encarga de deshabilitar la grabación en Ardour y esperar a que el
+        // hilo Butler escriba las regiones antes de finalizar.
         if (m_transport) {
             m_transport->stop();
+        } else {
+            onTransportStopped();
         }
-
-        if (m_regionModel) {
-            m_regionModel->finalizeLiveRecordingClip();
-        }
-
-        Q_EMIT isRecordingChanged();
         qCDebug(novaRecord) << "Grabación detenida limpiamente (STOP).";
         return;
     }
@@ -143,12 +131,10 @@ void NovaRecordManager::toggleRecord()
         int trackIdx = 0;
         for (const auto &route : *routes) {
             if (!route || !route->is_track()) {
-                if (route && route->is_track()) trackIdx++;
                 continue;
             }
             auto track = std::dynamic_pointer_cast<ARDOUR::Track>(route);
             if (!track) {
-                trackIdx++;
                 continue;
             }
             auto rec = track->rec_enable_control();
@@ -165,12 +151,10 @@ void NovaRecordManager::toggleRecord()
             trackIdx = 0;
             for (const auto &route : *routes) {
                 if (!route || !route->is_track()) {
-                    if (route && route->is_track()) trackIdx++;
                     continue;
                 }
                 auto track = std::dynamic_pointer_cast<ARDOUR::Track>(route);
                 if (!track) {
-                    trackIdx++;
                     continue;
                 }
                 auto rec = track->rec_enable_control();
@@ -178,10 +162,33 @@ void NovaRecordManager::toggleRecord()
                     rec->set_value(1.0, PBD::Controllable::NoGroup);  // 1.0 = armed
                     anyArmed = true;
                     d_ptr->armedTrackIndices.push_back(trackIdx);
+                    d_ptr->session->set_dirty();
                     qCDebug(novaRecord) << "Auto-arm en pista:" << QString::fromStdString(track->name()) << "índice:" << trackIdx;
                     break;
                 }
                 trackIdx++;
+            }
+        }
+
+        // Si no había ninguna pista en la sesión, auto-crear una pista de audio
+        if (!anyArmed && trackIdx == 0) {
+            try {
+                auto newTracks = d_ptr->session->new_audio_track(
+                    2, 2, nullptr, 1, std::string("Audio 1"),
+                    ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false
+                );
+                if (!newTracks.empty() && newTracks.front()) {
+                    auto rec = newTracks.front()->rec_enable_control();
+                    if (rec) {
+                        rec->set_value(1.0, PBD::Controllable::NoGroup);
+                    }
+                    anyArmed = true;
+                    d_ptr->armedTrackIndices.push_back(0);
+                    d_ptr->session->set_dirty();
+                    qCDebug(novaRecord) << "Auto-creada y armada pista Audio 1 para grabación.";
+                }
+            } catch (const std::exception &e) {
+                qCWarning(novaRecord) << "Error al auto-crear pista de audio:" << e.what();
             }
         }
     }
@@ -237,6 +244,7 @@ void NovaRecordManager::onTransportStopped()
     qCDebug(novaRecord) << "Transporte detenido. Finalizando grabación...";
     m_liveRegionActive = false;
     m_isRecording = false;
+    Q_EMIT isRecordingChanged();
 
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     // Asegurar que Ardour deshabilite grabación
@@ -244,16 +252,14 @@ void NovaRecordManager::onTransportStopped()
         d_ptr->session->disable_record(false, false);  // RecordAction::Stop, RecordAction::PunchOut
     }
     
-    // Esperar un poco a que Ardour termine de escribir a disco y cree las regiones
-    // Usamos QTimer para dar tiempo al procesamiento en background
-    QTimer::singleShot(500, this, [this]() {
+    // Esperar un poco a que Ardour termine de escribir a disco y cree las regiones en las playlists
+    QTimer::singleShot(600, this, [this]() {
         finalizeRecording();
     });
 #else
     if (m_regionModel) {
         m_regionModel->finalizeLiveRecordingClip();
     }
-    Q_EMIT isRecordingChanged();
 #endif
 }
 
@@ -265,7 +271,6 @@ void NovaRecordManager::finalizeRecording()
     // Forzar rebuild de regiones desde la sesión (Ardour ya debería haber creado las regiones en las playlists)
     if (m_regionModel) {
         m_regionModel->setSession(d_ptr->session); // Esto llama rebuildRegionCache() internamente
-        
         qCDebug(novaRecord) << "Regiones totales tras rebuild:" << m_regionModel->rowCount();
     }
     

@@ -903,6 +903,50 @@ void NovaRegionModel::removeRegion(int regionIndex)
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
 }
 
+bool NovaRegionModel::duplicateRegion(int regionIndex)
+{
+    if (regionIndex < 0 || regionIndex >= static_cast<int>(m_regions.size())) return false;
+
+    const auto &item = m_regions[static_cast<size_t>(regionIndex)];
+    double nextStartBeat = item.startBeat + item.lengthBeats;
+    double sampleRate = (m_session && m_session->sample_rate() > 0) ? static_cast<double>(m_session->sample_rate()) : 48000.0;
+    ARDOUR::samplepos_t nextSample = static_cast<ARDOUR::samplepos_t>(NovaTimeUtils::beatToFrame(nextStartBeat, sampleRate, 120.0));
+
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
+    if (m_session && item.trackIndex >= 0 && item.regionPtr) {
+        auto track = findTrackByIndex(item.trackIndex);
+        if (track && track->playlist()) {
+            auto newReg = ARDOUR::RegionFactory::create(item.regionPtr, true);
+            if (newReg) {
+                track->playlist()->add_region(newReg, Temporal::timepos_t(nextSample));
+                m_session->set_dirty();
+                rebuildRegionCache();
+                return true;
+            }
+        }
+    }
+#else
+    NovaRegionItem newItem = item;
+    newItem.id = QStringLiteral("reg_%1").arg(QDateTime::currentMSecsSinceEpoch());
+    newItem.startBeat = nextStartBeat;
+    newItem.startFrame = static_cast<double>(nextSample);
+    
+    int newRow = static_cast<int>(m_regions.size());
+    beginInsertRows(QModelIndex(), newRow, newRow);
+    m_regions.push_back(newItem);
+    endInsertRows();
+
+    PeakData peaks;
+    if (NovaWaveformCache::getPeaks(item.id, peaks)) {
+        NovaWaveformCache::setPeaks(newItem.id, peaks);
+    }
+
+    Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
+    return true;
+#endif
+    return false;
+}
+
 bool NovaRegionModel::splitRegion(int regionIndex, double splitBeat)
 {
     if (regionIndex < 0 || regionIndex >= static_cast<int>(m_regions.size())) return false;

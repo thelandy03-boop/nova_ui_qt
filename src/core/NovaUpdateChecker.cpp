@@ -14,7 +14,10 @@
 #include <QStandardPaths>
 #include <QFileInfo>
 #include <QCryptographicHash>
+#include <QSettings>
 #include <QTimer>
+#include <QVersionNumber>
+#include <QCoreApplication>
 
 #if defined(Q_OS_ANDROID)
 #include <QJniObject>
@@ -82,6 +85,190 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
     // Limpiar APKs antiguos del cache.
     cleanOldApks();
 #endif
+
+    // 1. Cargar base de datos de novedades nativamente desde JSON
+    loadWhatsNewData();
+
+    // 2. Comprobar con SemVer si hay novedades que mostrar de una actualización
+    QSettings settings;
+    if (!settings.contains(QStringLiteral("last_seen_version"))) {
+        // Primera instalación (Fresh install): registrar versión para no interrumpir al usuario novato,
+        // el diálogo se mostrará en su primera actualización real posterior.
+        settings.setValue(QStringLiteral("last_seen_version"), m_currentVersion);
+        m_showWhatsNew = false;
+    } else {
+        const QString lastSeenStr = settings.value(QStringLiteral("last_seen_version")).toString();
+        const QVersionNumber currentVer = QVersionNumber::fromString(m_currentVersion);
+        const QVersionNumber lastSeenVer = QVersionNumber::fromString(lastSeenStr);
+        if (!currentVer.isNull() && !lastSeenVer.isNull()) {
+            m_showWhatsNew = (currentVer > lastSeenVer);
+        } else {
+            m_showWhatsNew = (m_currentVersion != lastSeenStr);
+        }
+    }
+}
+
+void NovaUpdateChecker::dismissWhatsNew()
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("last_seen_version"), m_currentVersion);
+    if (m_showWhatsNew) {
+        m_showWhatsNew = false;
+        Q_EMIT showWhatsNewChanged();
+    }
+}
+
+void NovaUpdateChecker::triggerWhatsNew()
+{
+    m_showWhatsNew = true;
+    Q_EMIT showWhatsNewChanged();
+}
+
+void NovaUpdateChecker::loadWhatsNewData()
+{
+    const QStringList candidates = {
+        QDir::current().filePath(QStringLiteral("qml/dialogs/whats_new.json")),
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../qml/dialogs/whats_new.json")),
+        QStringLiteral(":/nova_ui_qt/qml/dialogs/whats_new.json"),
+        QStringLiteral(":/qml/dialogs/whats_new.json")
+    };
+
+    QByteArray jsonData;
+    QString usedPath;
+    for (const QString &path : candidates) {
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            jsonData = file.readAll();
+            usedPath = path;
+            file.close();
+            break;
+        }
+    }
+
+    if (jsonData.isEmpty()) {
+        qCWarning(novaCore) << "WhatsNew: No se pudo encontrar whats_new.json en las rutas candidatas.";
+        return;
+    }
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(jsonData, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        qCWarning(novaCore) << "WhatsNew: Error de sintaxis en JSON (" << usedPath << "):" << parseError.errorString();
+        return;
+    }
+
+    QJsonObject root = doc.object();
+    m_allReleases = root.value(QStringLiteral("releases")).toObject();
+
+    // Extraer lista de versiones ordenadas semánticamente descendente
+    QStringList versions = m_allReleases.keys();
+    std::sort(versions.begin(), versions.end(), [](const QString &a, const QString &b) {
+        return QVersionNumber::fromString(a) > QVersionNumber::fromString(b);
+    });
+    m_availableVersions = versions;
+    Q_EMIT availableVersionsChanged();
+
+    // Seleccionar la versión instalada o fallback a la más reciente disponible
+    QString targetVer = m_currentVersion;
+    if (!m_allReleases.contains(targetVer) && !m_availableVersions.isEmpty()) {
+        targetVer = m_availableVersions.first();
+    }
+    selectWhatsNewVersion(targetVer);
+}
+
+void NovaUpdateChecker::selectWhatsNewVersion(const QString &version)
+{
+    m_selectedWhatsNewVersion = version;
+    QJsonObject releaseObj = m_allReleases.value(version).toObject();
+    m_currentWhatsNew = processReleaseData(releaseObj, version);
+    Q_EMIT currentWhatsNewChanged();
+}
+
+QVariantMap NovaUpdateChecker::processReleaseData(const QJsonObject &releaseObj, const QString &ver)
+{
+    QVariantMap result;
+    result[QStringLiteral("version")] = ver;
+    result[QStringLiteral("updateBadge")] = releaseObj.value(QStringLiteral("updateBadge")).toString(QStringLiteral("✨ ACTUALIZACIÓN"));
+    result[QStringLiteral("title")] = releaseObj.value(QStringLiteral("title")).toString(QStringLiteral("¿Qué hay de nuevo en Nova?"));
+    result[QStringLiteral("description")] = releaseObj.value(QStringLiteral("description")).toString();
+    result[QStringLiteral("buttonText")] = releaseObj.value(QStringLiteral("buttonText")).toString(QStringLiteral("¡Empezar a Crear! ➜"));
+
+    QJsonArray rawFeatures = releaseObj.value(QStringLiteral("features")).toArray();
+    QVariantList processedList;
+
+    for (const QJsonValue &val : rawFeatures) {
+        QJsonObject item = val.toObject();
+        QString cat = item.value(QStringLiteral("category")).toString(QStringLiteral("MEJORA")).toUpper();
+        QString icon = item.value(QStringLiteral("icon")).toString();
+        QString title = item.value(QStringLiteral("title")).toString();
+        QString desc = item.value(QStringLiteral("description")).toString();
+
+        QString accentText = QStringLiteral("#60A5FA");
+        QString accentBorder = QStringLiteral("#3B82F6");
+        QString accentBg = QStringLiteral("#1E3A5F");
+        QString accentGlow = QStringLiteral("#143B82F6");
+
+        if (cat == QStringLiteral("NUEVO")) {
+            accentText = QStringLiteral("#34D399");
+            accentBorder = QStringLiteral("#10B981");
+            accentBg = QStringLiteral("#064E3B");
+            accentGlow = QStringLiteral("#1410B981");
+            if (icon.isEmpty()) icon = QStringLiteral("✦");
+        } else if (cat == QStringLiteral("MEJORA")) {
+            accentText = QStringLiteral("#60A5FA");
+            accentBorder = QStringLiteral("#3B82F6");
+            accentBg = QStringLiteral("#1E3A5F");
+            accentGlow = QStringLiteral("#143B82F6");
+            if (icon.isEmpty()) icon = QStringLiteral("↔");
+        } else if (cat == QStringLiteral("CORRECCIÓN") || cat == QStringLiteral("CORRECCION")) {
+            accentText = QStringLiteral("#FBBF24");
+            accentBorder = QStringLiteral("#F59E0B");
+            accentBg = QStringLiteral("#451A03");
+            accentGlow = QStringLiteral("#14F59E0B");
+            if (icon.isEmpty()) icon = QStringLiteral("♫");
+        } else if (cat == QStringLiteral("ESTABLE")) {
+            accentText = QStringLiteral("#C4B5FD");
+            accentBorder = QStringLiteral("#8B5CF6");
+            accentBg = QStringLiteral("#3B185F");
+            accentGlow = QStringLiteral("#148B5CF6");
+            if (icon.isEmpty()) icon = QStringLiteral("●");
+        } else if (cat == QStringLiteral("RENDIMIENTO")) {
+            accentText = QStringLiteral("#38BDF8");
+            accentBorder = QStringLiteral("#0284C7");
+            accentBg = QStringLiteral("#0C4A6E");
+            accentGlow = QStringLiteral("#140284C7");
+            if (icon.isEmpty()) icon = QStringLiteral("⚡");
+        } else {
+            if (icon.isEmpty()) icon = QStringLiteral("✦");
+        }
+
+        if (item.contains(QStringLiteral("accentText"))) accentText = item.value(QStringLiteral("accentText")).toString();
+        if (item.contains(QStringLiteral("accentBorder"))) accentBorder = item.value(QStringLiteral("accentBorder")).toString();
+        if (item.contains(QStringLiteral("accentBg"))) accentBg = item.value(QStringLiteral("accentBg")).toString();
+        if (item.contains(QStringLiteral("accentGlow"))) accentGlow = item.value(QStringLiteral("accentGlow")).toString();
+
+        QVariantMap card;
+        card[QStringLiteral("category")] = cat;
+        card[QStringLiteral("badge")] = cat;
+        card[QStringLiteral("icon")] = icon;
+        card[QStringLiteral("title")] = title;
+        card[QStringLiteral("description")] = desc;
+        card[QStringLiteral("accentText")] = accentText;
+        card[QStringLiteral("accentBorder")] = accentBorder;
+        card[QStringLiteral("accentBg")] = accentBg;
+        card[QStringLiteral("accentGlow")] = accentGlow;
+
+        processedList.append(card);
+    }
+
+    result[QStringLiteral("features")] = processedList;
+    result[QStringLiteral("count")] = processedList.size();
+    return result;
+}
+
+void NovaUpdateChecker::reloadWhatsNew()
+{
+    loadWhatsNewData();
 }
 
 void NovaUpdateChecker::check()

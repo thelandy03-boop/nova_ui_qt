@@ -165,6 +165,12 @@ Window {
         }
     }
 
+    // ── OVERLAY MODAL: NOVEDADES DE LA ACTUALIZACIÓN ──
+    NovaWhatsNewDialog {
+        id: whatsNewDialog
+        anchors.fill: parent
+    }
+
     // 📂 Alternar Hub de Proyectos Recientes: Ctrl + H
     Shortcut {
         sequence: "Ctrl+H"
