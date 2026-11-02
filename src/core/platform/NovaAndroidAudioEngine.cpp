@@ -217,6 +217,9 @@ bool NovaAndroidAudioEngine::initialize(int sampleRate, int framesPerBurst) {
         LOGE("%s", qPrintable(errorCanales));
         closeStreams();
         Q_EMIT audioInitialized(false);
+        return false;
+    }
+
     // ── Entrada de audio (micro): OPCIONAL ───────────────────────────────
     abrirStreamEntrada();
 

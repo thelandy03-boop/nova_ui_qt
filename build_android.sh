@@ -149,9 +149,15 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
     sed -i '/android.bundle.enableUncompressedNativeLibs/d' ${BUILD_DIR}/android-build/gradle.properties
     # Asegurar pluginManagement (Gradle 8+ lo exige en settings; Qt no lo genera)
     cp android/settings.gradle ${BUILD_DIR}/android-build/settings.gradle
-    # El módulo app necesita su manifest (el template lo guarda en src/main/)
+    # El módulo app necesita su manifest y recursos propios (file_paths.xml, etc.)
     mkdir -p ${BUILD_DIR}/android-build/app/src/main
     cp android/app/src/main/AndroidManifest.xml ${BUILD_DIR}/android-build/app/src/main/AndroidManifest.xml
+    if [ -d "android/app/src/main/res" ]; then
+        cp -r android/app/src/main/res ${BUILD_DIR}/android-build/app/src/main/
+    fi
+    if [ -d "android/app/src/main/java" ]; then
+        cp -r android/app/src/main/java ${BUILD_DIR}/android-build/app/src/main/
+    fi
     # 🔒 Los jars de Qt (org.qtproject.qt.android.*) tienen que estar en
     # app/libs/ y declarados como dependencia (fileTree). Sin esto el Java de
     # la app no compila: "package org.qtproject.qt.android does not exist".
