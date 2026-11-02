@@ -12,6 +12,9 @@ Rectangle {
     border.color: "#111111"
     border.width: 1
 
+    property bool isFxActive: false
+    signal fxClicked(int trackIndex, string trackName)
+
     // ── BISEL 3D ──
     Rectangle {
         anchors.fill: parent
@@ -293,15 +296,53 @@ Rectangle {
         }
     }
 
-    // 10. Botón FX
+    // 10. Botón FX (Interactivo con panel de efectos)
     Rectangle {
-        x: 192; y: 40
-        width: 60; height: 20
-        radius: 2
-        color: "#353535"
-        border.color: "#111111"
-        Rectangle { anchors.fill: parent; anchors.margins: 1; border.color: "#4A4A4A"; color: "transparent" }
-        Text { anchors.centerIn: parent; text: "FX"; color: "#A0A0A0"; font.pixelSize: 10; font.weight: Font.Bold }
+        x: 192; y: 39
+        width: 60; height: 24
+        radius: 3
+        color: fxMouseArea.containsPress ? "#1D4ED8" : (root.isFxActive ? "#2563EB" : (fxMouseArea.containsMouse ? "#3D414D" : "#32353E"))
+        border.color: root.isFxActive ? "#60A5FA" : "#1A1C22"
+        border.width: 1
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            border.color: root.isFxActive ? "#93C5FD" : "#4A4D5A"
+            color: "transparent"
+            radius: 2
+        }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 3
+            Rectangle {
+                width: 5; height: 5; radius: 2.5
+                color: root.isFxActive ? "#67E8F9" : "#6B7280"
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: "FX"
+                color: root.isFxActive ? "#FFFFFF" : "#CBD5E1"
+                font.pixelSize: 11
+                font.weight: Font.Bold
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+
+        MouseArea {
+            id: fxMouseArea
+            anchors.fill: parent
+            anchors.margins: -3
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                    AudioEngine.hapticFeedback()
+                }
+                root.fxClicked(index, model.trackName)
+            }
+        }
     }
 
     // 📂 DIÁLOGO SELECTOR DE ARCHIVOS DE AUDIO

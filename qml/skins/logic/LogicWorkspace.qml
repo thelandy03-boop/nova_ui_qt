@@ -5,11 +5,16 @@ import "topbar"
 import "tcp"
 import "timeline"
 import "dialogs"
+import "rack"
 
 Rectangle {
     id: root
     anchors.fill: parent
     color: "#1E1F24"
+
+    property bool showFxRack: false
+    property int activeFxTrackIndex: -1
+    property string activeFxTrackName: ""
 
     ColumnLayout {
         anchors.fill: parent
@@ -40,6 +45,17 @@ Rectangle {
                 id: tcpPanel
                 Layout.preferredWidth: 260
                 Layout.fillHeight: true
+                activeFxTrackIndex: root.activeFxTrackIndex
+                isFxRackOpen: root.showFxRack
+                onFxTrackRequested: (trackIdx, trackNm) => {
+                    if (root.showFxRack && root.activeFxTrackIndex === trackIdx) {
+                        root.showFxRack = false
+                    } else {
+                        root.activeFxTrackIndex = trackIdx
+                        root.activeFxTrackName = trackNm
+                        root.showFxRack = true
+                    }
+                }
             }
 
             // ZONA 3: TIMELINE / ARRANGER
@@ -59,6 +75,24 @@ Rectangle {
                     property: "scrollY"
                     value: tcpPanel.scrollY
                 }
+            }
+        }
+
+        // ZONA DE EFECTOS: RACK INSPECTOR DE LA PISTA SELECCIONADA
+        LogicFxRackPanel {
+            id: fxRackPanel
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.showFxRack ? (root.height < 500 ? 175 : 210) : 0
+            visible: root.showFxRack
+            clip: true
+            trackIndex: root.activeFxTrackIndex
+            trackName: root.activeFxTrackName
+            onCloseRequested: {
+                root.showFxRack = false
+            }
+
+            Behavior on Layout.preferredHeight {
+                NumberAnimation { duration: 160; easing.type: Easing.InOutQuad }
             }
         }
 

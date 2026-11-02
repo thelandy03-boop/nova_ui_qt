@@ -8,6 +8,10 @@ Rectangle {
     color: "#282A2E"
 
     property alias scrollY: flickable.contentY
+    property int activeFxTrackIndex: -1
+    property bool isFxRackOpen: false
+
+    signal fxTrackRequested(int trackIndex, string trackName)
 
     ColumnLayout {
         anchors.fill: parent
@@ -38,6 +42,10 @@ Rectangle {
                     delegate: LogicTrackCard {
                         width: trackList.width
                         height: 74
+                        isFxActive: root.isFxRackOpen && root.activeFxTrackIndex === index
+                        onFxClicked: (trackIdx, trackNm) => {
+                            root.fxTrackRequested(trackIdx, trackNm)
+                        }
                     }
                 }
             }
