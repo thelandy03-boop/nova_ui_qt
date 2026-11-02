@@ -220,7 +220,6 @@ Rectangle {
                 Column {
                     anchors.centerIn: parent
                     spacing: 8
-                    horizontalAlignment: Text.AlignHCenter
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -369,7 +368,6 @@ Rectangle {
                         Column {
                             anchors.centerIn: parent
                             spacing: 8
-                            horizontalAlignment: Text.AlignHCenter
 
                             Rectangle {
                                 anchors.horizontalCenter: parent.horizontalCenter
