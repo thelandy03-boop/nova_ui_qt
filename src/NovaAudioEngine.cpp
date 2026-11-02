@@ -1,7 +1,9 @@
 #include "NovaAudioEngine.h"
 #include "core/NovaLogging.h"
+#include <QCoreApplication>
 #if defined(Q_OS_ANDROID)
 #include "core/platform/NovaAndroidStubs.h"
+#include <QPermissions>
 #endif
 #include <QTimer>
 #include "core/NovaAudioDeviceManager.h"
@@ -187,6 +189,9 @@ void NovaAudioEngine::connectSessionSignals()
     m_recorder.setTransportController(&m_transport);
     m_trackModel->setSession(session);
     m_regionModel->setSession(session);
+#if defined(Q_OS_ANDROID)
+    m_androidEngine.setSession(static_cast<ARDOUR::Session*>(session));
+#endif
     m_deviceManager.setEngine(m_sessionManager.engine());
 
     // Conectar el renderizador global de formas de onda
@@ -283,9 +288,6 @@ void NovaAudioEngine::togglePlay() {
 }
 void NovaAudioEngine::toggleRecord() {
 #if defined(Q_OS_ANDROID)
-    // Fase 3 (grabación): en Android el grabador de Ardour (NovaRecordManager)
-    // es un stub. Aquí se captura con el motor Oboe (input stream ya abierto
-    // en initialize) y, al parar, se importa el WAV resultante al timeline.
     if (m_androidGrabando) {
         m_androidGrabando = false;
         m_androidEngine.setRecording(false);
@@ -298,38 +300,71 @@ void NovaAudioEngine::toggleRecord() {
         });
         qCDebug(novaCore) << "🎙️ [Android] Grabación detenida; importando captura.";
     } else {
-        // Asegurar que el motor está listo (abre el input stream).
-        if (!m_androidMotorListo) {
-            m_androidMotorListo = androidPrepararMotor();
-        }
-        // Asegurar que hay al menos una pista para capturar.
-        {
-            auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
-            if (session) {
-                auto routes = session->get_routes();
-                bool hasTrack = false;
-                if (routes) {
-                    for (const auto &r : *routes) {
-                        if (r && r->is_track()) { hasTrack = true; break; }
-                    }
+        // Comprobar / solicitar permiso de micrófono antes de capturar audio
+        QMicrophonePermission micPerm;
+        auto status = qApp->checkPermission(micPerm);
+        if (status == Qt::PermissionStatus::Undetermined) {
+            qCDebug(novaCore) << "🎙️ [Android] Solicitando permiso de micrófono al usuario...";
+            qApp->requestPermission(micPerm, this, [this](const QPermission &p) {
+                if (p.status() == Qt::PermissionStatus::Granted) {
+                    qCDebug(novaCore) << "🎙️ [Android] Permiso de micrófono concedido!";
+                    iniciarGrabacionAndroid();
+                } else {
+                    qCWarning(novaCore) << "❌ [Android] Permiso de micrófono denegado.";
                 }
-                if (!hasTrack) {
-                    session->new_audio_track(2, 1, nullptr, 1, std::string("Audio 1"),
-                                            ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+            });
+            return;
+        } else if (status == Qt::PermissionStatus::Denied) {
+            qCWarning(novaCore) << "❌ [Android] Permiso de micrófono denegado previamente. Reintentando solicitud...";
+            qApp->requestPermission(micPerm, this, [this](const QPermission &p) {
+                if (p.status() == Qt::PermissionStatus::Granted) {
+                    iniciarGrabacionAndroid();
                 }
-            }
+            });
+            return;
         }
-        m_androidGrabando = true;
-        m_androidEngine.setRecording(true);
-        m_androidEngine.setPlaying(true);
-        m_transport.play();
-        Q_EMIT isRecordingChanged();
-        qCDebug(novaCore) << "🎙️ [Android] Grabación iniciada (captura de micrófono).";
+
+        iniciarGrabacionAndroid();
     }
 #else
     m_recorder.toggleRecord();
 #endif
 }
+
+#if defined(Q_OS_ANDROID)
+void NovaAudioEngine::iniciarGrabacionAndroid()
+{
+    if (m_androidGrabando) return;
+
+    if (!m_androidMotorListo) {
+        m_androidMotorListo = androidPrepararMotor();
+    }
+    // Asegurar que hay al menos una pista para capturar y asignar la sesión al motor
+    {
+        auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
+        if (session) {
+            auto routes = session->get_routes();
+            bool hasTrack = false;
+            if (routes) {
+                for (const auto &r : *routes) {
+                    if (r && r->is_track()) { hasTrack = true; break; }
+                }
+            }
+            if (!hasTrack) {
+                session->new_audio_track(2, 1, nullptr, 1, std::string("Audio 1"),
+                                        ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+            }
+            m_androidEngine.setSession(session);
+        }
+    }
+    m_androidGrabando = true;
+    m_androidEngine.setRecording(true);
+    m_androidEngine.setPlaying(true);
+    m_transport.play();
+    Q_EMIT isRecordingChanged();
+    qCDebug(novaCore) << "🎙️ [Android] Grabación iniciada (captura de micrófono).";
+}
+#endif
 void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
 void NovaAudioEngine::locateBeat(double beat) { m_transport.locateBeat(beat); }
 void NovaAudioEngine::setBpm(double bpm) { m_transport.setBpm(bpm); }
@@ -472,6 +507,9 @@ void NovaAudioEngine::closeProject()
     m_recorder.setSession(nullptr);
     m_trackModel->setSession(nullptr);
     m_regionModel->setSession(nullptr);
+#if defined(Q_OS_ANDROID)
+    m_androidEngine.setSession(nullptr);
+#endif
     m_sessionManager.closeCurrentSession();
 
     Q_EMIT currentProjectChanged();
@@ -496,6 +534,9 @@ Q_INVOKABLE void NovaAudioEngine::quitApplication()
     // Limpiar modelos
     m_trackModel->setSession(nullptr);
     m_regionModel->setSession(nullptr);
+#if defined(Q_OS_ANDROID)
+    m_androidEngine.setSession(nullptr);
+#endif
     
     // Cerrar sesión y motor de audio
     m_sessionManager.closeCurrentSession();
@@ -647,7 +688,15 @@ void NovaAudioEngine::setMasterVolumeDb(float dB)
 
 bool NovaAudioEngine::loadAndPlayAndroid(const QString &path)
 {
+    return importAudioAndroid(-1, path, 0.0);
+}
+
+bool NovaAudioEngine::importAudioAndroid(int trackIndex, const QString &path, double startBeat)
+{
     if (path.isEmpty()) return false;
+    m_pendingImportTrackIndex = trackIndex;
+    m_pendingImportStartBeat = startBeat;
+    m_pendingImportFileName = QFileInfo(path).fileName();
     m_androidParadaPedida = false;
     m_androidLoader.cargar(path);
     Q_EMIT androidImportingChanged(true);
@@ -692,8 +741,8 @@ void NovaAudioEngine::androidCargaTerminada()
 
     m_androidDuracion = static_cast<double>(audio.frameCount()) / static_cast<double>(audio.sampleRate);
 
-    // Fase 2c: crear una pista + region en la sesion stub para que el
-    // timeline muestre el clip (y su onda). Si no hay pistas, se crea una.
+    // Crear la región en la pista seleccionada dentro de la sesión stub de Android
+    std::string newRegionIdStr = "0";
     {
         auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
         if (session) {
@@ -705,41 +754,64 @@ void NovaAudioEngine::androidCargaTerminada()
                 }
             }
             if (!hasTrack) {
-                ARDOUR::AudioTrackList newTracks = session->new_audio_track(
+                session->new_audio_track(
                     2, 1, nullptr, 1, std::string("Audio 1"),
                     ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
-                Q_UNUSED(newTracks);
             }
-            // Buscar la primera pista y añadir la region.
+
+            routeList = session->get_routes();
+            std::shared_ptr<ARDOUR::Track> targetTrack;
             if (routeList) {
+                int curIdx = 0;
                 for (const auto &r : *routeList) {
                     if (!r || !r->is_track()) continue;
-                    auto track = std::dynamic_pointer_cast<ARDOUR::Track>(r);
-                    if (!track || !track->playlist()) continue;
-                    auto region = std::make_shared<ARDOUR::AudioRegion>();
-                    region->set_length(ARDOUR::samplecnt_t(audio.frameCount()));
-                    region->set_position(Temporal::timepos_t(0));
-                    track->playlist()->add_region(region, Temporal::timepos_t(0));
-                    session->set_dirty();
-                    break;
+                    if (curIdx == m_pendingImportTrackIndex) {
+                        targetTrack = std::dynamic_pointer_cast<ARDOUR::Track>(r);
+                        break;
+                    }
+                    curIdx++;
+                }
+                if (!targetTrack) {
+                    for (const auto &r : *routeList) {
+                        if (r && r->is_track()) {
+                            targetTrack = std::dynamic_pointer_cast<ARDOUR::Track>(r);
+                            break;
+                        }
+                    }
                 }
             }
+
+            if (targetTrack && targetTrack->playlist()) {
+                auto region = std::make_shared<ARDOUR::AudioRegion>();
+                region->set_name(m_pendingImportFileName.isEmpty() ? "Audio" : m_pendingImportFileName.toStdString());
+                region->set_length(Temporal::timecnt_t(audio.frameCount()));
+
+                double sRate = session->sample_rate() > 0 ? session->sample_rate() : 48000.0;
+                auto startSample = static_cast<ARDOUR::samplepos_t>(
+                    NovaTimeUtils::beatToFrame(m_pendingImportStartBeat, sRate, 120.0));
+                region->set_position(Temporal::timepos_t(startSample));
+
+                targetTrack->playlist()->add_region(region, Temporal::timepos_t(startSample));
+                session->set_dirty();
+                newRegionIdStr = region->id().to_s();
+            }
+
             m_regionModel->rebuildRegionCache();
         }
     }
 
-    // Publicar la onda bajo el id de la region (en Android el stub devuelve
-    // "0" para todas las regiones). Fase 2d: publicar bajo el id real.
-    {
-        // Buscar el id de la region recien creada (la ultima del modelo).
-        QString regionId = QStringLiteral("0");
-        if (m_regionModel && m_regionModel->rowCount() > 0) {
-            int last = m_regionModel->rowCount() - 1;
-            QModelIndex idx = m_regionModel->index(last, 0);
-            regionId = m_regionModel->data(idx, NovaRegionModel::RegionIdRole).toString();
-            if (regionId.isEmpty()) regionId = QStringLiteral("0");
-        }
-        NovaWaveformCache::setPeaks(regionId, picos);
+    // Publicar la forma de onda en la caché de picos
+    NovaWaveformCache::setPeaks(QString::fromStdString(newRegionIdStr), picos);
+    NovaWaveformCache::setPeaks(QStringLiteral("spike"), picos);
+    m_androidVersionPicos++;
+
+    // Guardar también en disco si hay carpeta de sesión
+    if (m_sessionManager.session()) {
+        auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
+        QString peaksDir = QString::fromStdString(session->path()) + "/peaks";
+        QDir().mkpath(peaksDir);
+        QString peakFile = peaksDir + "/" + QString::fromStdString(newRegionIdStr) + ".novapeak";
+        NovaRegionModel::savePeakFile(peakFile, picos);
     }
 
     if (!androidPrepararMotor()) {
@@ -757,17 +829,11 @@ void NovaAudioEngine::androidCargaTerminada()
         return;
     }
 
-    // Publicar la onda en la caché bajo el id "spike" (el mismo que usa
-    // NovaWaveformItem en el timeline). Fase 2c: publicar bajo el id de la
-    // región para soportar varias pistas.
-    NovaWaveformCache::setPeaks(QStringLiteral("spike"), picos);
-    m_androidVersionPicos++;
-
-    // Arrancar la reproducción.
+    // Arrancar la reproducción
     m_androidEngine.setPlaying(true);
     m_transport.play();
 
-    Q_EMIT androidImportFinished(true, QStringLiteral("Importado"));
+    Q_EMIT androidImportFinished(true, QStringLiteral("%1 importado").arg(m_pendingImportFileName));
     Q_EMIT androidImportingChanged(false);
 }
 
@@ -842,7 +908,9 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
         return QFileInfo(a).lastModified() > QFileInfo(b).lastModified();
     });
 
-    loadAndPlayAndroid(wavs.first());
+    QString wavPath = wavs.first();
+    qCDebug(novaCore) << "🎙️ [Android] Importando toma grabada:" << wavPath;
+    importAudioAndroid(0, wavPath, 0.0);
 }
 
 #endif // Q_OS_ANDROID

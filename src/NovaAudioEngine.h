@@ -58,6 +58,7 @@ public:
 #if defined(Q_OS_ANDROID)
     // Fase 2b: carga (decodifica) y reproduce un fichero en Android.
     Q_INVOKABLE bool loadAndPlayAndroid(const QString &path);
+    Q_INVOKABLE bool importAudioAndroid(int trackIndex, const QString &path, double startBeat = 0.0);
 #endif
 
     // Controles de Transporte
@@ -222,6 +223,9 @@ private:
     bool m_androidGrabando = false;
     double m_androidDuracion = 0.0;
     int m_androidVersionPicos = 0;
+    int m_pendingImportTrackIndex = 0;
+    double m_pendingImportStartBeat = 0.0;
+    QString m_pendingImportFileName;
 #endif
 
     void connectSessionSignals();
@@ -234,6 +238,7 @@ private:
     bool androidPrepararMotor();
     void importUltimaGrabacionAndroid();
     void androidAutoAdvance();
+    void iniciarGrabacionAndroid();
 #endif
 };
 

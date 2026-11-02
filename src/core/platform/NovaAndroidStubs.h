@@ -36,13 +36,17 @@ namespace PBD {
 namespace Temporal {
     class timepos_t {
     public:
-        timepos_t(long long = 0) {}
-        long long samples() const { return 0; }
+        timepos_t(long long v = 0) : m_samples(v) {}
+        long long samples() const { return m_samples; }
+    private:
+        long long m_samples = 0;
     };
     class timecnt_t {
     public:
-        timecnt_t(long long = 0) {}
-        long long samples() const { return 0; }
+        timecnt_t(long long v = 0) : m_samples(v) {}
+        long long samples() const { return m_samples; }
+    private:
+        long long m_samples = 0;
     };
 }
 
@@ -144,43 +148,66 @@ namespace ARDOUR {
 
     class Region {
     public:
-        Region() : m_regionId(obtenerIdUnicoRegion()) {}
+        Region() : m_regionId(obtenerIdUnicoRegion()), m_position(0), m_length(0) {}
         virtual ~Region() = default;
         ID id() const { return ID(m_regionId); }
-        std::string name() const { return "Region"; }
-        samplepos_t position_sample() const { return 0; }
-        samplecnt_t length_samples() const { return 0; }
-        void set_position(Temporal::timepos_t) {}
-        void set_length(Temporal::timecnt_t) {}
-    private:
+        std::string name() const { return m_name.empty() ? ("Region " + std::to_string(m_regionId)) : m_name; }
+        void set_name(const std::string& n) { m_name = n; }
+        samplepos_t position_sample() const { return m_position; }
+        samplecnt_t length_samples() const { return m_length; }
+        void set_position(Temporal::timepos_t p) { m_position = p.samples(); }
+        void set_length(Temporal::timecnt_t l) { m_length = l.samples(); }
+    protected:
         long long m_regionId = 0;
+        std::string m_name;
+        samplepos_t m_position = 0;
+        samplecnt_t m_length = 0;
     };
 
     class AudioRegion : public Region {
     public:
-        float scale_amplitude() const { return 1.0f; }
-        void set_scale_amplitude(float) {}
-        bool fade_in_active() const { return false; }
-        bool fade_out_active() const { return false; }
-        Temporal::timecnt_t fade_in_length() const { return Temporal::timecnt_t(0); }
-        Temporal::timecnt_t fade_out_length() const { return Temporal::timecnt_t(0); }
-        void set_fade_in_active(bool) {}
-        void set_fade_out_active(bool) {}
-        void set_fade_in_length(samplecnt_t) {}
-        void set_fade_out_length(samplecnt_t) {}
+        float scale_amplitude() const { return m_scaleAmp; }
+        void set_scale_amplitude(float s) { m_scaleAmp = s; }
+        bool fade_in_active() const { return m_fadeIn; }
+        bool fade_out_active() const { return m_fadeOut; }
+        Temporal::timecnt_t fade_in_length() const { return Temporal::timecnt_t(m_fadeInLen); }
+        Temporal::timecnt_t fade_out_length() const { return Temporal::timecnt_t(m_fadeOutLen); }
+        void set_fade_in_active(bool a) { m_fadeIn = a; }
+        void set_fade_out_active(bool a) { m_fadeOut = a; }
+        void set_fade_in_length(samplecnt_t l) { m_fadeInLen = l; }
+        void set_fade_out_length(samplecnt_t l) { m_fadeOutLen = l; }
         uint32_t n_channels() const { return 2; }
         std::shared_ptr<Source> audio_source(uint32_t) { return nullptr; }
         samplepos_t start_sample() const { return 0; }
+    private:
+        float m_scaleAmp = 1.0f;
+        bool m_fadeIn = false;
+        bool m_fadeOut = false;
+        samplecnt_t m_fadeInLen = 0;
+        samplecnt_t m_fadeOutLen = 0;
     };
 
     using RegionList = std::vector<std::shared_ptr<Region>>;
 
     class Playlist {
     public:
-        std::shared_ptr<RegionList> region_list() { return std::make_shared<RegionList>(); }
-        void add_region(std::shared_ptr<Region>, Temporal::timepos_t) {}
-        void remove_region(std::shared_ptr<Region>) {}
+        Playlist() : m_regions(std::make_shared<RegionList>()) {}
+        std::shared_ptr<RegionList> region_list() { return m_regions; }
+        void add_region(std::shared_ptr<Region> r, Temporal::timepos_t pos) {
+            if (!r || !m_regions) return;
+            r->set_position(pos);
+            m_regions->push_back(r);
+        }
+        void remove_region(std::shared_ptr<Region> r) {
+            if (!r || !m_regions) return;
+            auto it = std::find(m_regions->begin(), m_regions->end(), r);
+            if (it != m_regions->end()) {
+                m_regions->erase(it);
+            }
+        }
         void split_region(std::shared_ptr<Region>, Temporal::timepos_t const &) {}
+    private:
+        std::shared_ptr<RegionList> m_regions;
     };
 
     class Route {
@@ -212,10 +239,13 @@ namespace ARDOUR {
 
     class Track : public Route {
     public:
-        explicit Track(std::string name = "Track") : Route(std::move(name)) {}
+        explicit Track(std::string name = "Track")
+            : Route(std::move(name)), m_playlist(std::make_shared<Playlist>()) {}
         bool is_track() const override { return true; }
-        std::shared_ptr<Playlist> playlist() { return std::make_shared<Playlist>(); }
+        std::shared_ptr<Playlist> playlist() { return m_playlist; }
         std::shared_ptr<AutomationControl> rec_enable_control() const { return m_rec; }
+    private:
+        std::shared_ptr<Playlist> m_playlist;
     };
 
     class AudioTrack : public Track {

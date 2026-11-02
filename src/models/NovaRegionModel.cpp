@@ -518,14 +518,11 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     // ─────────────────────────────────────────────────────────────────────
 
 #if defined(Q_OS_ANDROID)
-    // Fase 2b: el import en Android se delega al motor de audio (Oboe) de
-    // NovaAudioEngine, que decodifica el fichero y lo reproduce. La UI sigue
-    // escuchando importFinished/importingChanged via el puente de señales.
+    // El import en Android delega al motor de audio (Oboe) de NovaAudioEngine,
+    // que decodifica el fichero en un hilo aparte y coloca la región en la pista y posición indicadas.
     if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
-        // parent() es NovaAudioEngine (NovaRegionModel se crea con `this`).
         Q_EMIT importingChanged(true);
-        eng->loadAndPlayAndroid(cleanPath);
-        return true;
+        return eng->importAudioAndroid(trackIndex, cleanPath, startBeat);
     }
     Q_EMIT importFinished(false, QStringLiteral("Motor de audio no disponible"));
     return false;

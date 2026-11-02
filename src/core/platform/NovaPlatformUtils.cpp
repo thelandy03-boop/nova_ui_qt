@@ -115,17 +115,22 @@ QString NovaPlatformUtils::sanitizePath(const QString &rawPath)
 {
     if (rawPath.isEmpty()) return QString();
 
-    // 1. Primero decodificar percent-encoding (resuelve %20, %2F, %3A, etc.)
+    // 1. Si es una URI content:// (Android Storage Access Framework), preservar tal cual
+    if (rawPath.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
+        return copyContentUriToLocal(rawPath);
+    }
+
+    // 2. Decodificar percent-encoding (resuelve %20, %2F, %3A, etc.)
     QString path = QUrl::fromPercentEncoding(rawPath.toUtf8());
 
-    // 2. Si es una URI content:// (Android Storage Access Framework)
+    // Si tras decodificar resulta ser content://
     if (path.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
         return copyContentUriToLocal(path);
     }
 
     // 3. Si contiene el esquema "file:", extraer la ruta local absoluta de forma robusta
     if (path.startsWith("file:", Qt::CaseInsensitive)) {
-        QUrl url(path);
+        QUrl url(rawPath);
         if (url.isValid() && url.isLocalFile()) {
             path = url.toLocalFile();
         } else {
