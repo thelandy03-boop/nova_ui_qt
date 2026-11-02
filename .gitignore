@@ -58,6 +58,7 @@ compile_commands.json
 *.apk
 *.aab
 *.keystore
+!android/nova-release.keystore
 *.jks
 local.properties
 .gradle/

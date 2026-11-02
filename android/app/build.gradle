@@ -24,18 +24,31 @@ android {
         manifestPlaceholders = [providerAuthority: "${applicationId}.fileprovider"]
     }
     
+    signingConfigs {
+        release {
+            def ks = file('../nova-release.keystore').exists() ? file('../nova-release.keystore') : file('../../android/nova-release.keystore')
+            if (ks.exists()) {
+                storeFile ks
+                storePassword 'novastudio2026'
+                keyAlias 'novastudio'
+                keyPassword 'novastudio2026'
+            }
+        }
+    }
+    
     buildTypes {
         release {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             
-            signingConfig signingConfigs.debug // Change to release config for Play Store
+            signingConfig signingConfigs.release
         }
         
         debug {
             debuggable true
             jniDebuggable true
+            signingConfig signingConfigs.release
         }
     }
     

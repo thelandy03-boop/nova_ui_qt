@@ -149,6 +149,10 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
     sed -i '/android.bundle.enableUncompressedNativeLibs/d' ${BUILD_DIR}/android-build/gradle.properties
     # Asegurar pluginManagement (Gradle 8+ lo exige en settings; Qt no lo genera)
     cp android/settings.gradle ${BUILD_DIR}/android-build/settings.gradle
+    # 🔒 Keystore oficial persistente (evita INSTALL_FAILED_UPDATE_INCOMPATIBLE)
+    if [ -f "android/nova-release.keystore" ]; then
+        cp android/nova-release.keystore ${BUILD_DIR}/android-build/nova-release.keystore
+    fi
     # El módulo app necesita su manifest y recursos propios (file_paths.xml, etc.)
     mkdir -p ${BUILD_DIR}/android-build/app/src/main
     cp android/app/src/main/AndroidManifest.xml ${BUILD_DIR}/android-build/app/src/main/AndroidManifest.xml
