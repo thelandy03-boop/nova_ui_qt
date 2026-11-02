@@ -127,50 +127,298 @@ Window {
         }
     }
 
-    // ── OVERLAY OBLIGATORIO: ACTUALIZACIÓN ──
+    // Escuchar cuando la app recupera el foco para refrescar el permiso de instalación
+    Connections {
+        target: root
+        function onActiveChanged() {
+            if (root.active && typeof UpdateChecker !== "undefined") {
+                UpdateChecker.checkInstallPermission()
+            }
+        }
+    }
+
+    // ── OVERLAY OBLIGATORIO: ACTUALIZACIÓN INTEGRADA (IN-APP DOWNLOADER & INSTALLER) ──
     Rectangle {
         id: updateOverlay
         anchors.fill: parent
         z: 9999
-        color: "#CC000000"
+        color: "#E60B0C11"
         visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.updateRequired
 
-        Column {
-            anchors.centerIn: parent
-            spacing: 16
-            width: Math.min(parent.width * 0.8, 400)
+        // Bloquear toques al fondo
+        MouseArea {
+            anchors.fill: parent
+            preventStealing: true
+        }
 
-            Text {
-                text: "Actualización obligatoria"
-                color: "white"
-                font.pixelSize: 22
-                font.bold: true
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
-            Text {
-                text: "Hay una nueva versión disponible (" + (typeof UpdateChecker !== "undefined" ? UpdateChecker.latestVersion : "") + ").\nDebes actualizar para continuar usando NOVA Studio."
-                color: "#CCCCCC"
-                font.pixelSize: 14
-                wrapMode: Text.WordWrap
-                width: parent.width
-                horizontalAlignment: Text.AlignHCenter
-            }
-            Rectangle {
-                width: parent.width
-                height: 44
-                radius: 8
-                color: "#4A90E2"
-                anchors.horizontalCenter: parent.horizontalCenter
-                Text {
-                    anchors.centerIn: parent
-                    text: "Descargar actualización"
-                    color: "white"
-                    font.pixelSize: 16
-                    font.bold: true
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.9, 440)
+            height: updateCol.implicitHeight + 48
+            radius: 16
+            color: "#181920"
+            border.color: "#2C2D3B"
+            border.width: 1.5
+
+            Column {
+                id: updateCol
+                anchors.centerIn: parent
+                width: parent.width - 48
+                spacing: 14
+
+                // Badge cabecera
+                Row {
+                    spacing: 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    Rectangle {
+                        height: 24
+                        width: badgeText.implicitWidth + 16
+                        radius: 12
+                        color: "#1E293B"
+                        border.color: "#3B82F6"
+                        border.width: 1
+                        Text {
+                            id: badgeText
+                            anchors.centerIn: parent
+                            text: "✨ ACTUALIZACIÓN DISPONIBLE"
+                            color: "#60A5FA"
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.letterSpacing: 0.5
+                        }
+                    }
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { if (typeof UpdateChecker !== "undefined") UpdateChecker.openDownloadPage() }
+
+                // Títulos
+                Column {
+                    width: parent.width
+                    spacing: 4
+                    Text {
+                        text: "NOVA Studio v" + (typeof UpdateChecker !== "undefined" ? UpdateChecker.latestVersion : "")
+                        color: "#FFFFFF"
+                        font.pixelSize: 20
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        width: parent.width
+                    }
+                    Text {
+                        text: "Versión actual instalada: v" + (typeof UpdateChecker !== "undefined" ? UpdateChecker.currentVersion : "")
+                        color: "#94A3B8"
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        width: parent.width
+                    }
+                }
+
+                // Explicación
+                Text {
+                    text: "Se descargará e instalará directamente sin salir de la app. Tus proyectos, pistas de audio y configuraciones permanecerán completamente seguros."
+                    color: "#CBD5E1"
+                    font.pixelSize: 13
+                    lineHeight: 1.2
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                // Zona dinámica: 1. Descargando
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.downloading
+
+                    Row {
+                        width: parent.width
+                        Text {
+                            text: "Descargando actualización..."
+                            color: "#93C5FD"
+                            font.pixelSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Item {
+                            width: 1
+                            height: 1
+                        }
+                        Text {
+                            text: (typeof UpdateChecker !== "undefined" ? UpdateChecker.downloadProgress : 0) + "%"
+                            color: "#FFFFFF"
+                            font.bold: true
+                            font.pixelSize: 13
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.right: parent.right
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 8
+                        radius: 4
+                        color: "#252836"
+
+                        Rectangle {
+                            height: parent.height
+                            radius: 4
+                            color: "#3B82F6"
+                            width: Math.max(4, parent.width * ((typeof UpdateChecker !== "undefined" ? Math.min(100, Math.max(0, UpdateChecker.downloadProgress)) : 0) / 100))
+                            Behavior on width {
+                                NumberAnimation { duration: 120 }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Descarga en segundo plano. No cierres la app."
+                        color: "#64748B"
+                        font.pixelSize: 11
+                        font.italic: true
+                        horizontalAlignment: Text.AlignHCenter
+                        width: parent.width
+                    }
+                }
+
+                // Zona dinámica: 2. Error en descarga o instalación
+                Rectangle {
+                    width: parent.width
+                    height: errorText.implicitHeight + 16
+                    radius: 8
+                    color: "#2B1113"
+                    border.color: "#EF4444"
+                    border.width: 1
+                    visible: (typeof UpdateChecker !== "undefined") && !UpdateChecker.downloading && UpdateChecker.downloadError !== ""
+
+                    Text {
+                        id: errorText
+                        anchors.centerIn: parent
+                        width: parent.width - 20
+                        text: (typeof UpdateChecker !== "undefined" ? UpdateChecker.downloadError : "")
+                        color: "#FCA5A5"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                // Zona dinámica: 3. Botones de acción
+                Column {
+                    width: parent.width
+                    spacing: 10
+                    visible: (typeof UpdateChecker !== "undefined") && !UpdateChecker.downloading
+
+                    // Si el APK ya está descargado y falta permiso
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.apkReady && !UpdateChecker.installPermissionGranted
+
+                        Rectangle {
+                            width: parent.width
+                            height: 44
+                            radius: 10
+                            color: "#D97706"
+                            Text {
+                                anchors.centerIn: parent
+                                text: "⚙️ Activar Permiso de Instalación"
+                                color: "#FFFFFF"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (typeof AudioEngine !== "undefined") AudioEngine.hapticFeedback()
+                                    UpdateChecker.requestInstallPermission()
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 44
+                            radius: 10
+                            color: "#1E293B"
+                            border.color: "#3B82F6"
+                            border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "🚀 Instalar una vez concedido"
+                                color: "#93C5FD"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (typeof AudioEngine !== "undefined") AudioEngine.hapticFeedback()
+                                    UpdateChecker.installApk()
+                                }
+                            }
+                        }
+                    }
+
+                    // Si el APK ya está listo y tiene permiso
+                    Rectangle {
+                        width: parent.width
+                        height: 46
+                        radius: 10
+                        color: "#10B981"
+                        visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.apkReady && UpdateChecker.installPermissionGranted
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "🚀 Instalar Actualización (1 toque)"
+                            color: "#FFFFFF"
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (typeof AudioEngine !== "undefined") AudioEngine.hapticFeedback()
+                                UpdateChecker.installApk()
+                            }
+                        }
+                    }
+
+                    // Si aún no está descargado
+                    Rectangle {
+                        width: parent.width
+                        height: 46
+                        radius: 10
+                        color: "#2563EB"
+                        visible: (typeof UpdateChecker !== "undefined") && !UpdateChecker.apkReady
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "⚡ Descargar e Instalar Ahora"
+                            color: "#FFFFFF"
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (typeof AudioEngine !== "undefined") AudioEngine.hapticFeedback()
+                                UpdateChecker.downloadAndInstall()
+                            }
+                        }
+                    }
+
+                    // Enlace secundario: navegador
+                    Text {
+                        text: "¿Problemas? Descargar archivo desde el navegador"
+                        color: "#64748B"
+                        font.pixelSize: 11
+                        font.underline: true
+                        horizontalAlignment: Text.AlignHCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (typeof UpdateChecker !== "undefined") UpdateChecker.openDownloadPage()
+                            }
+                        }
+                    }
                 }
             }
         }

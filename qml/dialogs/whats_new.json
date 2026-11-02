@@ -1,5 +1,37 @@
 {
   "releases": {
+    "1.0.13": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Actualizador integrado dentro de la app, audio focus y controles nativos de Android:",
+      "buttonText": "¡Empezar a Crear! ➜",
+      "features": [
+        {
+          "category": "NUEVO",
+          "icon": "⚡",
+          "title": "Actualización Rápida en 1 Toque (In-App Downloader)",
+          "description": "Las nuevas versiones ahora se descargan directamente en segundo plano dentro de la app con barra de progreso en vivo, lanzando el instalador oficial de Android en 3 segundos sin abrir el navegador y manteniendo todos tus proyectos."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🎧",
+          "title": "Audio Focus y Pausa Inteligente",
+          "description": "Si desconectas los auriculares o entra una llamada telefónica, la reproducción se detiene automáticamente para proteger tus oídos y tu privacidad."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "📳",
+          "title": "Vibración Háptica Táctil",
+          "description": "Siente una vibración táctil sutil y profesional al presionar botones de reproducción, grabación, mute, solo y controles de pista."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "📱",
+          "title": "Navegación por Gestos y Notificación Interactiva",
+          "description": "Soporte completo para el gesto de Volver de Android y barra de notificaciones del sistema con controles de reproducción (Play/Pausa/Stop)."
+        }
+      ]
+    },
     "1.0.12": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",

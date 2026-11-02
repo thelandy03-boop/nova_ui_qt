@@ -24,6 +24,7 @@ OBJECTS = {
     # El controlador del spike de Android (pagina qml/spike/SpikePage.qml):
     # motor de audio, picos y posicion del cabezal.
     "spikeController": SRC / "core" / "platform" / "NovaSpikeController.h",
+    "UpdateChecker": SRC / "core" / "NovaUpdateChecker.h",
 }
 
 # Metodos que heredan de QAbstractItemModel y por tanto existen en el modelo.

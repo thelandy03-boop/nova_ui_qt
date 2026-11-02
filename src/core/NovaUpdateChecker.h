@@ -35,6 +35,7 @@ class NovaUpdateChecker : public QObject
     Q_PROPERTY(bool downloading READ downloading NOTIFY downloadingChanged)
     Q_PROPERTY(int downloadProgress READ downloadProgress NOTIFY downloadProgressChanged)
     Q_PROPERTY(QString downloadError READ downloadError NOTIFY downloadErrorChanged)
+    Q_PROPERTY(bool apkReady READ apkReady NOTIFY apkReadyChanged)
     Q_PROPERTY(bool installPermissionGranted READ installPermissionGranted NOTIFY installPermissionGrantedChanged)
     Q_PROPERTY(bool showWhatsNew READ showWhatsNew NOTIFY showWhatsNewChanged)
     Q_PROPERTY(QVariantMap currentWhatsNew READ currentWhatsNew NOTIFY currentWhatsNewChanged)
@@ -52,6 +53,7 @@ public:
     bool downloading() const { return m_downloading; }
     int downloadProgress() const { return m_downloadProgress; }
     QString downloadError() const { return m_downloadError; }
+    bool apkReady() const { return m_apkReady; }
     bool installPermissionGranted() const { return m_installPermissionGranted; }
     bool showWhatsNew() const { return m_showWhatsNew; }
     QVariantMap currentWhatsNew() const { return m_currentWhatsNew; }
@@ -66,6 +68,12 @@ public:
 
     /** Descarga el APK e inicia la instalacion integrada (Android). */
     Q_INVOKABLE void downloadAndInstall();
+
+    /** Lanza el instalador del sistema si el APK ya está descargado. */
+    Q_INVOKABLE void installApk();
+
+    /** Comprueba de nuevo si el permiso de instalación fue concedido en Ajustes. */
+    Q_INVOKABLE void checkInstallPermission();
 
     /** Abre Ajustes para conceder el permiso de instalacion (Android). */
     Q_INVOKABLE void requestInstallPermission();
@@ -90,6 +98,7 @@ signals:
     void downloadingChanged();
     void downloadProgressChanged();
     void downloadErrorChanged();
+    void apkReadyChanged();
     void installPermissionGrantedChanged();
     void showWhatsNewChanged();
     void currentWhatsNewChanged();
@@ -114,11 +123,12 @@ private:
     bool m_updateRequired = false;
     QString m_latestVersion;
     QString m_downloadUrl;
-    QString m_currentVersion = QStringLiteral("1.0.12");
+    QString m_currentVersion = QStringLiteral("1.0.13");
     bool m_checking = false;
     bool m_downloading = false;
     int m_downloadProgress = 0;
     QString m_downloadError;
+    bool m_apkReady = false;
     QString m_expectedSha256;
     bool m_installPermissionGranted = false;
     bool m_showWhatsNew = false;

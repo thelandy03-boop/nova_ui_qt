@@ -226,6 +226,18 @@ public class MainActivity extends QtActivityBase {
             installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            try {
+                java.util.List<android.content.pm.ResolveInfo> resInfoList = activity.getPackageManager()
+                    .queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+                for (android.content.pm.ResolveInfo resolveInfo : resInfoList) {
+                    String packageName = resolveInfo.activityInfo.packageName;
+                    activity.grantUriPermission(packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                }
+            } catch (Exception ex) {
+                Log.w(TAG, "grantUriPermission warning", ex);
+            }
+
             activity.startActivity(installIntent);
             Log.i(TAG, "installApk: launched installer for " + apkPath);
         } catch (Exception e) {

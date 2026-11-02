@@ -79,6 +79,14 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
         qCWarning(novaCore) << "UpdateChecker: no se pudo leer la version del APK, usando valor compilado";
     }
 
+    // Directorio de cache y ruta del APK
+    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(cacheDir);
+    m_apkPath = cacheDir + QStringLiteral("/nova_update.apk");
+    if (QFile::exists(m_apkPath) && QFileInfo(m_apkPath).size() > 1024 * 1024) {
+        m_apkReady = true;
+    }
+
     // Comprobar permiso de instalacion.
     updateInstallPermission();
 
@@ -398,7 +406,27 @@ void NovaUpdateChecker::downloadAndInstall()
     openDownloadPage();
     return;
 #endif
-    if (m_downloading || m_downloadUrl.isEmpty()) return;
+    if (m_downloading) return;
+
+    if (m_apkPath.isEmpty()) {
+        QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        QDir().mkpath(cacheDir);
+        m_apkPath = cacheDir + QStringLiteral("/nova_update.apk");
+    }
+
+    // Si el APK ya se descargó previamente y es válido, intentar instalar directamente
+    if (m_apkReady && QFile::exists(m_apkPath) && QFileInfo(m_apkPath).size() > 1024 * 1024) {
+        if (m_expectedSha256.isEmpty() || verifySha256(m_apkPath, m_expectedSha256)) {
+            qCInfo(novaCore) << "UpdateChecker: APK ya disponible en cache, lanzando instalador directamente";
+            installApk();
+            return;
+        }
+    }
+
+    if (m_downloadUrl.isEmpty()) return;
+
+    m_apkReady = false;
+    Q_EMIT apkReadyChanged();
 
     m_downloading = true;
     m_downloadProgress = 0;
@@ -406,11 +434,6 @@ void NovaUpdateChecker::downloadAndInstall()
     Q_EMIT downloadingChanged();
     Q_EMIT downloadProgressChanged();
     Q_EMIT downloadErrorChanged();
-
-    // Directorio de cache de la app (escribible, persistente).
-    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-    QDir().mkpath(cacheDir);
-    m_apkPath = cacheDir + QStringLiteral("/nova_update.apk");
 
     // Eliminar archivo anterior si existe.
     QFile::remove(m_apkPath);
@@ -487,26 +510,60 @@ void NovaUpdateChecker::onDownloadFinished()
         qCInfo(novaCore) << "UpdateChecker: SHA256 verificado correctamente";
     }
 
+    m_apkReady = true;
+    Q_EMIT apkReadyChanged();
+
+    // Proceder con la instalación
+    installApk();
+}
+
+void NovaUpdateChecker::installApk()
+{
+#if !defined(Q_OS_ANDROID)
+    openDownloadPage();
+    return;
+#endif
+
+    if (m_apkPath.isEmpty() || !QFile::exists(m_apkPath)) {
+        m_apkReady = false;
+        Q_EMIT apkReadyChanged();
+        downloadAndInstall();
+        return;
+    }
+
     // Comprobar permiso de instalacion antes de lanzar el intent.
     updateInstallPermission();
     if (!m_installPermissionGranted) {
         // Abrir Ajustes para que el usuario conceda el permiso.
         requestInstallPermission();
-        // No lanzar el instalador todavia; el usuario debera tocar "Instalar"
-        // de nuevo tras conceder el permiso.
-        m_downloadError = QStringLiteral("Concede el permiso de instalacion en Ajustes y vuelve a intentarlo.");
+        m_downloadError = QStringLiteral("Concede el permiso para instalar aplicaciones en Ajustes de Android y pulsa Instalar.");
         Q_EMIT downloadErrorChanged();
         return;
     }
 
+    m_downloadError.clear();
+    Q_EMIT downloadErrorChanged();
+
     // Lanzar el instalador de Android via JNI.
 #if defined(Q_OS_ANDROID)
+    qCInfo(novaCore) << "UpdateChecker: invocando MainActivity.installApk:" << m_apkPath;
     QJniObject jPath = QJniObject::fromString(m_apkPath);
     QJniObject::callStaticMethod<void>(
         "com/novastudio/nova/MainActivity",
         "installApk",
         "(Ljava/lang/String;)V",
         jPath.object<jstring>());
+#endif
+}
+
+void NovaUpdateChecker::checkInstallPermission()
+{
+#if defined(Q_OS_ANDROID)
+    updateInstallPermission();
+    if (m_installPermissionGranted && !m_downloadError.isEmpty()) {
+        m_downloadError.clear();
+        Q_EMIT downloadErrorChanged();
+    }
 #endif
 }
 
