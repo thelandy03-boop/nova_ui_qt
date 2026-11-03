@@ -51,7 +51,7 @@ Rectangle {
         // 1. Regla
         LogicTimelineRuler {
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: 30
             contentX: gridFlickable.contentX
             barWidth: root.barWidth
             totalBars: timelineGrid.totalBars
