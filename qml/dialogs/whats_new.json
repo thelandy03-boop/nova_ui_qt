@@ -3,38 +3,38 @@
     "1.0.17": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
-      "description": "Novedades, mejoras táctiles y correcciones de instalación en esta versión:",
-      "buttonText": "¡Empezar a Crear! ➜",
+      "description": "Mejoras para que usar Nova en tu teléfono sea mucho más cómodo y sin errores:",
+      "buttonText": "¡Entendido, a probar! ➜",
       "features": [
         {
           "category": "NUEVO",
           "icon": "👋",
-          "title": "Aviso de Proyecto Indie y Desarrollo",
-          "description": "Nueva pantalla informativa al abrir la app por primera vez, explicando con transparencia que Nova Studio es un proyecto en fase temprana creado por un único desarrollador."
+          "title": "Mensaje Sincero al Empezar",
+          "description": "Al abrir la app por primera vez, verás una bienvenida que te cuenta con total honestidad que este proyecto lo hace una sola persona y que aún está en construcción."
         },
         {
           "category": "CORRECCIÓN",
           "icon": "📦",
-          "title": "Actualizaciones Sin Errores de Análisis",
-          "description": "Se integró firma dual v1+v2 en el paquete APK y validación estricta de descarga para solucionar de raíz el error 'Error durante el análisis del paquete' al actualizar."
+          "title": "Actualizaciones Sin Errores",
+          "description": "Corregimos el mensaje de 'Error al analizar el paquete'. Ahora las nuevas versiones se descargan completas y se instalan en tu teléfono sin dar problemas."
         },
         {
           "category": "MEJORA",
           "icon": "👆",
-          "title": "Aguja de Tiempo Táctil Precisa",
-          "description": "Área de interacción táctil ampliada para la aguja de reproducción (playhead), permitiendo arrastrarla y posicionarla con el dedo en la pantalla de tu móvil con total fluidez."
+          "title": "Mover la Línea de Tiempo con el Dedo",
+          "description": "Hicimos mucho más fácil agarrar la barra que marca el segundo de la canción. Ya no se te escapará el dedo y podrás moverte por tu música cómodamente."
         },
         {
           "category": "MEJORA",
           "icon": "🔍",
-          "title": "Zoom Táctil Suave en el Timeline",
-          "description": "Gestos de pellizco optimizados para acercar y alejar el proyecto en móviles sin saltos bruscos ni desorientación."
+          "title": "Acercar y Alejar Más Fácil",
+          "description": "Hacer zoom pellizcando la pantalla con dos dedos ahora se siente suave y natural, permitiéndote ver tu música de cerca sin saltos bruscos."
         },
         {
           "category": "MEJORA",
           "icon": "🎙️",
-          "title": "Onda de Grabación Real y Toma Exacta",
-          "description": "La forma de onda ahora refleja el volumen real de tu micrófono en tiempo real mientras grabas, y tu toma queda vinculada de inmediato a tu pista de audio sin audios antiguos."
+          "title": "Tu Voz se Dibuja en Tiempo Real",
+          "description": "Ahora ves exactamente cómo sube y baja el dibujo de tu voz en la pantalla mientras cantas o hablas. Al parar, tu grabación queda guardada tal cual la hiciste."
         }
       ]
     },
