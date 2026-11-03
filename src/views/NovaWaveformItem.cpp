@@ -40,6 +40,7 @@ void NovaWaveformItem::setRegionId(const QString &id) {
     if (m_regionId != id) {
         m_regionId = id;
         emit regionIdChanged();
+        update();
     }
 }
 

@@ -35,6 +35,24 @@ QString NovaPlatformUtils::copyContentUriToLocal(const QString &contentUri)
         return contentUri;
     }
 
+#if defined(Q_OS_ANDROID)
+    QJniObject jUri = QJniObject::fromString(contentUri);
+    QJniObject jResult = QJniObject::callStaticObjectMethod(
+        "com/novastudio/nova/MainActivity",
+        "copyContentUriToCache",
+        "(Ljava/lang/String;)Ljava/lang/String;",
+        jUri.object<jstring>());
+    if (jResult.isValid()) {
+        QString localPath = jResult.toString();
+        if (!localPath.isEmpty() && QFile::exists(localPath)) {
+            qInfo() << "✅ [NovaPlatformUtils] SAF URI copiada exitosamente a:" << localPath
+                    << "Tamaño:" << QFileInfo(localPath).size() << "bytes";
+            return QDir::cleanPath(localPath);
+        }
+    }
+    qWarning() << "⚠️ [NovaPlatformUtils] Falló JNI copyContentUriToCache para:" << contentUri;
+#endif
+
     QFile srcFile(contentUri);
     if (!srcFile.open(QIODevice::ReadOnly)) {
         qWarning() << "❌ [NovaPlatformUtils] No se pudo abrir URI content:" << contentUri << srcFile.errorString();

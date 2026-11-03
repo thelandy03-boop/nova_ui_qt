@@ -264,4 +264,76 @@ public class MainActivity extends QtActivityBase {
             Log.w(TAG, "vibrateTick error", e);
         }
     }
+
+    /**
+     * Copia de forma segura un URI con esquema content:// (del selector de archivos
+     * o Storage Access Framework de Android) a un archivo local en la caché de la app,
+     * utilizando ContentResolver. Retorna la ruta absoluta del archivo local o null si falla.
+     */
+    public static String copyContentUriToCache(String contentUriStr) {
+        if (contentUriStr == null || contentUriStr.isEmpty()) {
+            return null;
+        }
+        try {
+            MainActivity activity = getInstance();
+            if (activity == null) {
+                Log.e(TAG, "copyContentUriToCache: instancia de MainActivity es null");
+                return null;
+            }
+            android.net.Uri uri = android.net.Uri.parse(contentUriStr);
+            android.content.ContentResolver resolver = activity.getContentResolver();
+            if (resolver == null) {
+                Log.e(TAG, "copyContentUriToCache: ContentResolver es null");
+                return null;
+            }
+
+            // Deducir el nombre real del archivo mediante OpenableColumns
+            String displayName = null;
+            try (android.database.Cursor cursor = resolver.query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex >= 0) {
+                        displayName = cursor.getString(nameIndex);
+                    }
+                }
+            } catch (Exception ex) {
+                Log.w(TAG, "No se pudo leer DISPLAY_NAME para: " + contentUriStr, ex);
+            }
+
+            if (displayName == null || displayName.isEmpty()) {
+                displayName = "imported_" + System.currentTimeMillis() + ".wav";
+            }
+
+            // Reemplazar caracteres ilegales en el nombre de archivo
+            displayName = displayName.replace('/', '_').replace('\\', '_').replace(':', '_');
+
+            java.io.File cacheDir = new java.io.File(activity.getCacheDir(), "imported_media");
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs();
+            }
+            java.io.File outFile = new java.io.File(cacheDir, displayName);
+
+            Log.i(TAG, "Copiando SAF content URI: " + contentUriStr + " -> " + outFile.getAbsolutePath());
+
+            try (java.io.InputStream in = resolver.openInputStream(uri);
+                 java.io.OutputStream out = new java.io.FileOutputStream(outFile)) {
+                if (in == null) {
+                    Log.e(TAG, "openInputStream devolvió null para: " + contentUriStr);
+                    return null;
+                }
+                byte[] buf = new byte[65536];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+                out.flush();
+            }
+
+            Log.i(TAG, "✅ Copia SAF completada exitosamente (" + outFile.length() + " bytes): " + outFile.getAbsolutePath());
+            return outFile.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "copyContentUriToCache error", e);
+            return null;
+        }
+    }
 }

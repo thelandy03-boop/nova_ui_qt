@@ -727,6 +727,10 @@ void NovaAudioEngine::androidCargaTerminada()
         m_androidLoader.tomarAudio();
         Q_EMIT androidImportFinished(false, QStringLiteral("Parado"));
         Q_EMIT androidImportingChanged(false);
+        if (m_regionModel) {
+            Q_EMIT m_regionModel->importFinished(false, QStringLiteral("Parado"));
+            Q_EMIT m_regionModel->importingChanged(false);
+        }
         return;
     }
 
@@ -736,6 +740,10 @@ void NovaAudioEngine::androidCargaTerminada()
         qCWarning(novaCore) << "🔊 Android: no se ha podido decodificar el fichero";
         Q_EMIT androidImportFinished(false, QStringLiteral("No se pudo decodificar el fichero"));
         Q_EMIT androidImportingChanged(false);
+        if (m_regionModel) {
+            Q_EMIT m_regionModel->importFinished(false, QStringLiteral("No se pudo decodificar el fichero"));
+            Q_EMIT m_regionModel->importingChanged(false);
+        }
         return;
     }
 
@@ -795,13 +803,12 @@ void NovaAudioEngine::androidCargaTerminada()
                 session->set_dirty();
                 newRegionIdStr = region->id().to_s();
             }
-
-            m_regionModel->rebuildRegionCache();
         }
     }
 
-    // Publicar la forma de onda en la caché de picos
-    NovaWaveformCache::setPeaks(QString::fromStdString(newRegionIdStr), picos);
+    // Publicar la forma de onda en la caché de picos ANTES de reconstruir el modelo
+    const QString qRegionId = QString::fromStdString(newRegionIdStr);
+    NovaWaveformCache::setPeaks(qRegionId, picos);
     NovaWaveformCache::setPeaks(QStringLiteral("spike"), picos);
     m_androidVersionPicos++;
 
@@ -810,14 +817,23 @@ void NovaAudioEngine::androidCargaTerminada()
         auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
         QString peaksDir = QString::fromStdString(session->path()) + "/peaks";
         QDir().mkpath(peaksDir);
-        QString peakFile = peaksDir + "/" + QString::fromStdString(newRegionIdStr) + ".novapeak";
+        QString peakFile = peaksDir + "/" + qRegionId + ".novapeak";
         NovaRegionModel::savePeakFile(peakFile, picos);
+    }
+
+    // Reconstruir la caché de regiones con los picos ya listos
+    if (m_regionModel) {
+        m_regionModel->rebuildRegionCache();
     }
 
     if (!androidPrepararMotor()) {
         qCWarning(novaCore) << "🔊 Android: motor no listo, se ve la onda pero no suena";
         Q_EMIT androidImportFinished(false, QStringLiteral("Motor de audio no listo"));
         Q_EMIT androidImportingChanged(false);
+        if (m_regionModel) {
+            Q_EMIT m_regionModel->importFinished(false, QStringLiteral("Motor de audio no listo"));
+            Q_EMIT m_regionModel->importingChanged(false);
+        }
         return;
     }
 
@@ -826,6 +842,10 @@ void NovaAudioEngine::androidCargaTerminada()
         qCWarning(novaCore) << "🔊 Android: no se ha podido cargar el fichero en el motor:" << error;
         Q_EMIT androidImportFinished(false, error.isEmpty() ? QStringLiteral("No se pudo cargar el fichero") : error);
         Q_EMIT androidImportingChanged(false);
+        if (m_regionModel) {
+            Q_EMIT m_regionModel->importFinished(false, error.isEmpty() ? QStringLiteral("No se pudo cargar el fichero") : error);
+            Q_EMIT m_regionModel->importingChanged(false);
+        }
         return;
     }
 
@@ -835,6 +855,10 @@ void NovaAudioEngine::androidCargaTerminada()
 
     Q_EMIT androidImportFinished(true, QStringLiteral("%1 importado").arg(m_pendingImportFileName));
     Q_EMIT androidImportingChanged(false);
+    if (m_regionModel) {
+        Q_EMIT m_regionModel->importFinished(true, QStringLiteral("%1 importado").arg(m_pendingImportFileName));
+        Q_EMIT m_regionModel->importingChanged(false);
+    }
 }
 
 void NovaAudioEngine::androidCargaFallida(const QString &error)
@@ -842,6 +866,10 @@ void NovaAudioEngine::androidCargaFallida(const QString &error)
     qCWarning(novaCore) << "🔊 Android: carga fallida:" << error;
     Q_EMIT androidImportFinished(false, error);
     Q_EMIT androidImportingChanged(false);
+    if (m_regionModel) {
+        Q_EMIT m_regionModel->importFinished(false, error);
+        Q_EMIT m_regionModel->importingChanged(false);
+    }
 }
 
 void NovaAudioEngine::androidAutoAdvance()

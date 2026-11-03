@@ -150,21 +150,22 @@ void NovaWaveformRenderer::initGL() {
     m_glFuncs = ctx->functions();
     m_glFuncs->initializeOpenGLFunctions();
 
-    // Resolve OpenGL 3.2+ functions using class member function pointers
+    // Resolver funciones de VAO (estándar o extensión OES para OpenGL ES)
     glGenVertexArrays_ = (PFNGLGENVERTEXARRAYSPROC)ctx->getProcAddress("glGenVertexArrays");
+    if (!glGenVertexArrays_) glGenVertexArrays_ = (PFNGLGENVERTEXARRAYSPROC)ctx->getProcAddress("glGenVertexArraysOES");
+
     glBindVertexArray_ = (PFNGLBINDVERTEXARRAYPROC)ctx->getProcAddress("glBindVertexArray");
+    if (!glBindVertexArray_) glBindVertexArray_ = (PFNGLBINDVERTEXARRAYPROC)ctx->getProcAddress("glBindVertexArrayOES");
+
+    glDeleteVertexArrays_ = (PFNGLDELETEVERTEXARRAYSPROC)ctx->getProcAddress("glDeleteVertexArrays");
+    if (!glDeleteVertexArrays_) glDeleteVertexArrays_ = (PFNGLDELETEVERTEXARRAYSPROC)ctx->getProcAddress("glDeleteVertexArraysOES");
+
     glGenBuffers_ = (PFNGLGENBUFFERSPROC)ctx->getProcAddress("glGenBuffers");
     glBindBuffer_ = (PFNGLBINDBUFFERPROC)ctx->getProcAddress("glBindBuffer");
     glBufferData_ = (PFNGLBUFFERDATAPROC)ctx->getProcAddress("glBufferData");
     glEnableVertexAttribArray_ = (PFNGLENABLEVERTEXATTRIBARRAYPROC)ctx->getProcAddress("glEnableVertexAttribArray");
     glVertexAttribPointer_ = (PFNGLVERTEXATTRIBPOINTERPROC)ctx->getProcAddress("glVertexAttribPointer");
-    glDeleteVertexArrays_ = (PFNGLDELETEVERTEXARRAYSPROC)ctx->getProcAddress("glDeleteVertexArrays");
     glDeleteBuffers_ = (PFNGLDELETEBUFFERSPROC)ctx->getProcAddress("glDeleteBuffers");
-
-    if (!glGenVertexArrays_ || !glBindVertexArray_) {
-        qWarning() << "VAO functions not available";
-        return;
-    }
 
     m_program = new QOpenGLShaderProgram();
     const bool isES = ctx->isOpenGLES();
@@ -183,9 +184,13 @@ void NovaWaveformRenderer::initGL() {
         delete m_program; m_program = nullptr; return;
     }
 
-    glGenVertexArrays_(1, &m_vao);
-    glGenBuffers_(1, &m_vbo);
-    glGenBuffers_(1, &m_ebo);
+    if (glGenVertexArrays_ && glBindVertexArray_) {
+        glGenVertexArrays_(1, &m_vao);
+    }
+    if (glGenBuffers_) {
+        glGenBuffers_(1, &m_vbo);
+        glGenBuffers_(1, &m_ebo);
+    }
 
     m_glInitialized = true;
 }
@@ -337,19 +342,25 @@ void NovaWaveformRenderer::uploadGeometry() {
     if (!m_glInitialized) initGL();
     if (!m_glInitialized) return;
 
-    glBindVertexArray_(m_vao);
-    glBindBuffer_(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData_(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(float), m_vertices.data(), GL_DYNAMIC_DRAW);
+    if (glBindVertexArray_ && m_vao) {
+        glBindVertexArray_(m_vao);
+    }
 
-    glBindBuffer_(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-    glBufferData_(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(GLuint), m_indices.data(), GL_DYNAMIC_DRAW);
+    if (glBindBuffer_ && glBufferData_) {
+        glBindBuffer_(GL_ARRAY_BUFFER, m_vbo);
+        glBufferData_(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(float), m_vertices.data(), GL_DYNAMIC_DRAW);
 
-    glEnableVertexAttribArray_(0);
-    glVertexAttribPointer_(0, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray_(1);
-    glVertexAttribPointer_(1, 1, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)(2 * sizeof(float)));
+        glBindBuffer_(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+        glBufferData_(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(GLuint), m_indices.data(), GL_DYNAMIC_DRAW);
 
-    glBindVertexArray_(0);
+        if (glBindVertexArray_ && m_vao && glEnableVertexAttribArray_ && glVertexAttribPointer_) {
+            glEnableVertexAttribArray_(0);
+            glVertexAttribPointer_(0, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+            glEnableVertexAttribArray_(1);
+            glVertexAttribPointer_(1, 1, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)(2 * sizeof(float)));
+            glBindVertexArray_(0);
+        }
+    }
 }
 
 void NovaWaveformRenderer::render() {
@@ -384,9 +395,24 @@ void NovaWaveformRenderer::render() {
     m_program->setUniformValue("uSelColor", m_selColor);
     m_program->setUniformValue("uSelected", m_selected);
 
-    glBindVertexArray_(m_vao);
-    m_glFuncs->glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray_(0);
+    if (glBindVertexArray_ && m_vao) {
+        glBindVertexArray_(m_vao);
+        m_glFuncs->glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray_(0);
+    } else if (glBindBuffer_ && glEnableVertexAttribArray_ && glVertexAttribPointer_) {
+        glBindBuffer_(GL_ARRAY_BUFFER, m_vbo);
+        glBindBuffer_(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+        glEnableVertexAttribArray_(0);
+        glVertexAttribPointer_(0, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray_(1);
+        m_glFuncs->glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
+        if (m_glFuncs) {
+            m_glFuncs->glDisableVertexAttribArray(0);
+            m_glFuncs->glDisableVertexAttribArray(1);
+        }
+        glBindBuffer_(GL_ARRAY_BUFFER, 0);
+        glBindBuffer_(GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
 
     m_program->release();
 }
