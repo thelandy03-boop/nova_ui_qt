@@ -1,5 +1,43 @@
 {
   "releases": {
+    "1.0.17": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Novedades, mejoras táctiles y correcciones de instalación en esta versión:",
+      "buttonText": "¡Empezar a Crear! ➜",
+      "features": [
+        {
+          "category": "NUEVO",
+          "icon": "👋",
+          "title": "Aviso de Proyecto Indie y Desarrollo",
+          "description": "Nueva pantalla informativa al abrir la app por primera vez, explicando con transparencia que Nova Studio es un proyecto en fase temprana creado por un único desarrollador."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "📦",
+          "title": "Actualizaciones Sin Errores de Análisis",
+          "description": "Se integró firma dual v1+v2 en el paquete APK y validación estricta de descarga para solucionar de raíz el error 'Error durante el análisis del paquete' al actualizar."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "👆",
+          "title": "Aguja de Tiempo Táctil Precisa",
+          "description": "Área de interacción táctil ampliada para la aguja de reproducción (playhead), permitiendo arrastrarla y posicionarla con el dedo en la pantalla de tu móvil con total fluidez."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🔍",
+          "title": "Zoom Táctil Suave en el Timeline",
+          "description": "Gestos de pellizco optimizados para acercar y alejar el proyecto en móviles sin saltos bruscos ni desorientación."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🎙️",
+          "title": "Onda de Grabación Real y Toma Exacta",
+          "description": "La forma de onda ahora refleja el volumen real de tu micrófono en tiempo real mientras grabas, y tu toma queda vinculada de inmediato a tu pista de audio sin audios antiguos."
+        }
+      ]
+    },
     "1.0.16": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
