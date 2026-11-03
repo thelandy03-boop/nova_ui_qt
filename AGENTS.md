@@ -254,6 +254,16 @@ la red que avisa de que algo se rompió antes de que lo encuentre un humano.
 - Los identificadores que ya existen en inglés (`renderFrames`, `loadFile`) se
   respetan; los nuevos, en español, como el resto.
 - Commits en español, con prefijo de conventional commits.
+- **Explicaciones sencillas y sin tecnicismos (Regla de Oro):**
+  Tanto en las respuestas y resúmenes dirigidos al usuario, como en los textos de
+  la interfaz de usuario (UI), diálogos de bienvenida y muy especialmente en
+  `qml/dialogs/whats_new.json` (novedades de la app), el lenguaje debe ser
+  **100% simple, humano y fácil de entender para cualquier persona**.
+  Está terminantemente prohibido usar jerga técnica en textos para el usuario final
+  (evitar términos como "firma dual v1/v2", "playhead", "stream de Oboe", "SAF",
+  "picos RMS", "SemVer", "backend", etc.). Explica siempre el beneficio tangible:
+  *"mover la línea de tiempo con el dedo sin que se escape"*, *"tu voz se dibuja en
+  la pantalla mientras cantas"*, *"las actualizaciones se instalan sin dar error"*.
 - Cuando algo **no** se pueda verificar en el entorno (por ejemplo, un
   dispositivo Android real), dilo explícitamente en el PR en vez de darlo por
   bueno. La honestidad sobre los límites vale más que un "listo".
