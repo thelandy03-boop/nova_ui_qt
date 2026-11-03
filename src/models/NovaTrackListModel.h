@@ -38,6 +38,7 @@ public:
     ~NovaTrackListModel() override;
 
     void setSession(void *session);
+    void syncWithArdour();
 
     // QAbstractListModel overrides
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -71,7 +72,6 @@ signals:
     void trackPluginsChanged(int trackRow);
 
 private:
-    void syncWithArdour();
     void connectControlSignals();
 
     std::unique_ptr<NovaTrackListModelPrivate> d_ptr;

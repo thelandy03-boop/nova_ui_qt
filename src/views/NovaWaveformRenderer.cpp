@@ -418,19 +418,19 @@ void NovaWaveformRenderer::render() {
 }
 
 QOpenGLFramebufferObject *NovaWaveformRenderer::createFramebufferObject(const QSize &size) {
-    m_width = size.width();
-    m_height = size.height();
+    const QSize safeSize(std::max(1, size.width()), std::max(1, size.height()));
+    m_width = safeSize.width();
+    m_height = safeSize.height();
 
     QOpenGLFramebufferObjectFormat format;
     format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
-    format.setSamples(4); // MSAA 4x
+#if !defined(Q_OS_ANDROID)
+    format.setSamples(4); // MSAA 4x en escritorio
+#endif
     format.setTextureTarget(GL_TEXTURE_2D);
 
-    delete m_fbo;
-    m_fbo = new QOpenGLFramebufferObject(size, format);
-
     m_dirtyGeometry = true;
-    return m_fbo;
+    return new QOpenGLFramebufferObject(safeSize, format);
 }
 
 void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {

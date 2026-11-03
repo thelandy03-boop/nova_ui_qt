@@ -232,6 +232,7 @@ private:
     QString m_pendingImportFileName;
     int m_androidGrabacionTrackIndex = 0;
     double m_androidGrabacionStartBeat = 0.0;
+    bool m_pendingImportIsRecording = false;
 #endif
 
     void connectSessionSignals();

@@ -385,6 +385,10 @@ void NovaAudioEngine::iniciarGrabacionAndroid()
                                         ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
                 armedTrackIdx = 0;
                 foundArmed = true;
+                if (m_trackModel) {
+                    m_trackModel->syncWithArdour();
+                }
+                Q_EMIT tracksChanged();
             } else if (!foundArmed) {
                 // Si ninguna pista está armada, armar automáticamente la primera pista para que el usuario pueda grabar sin pasos extra
                 armedTrackIdx = 0;
@@ -744,6 +748,7 @@ void NovaAudioEngine::setMasterVolumeDb(float dB)
 
 bool NovaAudioEngine::loadAndPlayAndroid(const QString &path)
 {
+    m_pendingImportIsRecording = false;
     return importAudioAndroid(-1, path, 0.0);
 }
 
@@ -849,6 +854,10 @@ void NovaAudioEngine::androidCargaTerminada()
                 session->new_audio_track(
                     2, 1, nullptr, 1, std::string("Audio 1"),
                     ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+                if (m_trackModel) {
+                    m_trackModel->syncWithArdour();
+                }
+                Q_EMIT tracksChanged();
             }
 
             routeList = session->get_routes();
@@ -933,9 +942,19 @@ void NovaAudioEngine::androidCargaTerminada()
         return;
     }
 
-    // Arrancar la reproducción
-    m_androidEngine.setPlaying(true);
-    m_transport.play();
+    // Si viene de una grabación detenida por el usuario, mantener parado y posicionar cabezal al inicio de la toma
+    if (m_pendingImportIsRecording) {
+        m_pendingImportIsRecording = false;
+        m_androidEngine.setPlaying(false);
+        m_transport.stop();
+        m_transport.locateBeat(m_pendingImportStartBeat);
+        m_androidEngine.seekToFrame(static_cast<qint64>(
+            NovaTimeUtils::beatToFrame(m_pendingImportStartBeat, 48000.0, 120.0)));
+    } else {
+        // Arrancar la reproducción (solo para importación directa de pistas/muestras)
+        m_androidEngine.setPlaying(true);
+        m_transport.play();
+    }
 
     Q_EMIT androidImportFinished(true, QStringLiteral("%1 importado").arg(m_pendingImportFileName));
     Q_EMIT androidImportingChanged(false);
@@ -1034,6 +1053,7 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
                       << "en pista:" << m_androidGrabacionTrackIndex
                       << "beat:" << m_androidGrabacionStartBeat;
 
+    m_pendingImportIsRecording = true;
     importAudioAndroid(m_androidGrabacionTrackIndex, wavPath, m_androidGrabacionStartBeat);
 }
 

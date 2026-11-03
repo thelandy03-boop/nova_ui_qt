@@ -398,12 +398,11 @@ bool NovaAndroidAudioEngine::start() {
     }
 
     m_isPlaying = true;
-    // Grabar solo es posible si hay micro.
-    m_isRecording = (m_inputStream != nullptr);
+    m_isRecording = false;
     m_currentFrame = 0;
 
     Q_EMIT playbackStateChanged(true);
-    Q_EMIT recordingStateChanged(m_isRecording);
+    Q_EMIT recordingStateChanged(false);
     return true;
 #else
     return false;
@@ -414,10 +413,6 @@ void NovaAndroidAudioEngine::stop() {
 #if defined(Q_OS_ANDROID)
     m_isPlaying = false;
     m_isRecording = false;
-    {
-        std::lock_guard<std::mutex> lock(m_recordMutex);
-        m_tomaGrabacionTimestamp.clear();
-    }
     m_player.stop();
     
     // stop() para el transporte, no libera el dispositivo: los streams se
@@ -548,10 +543,8 @@ void NovaAndroidAudioEngine::closeStreams() {
 }
 
 void NovaAndroidAudioEngine::setRecording(bool enabled) {
-    if (m_isRecording.load() == enabled) return;
-    m_isRecording.store(enabled);
-
     if (enabled) {
+        m_isRecording.store(true);
 #if defined(Q_OS_ANDROID)
         if (!m_inputStream) {
             abrirStreamEntrada();
@@ -576,6 +569,8 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
             LOGI("🎙️ [Oboe] Nueva toma iniciada: %s", timestamp);
         }
     } else {
+        if (!m_isRecording.load()) return;
+        m_isRecording.store(false);
 #if defined(Q_OS_ANDROID)
         if (m_inputStream) {
             const oboe::StreamState st = m_inputStream->getState();

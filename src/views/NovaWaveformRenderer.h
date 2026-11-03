@@ -43,7 +43,6 @@ private:
     void uploadGeometry();
 
     QOpenGLShaderProgram *m_program = nullptr;
-    QOpenGLFramebufferObject *m_fbo = nullptr;
     QOpenGLFunctions *m_glFuncs = nullptr;
     bool m_glInitialized = false;
 

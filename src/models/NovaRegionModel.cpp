@@ -378,16 +378,17 @@ void NovaRegionModel::setSelectedRegionIndex(int index)
 
 void NovaRegionModel::setSession(void *session)
 {
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
     if (m_session == ardourSession) return;
 
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     // 🛡️ Los hilos de cálculo de picos leen de las fuentes de la sesión: si
     // la sesión se va, hay que esperarlos ANTES de que se destruya (si no,
     // leen memoria liberada y la app peta al salir).
     waitForPeakJobs();
 
     if (m_sessionConnections) m_sessionConnections->drop_connections();
+#endif
 
     beginResetModel();
     m_regions.clear();
@@ -402,16 +403,6 @@ void NovaRegionModel::setSession(void *session)
 
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
     Q_EMIT selectedRegionIndexChanged(m_selectedRegionIndex);
-#else
-    Q_UNUSED(session);
-    beginResetModel();
-    m_regions.clear();
-    NovaWaveformCache::clear();
-    m_selectedRegionIndex = -1;
-    endResetModel();
-    Q_EMIT regionCountChanged(0);
-    Q_EMIT selectedRegionIndexChanged(-1);
-#endif
 }
 
 int NovaRegionModel::rowCount(const QModelIndex &parent) const
