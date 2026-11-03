@@ -1407,6 +1407,7 @@ void NovaRegionModel::rebuildRegionCache()
 {
     if (!m_session) return;
 
+    m_liveRecordingIndex = -1;
     beginResetModel();
     m_regions.clear();
 

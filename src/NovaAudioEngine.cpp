@@ -948,6 +948,9 @@ void NovaAudioEngine::androidCargaTerminada()
 void NovaAudioEngine::androidCargaFallida(const QString &error)
 {
     qCWarning(novaCore) << "🔊 Android: carga fallida:" << error;
+    if (m_regionModel) {
+        m_regionModel->finalizeLiveRecordingClip();
+    }
     Q_EMIT androidImportFinished(false, error);
     Q_EMIT androidImportingChanged(false);
     if (m_regionModel) {
@@ -1030,10 +1033,6 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
     qCDebug(novaCore) << "🎙️ [Android] Importando toma grabada:" << wavPath
                       << "en pista:" << m_androidGrabacionTrackIndex
                       << "beat:" << m_androidGrabacionStartBeat;
-
-    if (m_regionModel) {
-        m_regionModel->finalizeLiveRecordingClip();
-    }
 
     importAudioAndroid(m_androidGrabacionTrackIndex, wavPath, m_androidGrabacionStartBeat);
 }

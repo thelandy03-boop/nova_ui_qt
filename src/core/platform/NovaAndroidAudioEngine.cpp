@@ -548,6 +548,9 @@ void NovaAndroidAudioEngine::closeStreams() {
 }
 
 void NovaAndroidAudioEngine::setRecording(bool enabled) {
+    if (m_isRecording.load() == enabled) return;
+    m_isRecording.store(enabled);
+
     if (enabled) {
 #if defined(Q_OS_ANDROID)
         if (!m_inputStream) {
@@ -563,15 +566,14 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
 #endif
         {
             std::lock_guard<std::mutex> lock(m_recordMutex);
-            if (m_tomaGrabacionTimestamp.empty()) {
-                auto now = std::chrono::system_clock::now();
-                auto time_t = std::chrono::system_clock::to_time_t(now);
-                struct tm tmBuf;
-                struct tm* tm = localtime_r(&time_t, &tmBuf);
-                char timestamp[64];
-                strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
-                m_tomaGrabacionTimestamp = timestamp;
-            }
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            struct tm tmBuf;
+            struct tm* tm = localtime_r(&time_t, &tmBuf);
+            char timestamp[64];
+            strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
+            m_tomaGrabacionTimestamp = timestamp;
+            LOGI("🎙️ [Oboe] Nueva toma iniciada: %s", timestamp);
         }
     } else {
 #if defined(Q_OS_ANDROID)
@@ -582,11 +584,21 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
                 LOGI("🎙️ [Oboe] inputStream detenido tras finalizar grabación");
             }
         }
+        // Volcar inmediatamente cualquier buffer restante en m_inputBuffers antes de cerrar la toma
+        if (m_session) {
+            auto routes = m_session->get_routes();
+            if (routes) {
+                int trackIdx = 0;
+                for (const auto& route : *routes) {
+                    if (route && route->is_track()) {
+                        writeTrackToDisk(trackIdx);
+                        trackIdx++;
+                    }
+                }
+            }
+        }
 #endif
-        std::lock_guard<std::mutex> lock(m_recordMutex);
-        m_tomaGrabacionTimestamp.clear();
     }
-    m_isRecording.store(enabled);
     Q_EMIT recordingStateChanged(enabled);
 }
 
@@ -915,64 +927,67 @@ void NovaAndroidAudioEngine::writeWavFile(
     
     std::string filename = interchangeDir + "/" + track->name() + "_" + timestamp + ".wav";
     
-    // Open file for appending (or create new)
-    FILE* file = fopen(filename.c_str(), "ab");
-    if (!file) {
-        LOGE("Failed to open WAV file for writing: %s", filename.c_str());
-        return;
-    }
-    
-    // Check if file is new (write header)
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    bool isNewFile = (fileSize == 0);
-    
     size_t totalSamples = frames * channels;
     size_t dataBytes = totalSamples * sizeof(float);
-    
     int sampleRate = m_inputStream ? m_inputStream->getSampleRate() : (m_sampleRate > 0 ? m_sampleRate : 48000);
 
-    if (isNewFile) {
-        // Write WAV header
+    bool fileExists = QFileInfo::exists(QString::fromStdString(filename));
+    FILE* file = nullptr;
+
+    if (!fileExists) {
+        // Archivo nuevo: abrir con "wb" y escribir cabecera inicial más muestras
+        file = fopen(filename.c_str(), "wb");
+        if (!file) {
+            LOGE("Failed to create WAV file: %s", filename.c_str());
+            return;
+        }
+
         WavHeader header;
         header.sampleRate = sampleRate;
         header.channels = channels;
-        header.bitsPerSample = 32; // float
+        header.bitsPerSample = 32; // IEEE Float
         header.byteRate = header.sampleRate * header.channels * (header.bitsPerSample / 8);
         header.blockAlign = header.channels * (header.bitsPerSample / 8);
-        header.dataSize = dataBytes;
+        header.dataSize = static_cast<uint32_t>(dataBytes);
         header.chunkSize = 36 + header.dataSize;
         
         if (fwrite(&header, sizeof(WavHeader), 1, file) != 1) {
-            LOGE("Error al escribir la cabecera WAV");
+            LOGE("Error al escribir la cabecera WAV inicial");
         }
+        if (fwrite(samples, sizeof(float), totalSamples, file) != totalSamples) {
+            LOGE("Error al escribir los datos de audio iniciales");
+        }
+        fclose(file);
     } else {
-        // Update existing header - need to update dataSize and chunkSize
-        // Read current header
-        fseek(file, 0, SEEK_SET);
-        WavHeader existingHeader;
-        fread(&existingHeader, sizeof(WavHeader), 1, file);
-        
-        // Update sizes
-        existingHeader.dataSize += dataBytes;
-        existingHeader.chunkSize = 36 + existingHeader.dataSize;
-        
-        // Write updated header
-        fseek(file, 0, SEEK_SET);
-        if (fwrite(&existingHeader, sizeof(WavHeader), 1, file) != 1) {
-            LOGE("Error al actualizar la cabecera WAV");
+        // Archivo existente: abrir con "r+b" para permitir posicionamiento arbitrario
+        file = fopen(filename.c_str(), "r+b");
+        if (!file) {
+            LOGE("Failed to open WAV file for updating: %s", filename.c_str());
+            return;
         }
-        
-        // Seek to end for appending
+
+        // 1. Ir al final y agregar las nuevas muestras de audio
         fseek(file, 0, SEEK_END);
+        if (fwrite(samples, sizeof(float), totalSamples, file) != totalSamples) {
+            LOGE("Error al escribir los datos de audio en el fichero existente");
+        }
+        long totalFileSize = ftell(file);
+
+        // 2. Rebobinar al inicio y actualizar dataSize y chunkSize de la cabecera
+        fseek(file, 0, SEEK_SET);
+        WavHeader header;
+        if (fread(&header, sizeof(WavHeader), 1, file) == 1) {
+            if (totalFileSize > static_cast<long>(sizeof(WavHeader))) {
+                header.dataSize = static_cast<uint32_t>(totalFileSize - sizeof(WavHeader));
+                header.chunkSize = 36 + header.dataSize;
+                fseek(file, 0, SEEK_SET);
+                if (fwrite(&header, sizeof(WavHeader), 1, file) != 1) {
+                    LOGE("Error al actualizar la cabecera WAV en el fichero");
+                }
+            }
+        }
+        fclose(file);
     }
-    
-    // Write audio data (32-bit IEEE float PCM)
-    if (fwrite(samples, sizeof(float), totalSamples, file) != totalSamples) {
-        LOGE("Error al escribir los datos de audio (disco lleno?)");
-    }
-    
-    fclose(file);
     
     LOGD("Wrote %zu frames to %s", frames, filename.c_str());
 #else
@@ -1012,6 +1027,10 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::InputStreamCallback::onAudioRea
         }
         floatInput = converted.data();
     } else {
+        return oboe::DataCallbackResult::Continue;
+    }
+
+    if (!m_engine->isRecording()) {
         return oboe::DataCallbackResult::Continue;
     }
 
