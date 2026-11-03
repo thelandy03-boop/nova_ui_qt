@@ -437,5 +437,11 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         # construirse. Ver AGENTS.md.
         add_test(NAME android_pipeline
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_android_pipeline.py)
+
+        # El contrato de novedades de release: la version actual en Gradle debe
+        # tener sus novedades registradas en qml/dialogs/whats_new.json antes de
+        # compilar o publicar cualquier version.
+        add_test(NAME whats_new_contract
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_whats_new.py)
     endif()
 endif()

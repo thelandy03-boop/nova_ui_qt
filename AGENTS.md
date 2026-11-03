@@ -177,6 +177,14 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
     manifest, `FOREGROUND_SERVICE_MICROPHONE` al mismo manifest, y el servicio
     lo pide solo (ya mira lo que declara el manifest antes de pedirlo).
 
+15. **Novedades obligatorias antes de cualquier release (`whats_new.json`).**
+    No se puede compilar ni publicar una versión de release si la versión
+    declarada en `android/app/build.gradle` (`versionName`) no está
+    documentada en `qml/dialogs/whats_new.json` con título, descripción y sus
+    características en `features`. El contrato `tests/check_whats_new.py` y
+    `build_android.sh` bloquean el build de inmediato si falta. Además, la
+    versión por defecto de `src/core/NovaUpdateChecker.h` debe coincidir.
+
 ---
 
 ## 4. Reglas del repo
@@ -184,14 +192,15 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
 - **El escritorio no se toca.** `src/`, `qml/` (fuera de `qml/spike/`) y el
   enlace con Ardour son de la app de escritorio. Un cambio de móvil no puede
   alterar el comportamiento en Linux.
-- **`ctest` tiene que seguir en verde.** Son 10 tests: `project_policy`,
+- **`ctest` tiene que seguir en verde.** Son 12 tests: `project_policy`,
   `simd_peaks`, `audio_decoder`, `audio_player`, `audio_peaks`, `audio_loader`,
-  `qml_contract`, `android_build_script`, `spike_contract`, `android_pipeline`.
+  `patch_manager`, `qml_contract`, `android_build_script`, `spike_contract`,
+  `android_pipeline`, `whats_new_contract`.
 - **Los tests de contrato leen el código como texto.** `tests/check_*.py`
   comprueban invariantes del repo leyendo ficheros. Si rompes una invariante,
   ese test es el que te lo dice. `tests/check_android_pipeline.py` es el que
-  vigila el camino de build de Android: si añades un `externalNativeBuild`,
-  si usas `find_package(oboe)` o si vuelve el CMakeLists obsoleto, falla.
+  vigila el camino de build de Android y `tests/check_whats_new.py` vigila la
+  documentación obligatoria de novedades de release.
 - **`third_party/` es código ajeno: no se modifica.** `minimp3` va vendorizado
   tal cual, con su README de origen y licencia.
 - **Los stubs de Android (`NovaAndroidStubs.h`) son para Windows y para lo que

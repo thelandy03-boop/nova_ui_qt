@@ -36,6 +36,7 @@ CONTRATOS=(
     "tests/check_android_build_script.py"
     "tests/check_spike_contract.py"
     "tests/check_android_pipeline.py"
+    "tests/check_whats_new.py"
 )
 
 FALLOS=0

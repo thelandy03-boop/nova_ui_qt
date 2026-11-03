@@ -45,6 +45,16 @@ case "${ABI}" in
         ;;
 esac
 
+# 0.1 Validación obligatoria de novedades de release en whats_new.json
+ROOT_PROYECTO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${ROOT_PROYECTO}/tests/check_whats_new.py" ]; then
+    echo "📋 [NOVA RELEASE CHECK] Verificando novedades en whats_new.json..."
+    if ! python3 "${ROOT_PROYECTO}/tests/check_whats_new.py"; then
+        echo "❌ Error: Release bloqueado. Debes documentar las novedades en whats_new.json antes de compilar."
+        exit 1
+    fi
+fi
+
 echo "🚀 [NOVA ANDROID BUILD] Configurando entorno de compilación..."
 
 # 1. Variables del sistema Android y Java 17 LTS (Oficial para AGP 8 / Qt 6.8)
