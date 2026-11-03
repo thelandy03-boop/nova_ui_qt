@@ -8,9 +8,32 @@ Rectangle {
 
     property int trackIndex: index
 
+    // Si algún clip de este carril está seleccionado, este carril tiene prioridad visual (z: 100)
+    // para que la barra de acciones flotante (arriba o abajo) se dibuje por encima de todas las demás pistas.
+    z: {
+        var sel = AudioEngine.regions ? AudioEngine.regions.selectedRegionIndex : -1
+        if (sel >= 0) {
+            var idx = AudioEngine.regions.index(sel, 0)
+            var track = AudioEngine.regions.data(idx, 258) // TrackIndexRole
+            if (track === root.trackIndex) return 100
+        }
+        return 1
+    }
+
     // Ancho de compás real (lo propaga el panel): con 80 fijo los clips no
     // escalaban al hacer zoom ni se alineaban con las líneas de la rejilla.
     property real barWidth: 80.0
+
+    // Clic en espacio vacío del carril deselecciona cualquier clip activo (estilo Honeydew)
+    MouseArea {
+        anchors.fill: parent
+        z: 0
+        onPressed: {
+            if (AudioEngine.regions) {
+                AudioEngine.regions.selectedRegionIndex = -1
+            }
+        }
+    }
 
     // Franja lateral de color
     Rectangle {

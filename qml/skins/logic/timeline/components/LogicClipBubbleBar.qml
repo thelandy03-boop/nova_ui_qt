@@ -6,6 +6,7 @@ Item {
     property int clipIndex: -1
     property real startBeat: 0.0
     property real snapGridBeats: 1.0
+    property bool showAbove: true
 
     width: bubbleRow.width
     height: 36
@@ -234,8 +235,10 @@ Item {
         visible: false
         z: 300
         anchors.right: bubbleRow.right
-        anchors.bottom: bubbleRow.top
-        anchors.bottomMargin: 6
+        anchors.bottom: root.showAbove ? bubbleRow.top : undefined
+        anchors.top: !root.showAbove ? bubbleRow.bottom : undefined
+        anchors.bottomMargin: root.showAbove ? 6 : 0
+        anchors.topMargin: !root.showAbove ? 6 : 0
         width: 190
         height: moreColumn.implicitHeight + 12
         radius: 8
