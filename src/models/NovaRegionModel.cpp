@@ -1273,22 +1273,25 @@ bool NovaRegionModel::loadPeakFile(const QString &peakFilePath, PeakData &outDat
 }
 
 // ── GESTIÓN DE GRABACIÓN EN VIVO ──────────────────────────────────────
-void NovaRegionModel::createLiveRecordingClip(double startBeat)
+void NovaRegionModel::createLiveRecordingClip(double startBeat, int trackIndex)
 {
     if (!m_session) return;
 
-    int armedTrackIdx = 0;
-    auto routeList = m_session->get_routes();
-    if (routeList) {
-        int idx = 0;
-        for (const auto &route : *routeList) {
-            if (route && route->is_track()) {
-                auto trk = std::dynamic_pointer_cast<ARDOUR::Track>(route);
-                if (trk && trk->rec_enable_control() && trk->rec_enable_control()->get_value() > 0.5) {
-                    armedTrackIdx = idx;
-                    break;
+    int armedTrackIdx = trackIndex;
+    if (armedTrackIdx < 0) {
+        armedTrackIdx = 0;
+        auto routeList = m_session->get_routes();
+        if (routeList) {
+            int idx = 0;
+            for (const auto &route : *routeList) {
+                if (route && route->is_track()) {
+                    auto trk = std::dynamic_pointer_cast<ARDOUR::Track>(route);
+                    if (trk && trk->rec_enable_control() && trk->rec_enable_control()->get_value() > 0.5) {
+                        armedTrackIdx = idx;
+                        break;
+                    }
+                    idx++;
                 }
-                idx++;
             }
         }
     }

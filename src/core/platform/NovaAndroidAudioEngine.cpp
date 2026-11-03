@@ -5,10 +5,12 @@
 
 #define LOG_TAG "NovaAndroidAudio"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #else
 #define LOGD(...) 
+#define LOGI(...)
 #define LOGE(...)
 #define LOGW(...)
 #endif
@@ -444,25 +446,58 @@ bool NovaAndroidAudioEngine::abrirStreamEntrada() {
     if (m_inputStream) return true;
     if (!m_inputCallback) return false;
 
-    oboe::AudioStreamBuilder inputBuilder;
-    inputBuilder.setDirection(oboe::Direction::Input);
-    inputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
-    inputBuilder.setSharingMode(oboe::SharingMode::Exclusive);
-    inputBuilder.setFormat(oboe::AudioFormat::Float);
-    inputBuilder.setChannelCount(2);
-    inputBuilder.setSampleRate(m_sampleRate > 0 ? m_sampleRate : 48000);
-    inputBuilder.setFramesPerCallback(m_framesPerBurst > 0 ? m_framesPerBurst : 256);
-    inputBuilder.setCallback(m_inputCallback.get());
+    struct ConfigEntrada {
+        oboe::SharingMode modoCompartido;
+        oboe::AudioFormat formato;
+        int canales;
+        const char* descripcion;
+    };
 
-    oboe::Result result = inputBuilder.openStream(m_inputStream);
-    if (result != oboe::Result::OK) {
-        LOGW("⚠️ No se pudo abrir la entrada de audio (micro): %s", oboe::convertToText(result));
-        m_inputStream.reset();
-        return false;
+    // Cascada de resiliencia: desde máxima fidelidad DAW (Exclusive Float Estéreo)
+    // hasta compatibilidad universal (Shared I16 Mono) admitida por cualquier móvil.
+    const std::vector<ConfigEntrada> configs = {
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 2, "Exclusive Float 2ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 1, "Exclusive Float 1ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   2, "Exclusive I16 2ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   1, "Exclusive I16 1ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 2, "Shared Float 2ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 1, "Shared Float 1ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   2, "Shared I16 2ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   1, "Shared I16 1ch" }
+    };
+
+    oboe::Result ultimoResultado = oboe::Result::OK;
+    for (const auto &cfg : configs) {
+        oboe::AudioStreamBuilder inputBuilder;
+        inputBuilder.setDirection(oboe::Direction::Input);
+        inputBuilder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
+        inputBuilder.setSharingMode(cfg.modoCompartido);
+        inputBuilder.setFormat(cfg.formato);
+        inputBuilder.setChannelCount(cfg.canales);
+        inputBuilder.setSampleRate(m_sampleRate > 0 ? m_sampleRate : 48000);
+        inputBuilder.setFramesPerCallback(m_framesPerBurst > 0 ? m_framesPerBurst : 256);
+        inputBuilder.setCallback(m_inputCallback.get());
+
+        ultimoResultado = inputBuilder.openStream(m_inputStream);
+        if (ultimoResultado == oboe::Result::OK && m_inputStream) {
+            LOGI("🎙️ [Oboe] Entrada de audio (micro) abierta con éxito (%s): %d Hz, %d canales, formato %s",
+                 cfg.descripcion,
+                 m_inputStream->getSampleRate(),
+                 m_inputStream->getChannelCount(),
+                 oboe::convertToText(m_inputStream->getFormat()));
+            break;
+        } else {
+            LOGD("ℹ️ Oboe probando fallback de micro: no soportó %s (%s)",
+                 cfg.descripcion, oboe::convertToText(ultimoResultado));
+            m_inputStream.reset();
+        }
     }
 
-    LOGD("Input stream opened: %d Hz, %d frames/burst, %d channels",
-         m_inputStream->getSampleRate(), m_inputStream->getFramesPerBurst(), m_inputStream->getChannelCount());
+    if (!m_inputStream) {
+        LOGW("⚠️ No se pudo abrir la entrada de audio tras probar todas las opciones: %s",
+             oboe::convertToText(ultimoResultado));
+        return false;
+    }
 
     crearBuffersEntrada(m_inputStream->getChannelCount());
     return true;
@@ -867,10 +902,12 @@ void NovaAndroidAudioEngine::writeWavFile(
     size_t totalSamples = frames * channels;
     size_t dataBytes = totalSamples * sizeof(float);
     
+    int sampleRate = m_inputStream ? m_inputStream->getSampleRate() : (m_sampleRate > 0 ? m_sampleRate : 48000);
+
     if (isNewFile) {
         // Write WAV header
         WavHeader header;
-        header.sampleRate = m_sampleRate;
+        header.sampleRate = sampleRate;
         header.channels = channels;
         header.bitsPerSample = 32; // float
         header.byteRate = header.sampleRate * header.channels * (header.bitsPerSample / 8);
@@ -926,14 +963,35 @@ void NovaAndroidAudioEngine::writeWavFile(
 oboe::DataCallbackResult NovaAndroidAudioEngine::InputStreamCallback::onAudioReady(
     oboe::AudioStream* stream, void* audioData, int32_t numFrames) {
     
-    float* inputBuffer = static_cast<float*>(audioData);
-    int channels = stream->getChannelCount();
+    if (numFrames <= 0 || !audioData) {
+        return oboe::DataCallbackResult::Continue;
+    }
+
+    const int channels = stream->getChannelCount();
+    const oboe::AudioFormat format = stream->getFormat();
     
+    const float* floatInput = nullptr;
+    std::vector<float> converted;
+
+    if (format == oboe::AudioFormat::Float) {
+        floatInput = static_cast<const float*>(audioData);
+    } else if (format == oboe::AudioFormat::I16) {
+        const int16_t* i16Data = static_cast<const int16_t*>(audioData);
+        const size_t totalSamples = static_cast<size_t>(numFrames) * static_cast<size_t>(channels);
+        converted.resize(totalSamples);
+        for (size_t i = 0; i < totalSamples; ++i) {
+            converted[i] = static_cast<float>(i16Data[i]) / 32768.0f;
+        }
+        floatInput = converted.data();
+    } else {
+        return oboe::DataCallbackResult::Continue;
+    }
+
     // Write to all armed track input buffers
     for (int i = 0; i < kMaxTracks; ++i) { // max tracks
         auto* ringBuf = m_engine->getInputBuffer(i);
         if (ringBuf) {
-            ringBuf->write(inputBuffer, numFrames);
+            ringBuf->write(floatInput, numFrames);
         }
     }
     

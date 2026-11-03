@@ -156,7 +156,7 @@ public:
     Q_INVOKABLE void setPitchSemitones(int regionIndex, int semitones);
 
     // Control de Grabación en Vivo
-    void createLiveRecordingClip(double startBeat);
+    void createLiveRecordingClip(double startBeat, int trackIndex = -1);
     void updateLiveRecordingClip(double lengthBeats);
     void finalizeLiveRecordingClip();
     void rebuildRegionCache();

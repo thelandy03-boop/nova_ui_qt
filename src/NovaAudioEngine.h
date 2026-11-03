@@ -228,6 +228,8 @@ private:
     int m_pendingImportTrackIndex = 0;
     double m_pendingImportStartBeat = 0.0;
     QString m_pendingImportFileName;
+    int m_androidGrabacionTrackIndex = 0;
+    double m_androidGrabacionStartBeat = 0.0;
 #endif
 
     void connectSessionSignals();

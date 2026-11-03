@@ -139,6 +139,15 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
     // Auto-advance: cuando un clip se agota, pasar al siguiente.
     connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackFinished,
             this, &NovaAudioEngine::androidAutoAdvance);
+
+    // Feedback visual en vivo: actualizar el clip de grabación en tiempo real conforme avanza el cabezal
+    connect(&m_transport, &NovaTransportController::positionChanged, this, [this]() {
+        if (m_androidGrabando && m_regionModel && m_transport.isPlaying()) {
+            double currentBeat = m_transport.currentBeat();
+            double lengthBeats = (std::max)(0.0, currentBeat - m_androidGrabacionStartBeat);
+            m_regionModel->updateLiveRecordingClip(lengthBeats);
+        }
+    });
 #endif
 }
 
@@ -340,29 +349,51 @@ void NovaAudioEngine::iniciarGrabacionAndroid()
         m_androidMotorListo = androidPrepararMotor();
     }
     // Asegurar que hay al menos una pista para capturar y asignar la sesión al motor
+    int armedTrackIdx = 0;
     {
         auto *session = static_cast<ARDOUR::Session*>(m_sessionManager.session());
         if (session) {
             auto routes = session->get_routes();
             bool hasTrack = false;
             if (routes) {
+                int idx = 0;
                 for (const auto &r : *routes) {
-                    if (r && r->is_track()) { hasTrack = true; break; }
+                    if (r && r->is_track()) {
+                        hasTrack = true;
+                        auto trk = std::dynamic_pointer_cast<ARDOUR::Track>(r);
+                        if (trk && trk->rec_enable_control() && trk->rec_enable_control()->get_value() > 0.5) {
+                            armedTrackIdx = idx;
+                            break;
+                        }
+                        idx++;
+                    }
                 }
             }
             if (!hasTrack) {
                 session->new_audio_track(2, 1, nullptr, 1, std::string("Audio 1"),
                                         ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
+                armedTrackIdx = 0;
             }
             m_androidEngine.setSession(session);
         }
     }
+
+    m_androidGrabacionTrackIndex = armedTrackIdx;
+    m_androidGrabacionStartBeat = m_transport.currentBeat();
+
     m_androidGrabando = true;
     m_androidEngine.setRecording(true);
     m_androidEngine.setPlaying(true);
     m_transport.play();
+
+    // Feedback visual en vivo: crear el clip rojo en la línea de tiempo en la pista y compás indicados
+    if (m_regionModel) {
+        m_regionModel->createLiveRecordingClip(m_androidGrabacionStartBeat, m_androidGrabacionTrackIndex);
+    }
+
     Q_EMIT isRecordingChanged();
-    qCDebug(novaCore) << "🎙️ [Android] Grabación iniciada (captura de micrófono).";
+    qCDebug(novaCore) << "🎙️ [Android] Grabación iniciada en pista:" << m_androidGrabacionTrackIndex
+                      << "beat:" << m_androidGrabacionStartBeat;
 }
 #endif
 void NovaAudioEngine::locateFrame(double frame) { m_transport.locateFrame(frame); }
@@ -947,8 +978,15 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
     });
 
     QString wavPath = wavs.first();
-    qCDebug(novaCore) << "🎙️ [Android] Importando toma grabada:" << wavPath;
-    importAudioAndroid(0, wavPath, 0.0);
+    qCDebug(novaCore) << "🎙️ [Android] Importando toma grabada:" << wavPath
+                      << "en pista:" << m_androidGrabacionTrackIndex
+                      << "beat:" << m_androidGrabacionStartBeat;
+
+    if (m_regionModel) {
+        m_regionModel->finalizeLiveRecordingClip();
+    }
+
+    importAudioAndroid(m_androidGrabacionTrackIndex, wavPath, m_androidGrabacionStartBeat);
 }
 
 #endif // Q_OS_ANDROID
