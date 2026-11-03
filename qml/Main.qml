@@ -468,6 +468,12 @@ Window {
         anchors.fill: parent
     }
 
+    // ── OVERLAY MODAL: BIENVENIDA Y AVISO DE DESARROLLO (PRIMERA INSTALACIÓN) ──
+    NovaWelcomeDialog {
+        id: welcomeDialog
+        anchors.fill: parent
+    }
+
     // 📂 Alternar Hub de Proyectos Recientes: Ctrl + H
     Shortcut {
         sequence: "Ctrl+H"
