@@ -843,6 +843,7 @@ bool NovaRegionModel::moveRegion(int regionIndex, double newStartBeat)
     item.startFrame = static_cast<double>(startSample);
 
     Q_EMIT dataChanged(index(regionIndex), index(regionIndex), QList<int>{StartBeatRole, StartFrameRole});
+    Q_EMIT maxEndBeatChanged(maxEndBeat());
     return true;
 }
 
@@ -867,6 +868,7 @@ bool NovaRegionModel::resizeRegion(int regionIndex, double newStartBeat, double 
     item.lengthFrames = static_cast<double>(lengthSamples);
 
     Q_EMIT dataChanged(index(regionIndex), index(regionIndex), QList<int>{StartBeatRole, LengthBeatsRole, StartFrameRole, LengthFramesRole});
+    Q_EMIT maxEndBeatChanged(maxEndBeat());
     return true;
 }
 
@@ -907,6 +909,16 @@ void NovaRegionModel::removeRegion(int regionIndex)
     }
 
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
+    Q_EMIT maxEndBeatChanged(maxEndBeat());
+}
+
+double NovaRegionModel::maxEndBeat() const
+{
+    double maxBeat = 0.0;
+    for (const auto &reg : m_regions) {
+        maxBeat = std::max(maxBeat, reg.startBeat + reg.lengthBeats);
+    }
+    return maxBeat;
 }
 
 bool NovaRegionModel::duplicateRegion(int regionIndex)
@@ -924,9 +936,16 @@ bool NovaRegionModel::duplicateRegion(int regionIndex)
         if (track && track->playlist()) {
             auto newReg = ARDOUR::RegionFactory::create(item.regionPtr, true);
             if (newReg) {
+                // Copiar picos de forma de onda inmediatamente para no retrasar el renderizado visual
+                PeakData sourcePeaks;
+                if (NovaWaveformCache::getPeaks(item.id, sourcePeaks)) {
+                    NovaWaveformCache::setPeaks(QString::fromStdString(newReg->id().to_s()), sourcePeaks);
+                }
                 track->playlist()->add_region(newReg, Temporal::timepos_t(nextSample));
                 m_session->set_dirty();
                 rebuildRegionCache();
+                setSelectedRegionIndex(static_cast<int>(m_regions.size()) - 1);
+                Q_EMIT maxEndBeatChanged(maxEndBeat());
                 return true;
             }
         }
@@ -947,7 +966,9 @@ bool NovaRegionModel::duplicateRegion(int regionIndex)
         NovaWaveformCache::setPeaks(newItem.id, peaks);
     }
 
+    setSelectedRegionIndex(newRow);
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
+    Q_EMIT maxEndBeatChanged(maxEndBeat());
     return true;
 #endif
     return false;
@@ -1456,4 +1477,5 @@ void NovaRegionModel::rebuildRegionCache()
 
     endResetModel();
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
+    Q_EMIT maxEndBeatChanged(maxEndBeat());
 }

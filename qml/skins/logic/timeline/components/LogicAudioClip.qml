@@ -618,9 +618,18 @@ Item {
             drag.target: root
             drag.axis: Drag.XAxis
             drag.minimumX: 0
-            drag.maximumX: root.parent ? root.parent.width - root.width : 4800
+            drag.maximumX: 1000000 // Permite avanzar libremente hacia adelante sin tope artificial
 
             onPressed: (mouse) => root.handleTap(mouse.x, mouse.y)
+
+            onPositionChanged: (mouse) => {
+                if (drag.active && timelineGrid) {
+                    var neededRight = root.x + root.width + 500
+                    if (neededRight > timelineGrid.dragWidth) {
+                        timelineGrid.dragWidth = neededRight
+                    }
+                }
+            }
 
             onReleased: {
                 var rawBeat = AudioEngine.pixelToBeat(root.x, root.barWidth)
@@ -628,6 +637,9 @@ Item {
 
                 root.x = AudioEngine.beatToPixel(snappedBeat, root.barWidth)
                 AudioEngine.regions.moveRegion(index, snappedBeat)
+                if (timelineGrid) {
+                    timelineGrid.dragWidth = 0.0
+                }
             }
         }
     }

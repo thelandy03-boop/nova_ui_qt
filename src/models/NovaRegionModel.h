@@ -95,6 +95,9 @@ class NovaRegionModel : public QAbstractListModel
     // ⏳ Estado de la importación en curso (para mostrar progreso en la UI)
     Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
 
+    // 📏 Beat final más lejano de todos los clips (expansión dinámica del timeline)
+    Q_PROPERTY(double maxEndBeat READ maxEndBeat NOTIFY maxEndBeatChanged)
+
 public:
     enum RegionRoles : int {
         RegionIdRole = Qt::UserRole + 1,
@@ -162,12 +165,16 @@ public:
     static bool savePeakFile(const QString &peakFilePath, const PeakData &data);
     static bool loadPeakFile(const QString &peakFilePath, PeakData &outData);
 
+    // Consulta de extensión máxima de la línea de tiempo
+    double maxEndBeat() const;
+
 signals:
     void regionCountChanged(int count);
     void selectedRegionIndexChanged(int index);
     // ⏳ Progreso del import de audio
     void importingChanged(bool importing);
     void importFinished(bool success, const QString &message);
+    void maxEndBeatChanged(double maxEndBeat);
 
 private:
     void requestRegionPeaks(const QString &regionId,

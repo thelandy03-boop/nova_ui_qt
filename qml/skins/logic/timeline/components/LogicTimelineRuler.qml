@@ -2,13 +2,14 @@ import QtQuick
 
 Rectangle {
     id: root
-    implicitWidth: 60 * barWidth
+    property real barWidth: 80.0
+    property real contentX: 0
+    property int totalBars: 120
+
+    implicitWidth: totalBars * barWidth
     implicitHeight: 28
     color: "#25272E"
     clip: true
-
-    property real barWidth: 80.0
-    property real contentX: 0
 
     // Cuando el zoom está muy alejado, un número de compás es más ancho que
     // su hueco y "atraviesa" al vecino. Mostramos solo uno de cada N para
@@ -101,7 +102,7 @@ Rectangle {
         anchors.bottom: parent.bottom
 
         Repeater {
-            model: 60 // 60 Compases
+            model: root.totalBars // Dinámico según totalBars
 
             Item {
                 width: root.barWidth

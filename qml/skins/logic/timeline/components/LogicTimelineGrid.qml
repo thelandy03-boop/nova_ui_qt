@@ -3,7 +3,24 @@ import QtQuick
 Item {
     id: root
     property real barWidth: 80.0
-    property int totalBars: 60
+    property int minBars: 120
+    property real dragWidth: 0.0
+
+    // Cálculo dinámico de compases totales para dar espacio infinito/creciente hacia adelante
+    property int totalBars: {
+        var maxBeats = 0.0
+        if (typeof AudioEngine !== "undefined" && AudioEngine.regions && typeof AudioEngine.regions.maxEndBeat !== "undefined") {
+            maxBeats = Math.max(maxBeats, AudioEngine.regions.maxEndBeat)
+        }
+        if (typeof AudioEngine !== "undefined") {
+            maxBeats = Math.max(maxBeats, AudioEngine.currentBeat || 0.0)
+            maxBeats = Math.max(maxBeats, AudioEngine.loopEndBeat || 0.0)
+        }
+        var barsNeeded = Math.ceil(maxBeats / 4.0) + 32 // Margen de holgura de 32 compases hacia adelante
+        var barsFromDrag = Math.ceil(root.dragWidth / Math.max(1.0, root.barWidth)) + 16
+        return Math.max(root.minBars, Math.max(barsNeeded, barsFromDrag))
+    }
+
     property int trackHeight: 74
 
     // Propiedades de Overlay Flotante del Clip Seleccionado (Estilo Honeydew)

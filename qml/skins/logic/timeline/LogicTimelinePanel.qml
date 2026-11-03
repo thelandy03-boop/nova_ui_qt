@@ -54,6 +54,7 @@ Rectangle {
             Layout.preferredHeight: 28
             contentX: gridFlickable.contentX
             barWidth: root.barWidth
+            totalBars: timelineGrid.totalBars
         }
 
         // 2. Grilla y Playhead
@@ -69,6 +70,28 @@ Rectangle {
                 contentHeight: timelineGrid.height
                 boundsBehavior: Flickable.StopAtBounds
                 flickableDirection: Flickable.HorizontalAndVerticalFlick
+
+                // 🚀 Auto-scroll al arrastrar clips cerca del borde de la pantalla
+                Timer {
+                    id: autoScrollTimer
+                    interval: 30
+                    repeat: true
+                    running: timelineGrid.selectedClip && timelineGrid.selectedClip.isDragging
+                    onTriggered: {
+                        var clip = timelineGrid.selectedClip
+                        if (!clip || !gridFlickable) return
+                        var clipGlobalX = clip.x - gridFlickable.contentX
+                        var viewW = gridFlickable.width
+                        // Borde derecho: avanzar hacia adelante
+                        if (clipGlobalX + clip.width > viewW - 60) {
+                            var maxScroll = Math.max(0, gridFlickable.contentWidth - viewW)
+                            gridFlickable.contentX = Math.min(maxScroll, gridFlickable.contentX + 24)
+                        } else if (clipGlobalX < 60 && gridFlickable.contentX > 0) {
+                            // Borde izquierdo: retroceder
+                            gridFlickable.contentX = Math.max(0, gridFlickable.contentX - 24)
+                        }
+                    }
+                }
 
                 LogicTimelineGrid {
                     id: timelineGrid
