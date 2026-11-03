@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QUrl>
@@ -38,6 +39,14 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(true);
+
+    // 🎨 Icono oficial de la aplicación
+    const QString iconRes = QStringLiteral(":/NovaStudio/qml/assets/app_logo_512.png");
+    if (QFile::exists(iconRes)) {
+        app.setWindowIcon(QIcon(iconRes));
+    } else {
+        app.setWindowIcon(QIcon(QStringLiteral("qml/assets/app_logo_512.png")));
+    }
 
 #if defined(Q_OS_ANDROID)
     // Fase 5 (Touch UX): mejor escalado en pantallas de alta densidad y

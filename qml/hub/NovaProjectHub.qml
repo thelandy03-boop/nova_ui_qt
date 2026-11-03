@@ -71,19 +71,30 @@ Item {
             Layout.fillHeight: true
             spacing: 32
 
-            ColumnLayout {
-                spacing: 6
-                Text {
-                    text: "NOVA STUDIO"
-                    color: "#FFFFFF"
-                    font.pixelSize: 32
-                    font.bold: true
-                    font.letterSpacing: 2
+            RowLayout {
+                spacing: 12
+                Image {
+                    source: Qt.resolvedUrl("../assets/app_logo_512.png")
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
-                Text {
-                    text: "Motor Híbrido C++ & Ardour Core"
-                    color: "#6D7278"
-                    font.pixelSize: 11
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "NOVA STUDIO"
+                        color: "#FFFFFF"
+                        font.pixelSize: 28
+                        font.bold: true
+                        font.letterSpacing: 2
+                    }
+                    Text {
+                        text: "Motor Híbrido C++ & Ardour Core"
+                        color: "#6D7278"
+                        font.pixelSize: 11
+                    }
                 }
             }
 

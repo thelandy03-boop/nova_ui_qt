@@ -139,66 +139,6 @@ Item {
             }
         }
 
-        // 🔄 Botón Circular: Rev (Invertir Audio)
-        Rectangle {
-            width: 34
-            height: 34
-            radius: 17
-            color: revMouse.pressed ? "#BAC7D5" : (revMouse.containsMouse ? "#E2E8F0" : "#D5DBE1")
-            border.color: "#8A9BA8"
-            border.width: 1
-
-            Text {
-                anchors.centerIn: parent
-                text: "Rev"
-                font.pixelSize: 10
-                font.bold: true
-                color: "#1E293B"
-            }
-
-            MouseArea {
-                id: revMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (root.clipIndex >= 0) {
-                        AudioEngine.regions.reverseRegion(root.clipIndex)
-                    }
-                }
-            }
-        }
-
-        // 🔇 Botón Circular: Mute (Silenciar Clip)
-        Rectangle {
-            width: 34
-            height: 34
-            radius: 17
-            color: muteMouse.pressed ? "#BAC7D5" : (muteMouse.containsMouse ? "#E2E8F0" : "#D5DBE1")
-            border.color: "#8A9BA8"
-            border.width: 1
-
-            Text {
-                anchors.centerIn: parent
-                text: "Mute"
-                font.pixelSize: 9
-                font.bold: true
-                color: "#1E293B"
-            }
-
-            MouseArea {
-                id: muteMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (root.clipIndex >= 0) {
-                        AudioEngine.regions.toggleMuteRegion(root.clipIndex)
-                    }
-                }
-            }
-        }
-
         // ⋯ Botón Circular: More... (Menú de Opciones Adicionales)
         Rectangle {
             id: moreBtn
@@ -312,6 +252,70 @@ Item {
                     onClicked: {
                         if (root.clipIndex >= 0) {
                             AudioEngine.splitAtPlayhead(root.clipIndex)
+                        }
+                        moreMenuPopup.visible = false
+                    }
+                }
+            }
+
+            // Opción: Invertir Audio (Reverse)
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 4
+                height: 26
+                radius: 4
+                color: revOptMouse.containsMouse ? "#333A48" : "transparent"
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "🔄 Invertir Audio (Reverse)"
+                    color: "#FFFFFF"
+                    font.pixelSize: 10
+                }
+
+                MouseArea {
+                    id: revOptMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (root.clipIndex >= 0) {
+                            AudioEngine.regions.reverseRegion(root.clipIndex)
+                        }
+                        moreMenuPopup.visible = false
+                    }
+                }
+            }
+
+            // Opción: Silenciar / Activar Clip (Mute)
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 4
+                height: 26
+                radius: 4
+                color: muteOptMouse.containsMouse ? "#333A48" : "transparent"
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "🔇 Silenciar / Activar (Mute)"
+                    color: "#FFFFFF"
+                    font.pixelSize: 10
+                }
+
+                MouseArea {
+                    id: muteOptMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (root.clipIndex >= 0) {
+                            AudioEngine.regions.toggleMuteRegion(root.clipIndex)
                         }
                         moreMenuPopup.visible = false
                     }
