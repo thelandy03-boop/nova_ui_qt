@@ -450,20 +450,27 @@ bool NovaAndroidAudioEngine::abrirStreamEntrada() {
         oboe::SharingMode modoCompartido;
         oboe::AudioFormat formato;
         int canales;
+        int sampleRate;
         const char* descripcion;
     };
 
+    const int tasaPreferida = (m_sampleRate > 0 ? m_sampleRate : 48000);
+
     // Cascada de resiliencia: desde máxima fidelidad DAW (Exclusive Float Estéreo)
-    // hasta compatibilidad universal (Shared I16 Mono) admitida por cualquier móvil.
+    // hasta compatibilidad universal (Shared I16 Mono con tasa nativa) admitida por cualquier móvil.
     const std::vector<ConfigEntrada> configs = {
-        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 2, "Exclusive Float 2ch" },
-        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 1, "Exclusive Float 1ch" },
-        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   2, "Exclusive I16 2ch" },
-        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   1, "Exclusive I16 1ch" },
-        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 2, "Shared Float 2ch" },
-        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 1, "Shared Float 1ch" },
-        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   2, "Shared I16 2ch" },
-        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   1, "Shared I16 1ch" }
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 2, tasaPreferida, "Exclusive Float 2ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::Float, 1, tasaPreferida, "Exclusive Float 1ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   2, tasaPreferida, "Exclusive I16 2ch" },
+        { oboe::SharingMode::Exclusive, oboe::AudioFormat::I16,   1, tasaPreferida, "Exclusive I16 1ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 2, tasaPreferida, "Shared Float 2ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 1, tasaPreferida, "Shared Float 1ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   2, tasaPreferida, "Shared I16 2ch" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   1, tasaPreferida, "Shared I16 1ch" },
+        // Fallbacks con tasa nativa del hardware (0 = unspecified para que el driver elija su tasa óptima):
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   1, 0,             "Shared I16 Mono Nativo" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::I16,   2, 0,             "Shared I16 Estéreo Nativo" },
+        { oboe::SharingMode::Shared,    oboe::AudioFormat::Float, 1, 0,             "Shared Float Mono Nativo" }
     };
 
     oboe::Result ultimoResultado = oboe::Result::OK;
@@ -474,7 +481,10 @@ bool NovaAndroidAudioEngine::abrirStreamEntrada() {
         inputBuilder.setSharingMode(cfg.modoCompartido);
         inputBuilder.setFormat(cfg.formato);
         inputBuilder.setChannelCount(cfg.canales);
-        inputBuilder.setSampleRate(m_sampleRate > 0 ? m_sampleRate : 48000);
+        if (cfg.sampleRate > 0) {
+            inputBuilder.setSampleRate(cfg.sampleRate);
+        }
+        inputBuilder.setInputPreset(oboe::InputPreset::Generic);
         inputBuilder.setFramesPerCallback(m_framesPerBurst > 0 ? m_framesPerBurst : 256);
         inputBuilder.setCallback(m_inputCallback.get());
 
@@ -543,10 +553,11 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
         if (!m_inputStream) {
             abrirStreamEntrada();
         }
-        if (m_inputStream && m_isPlaying) {
+        if (m_inputStream) {
             const oboe::StreamState st = m_inputStream->getState();
             if (st != oboe::StreamState::Started && st != oboe::StreamState::Starting) {
-                m_inputStream->requestStart();
+                oboe::Result res = m_inputStream->requestStart();
+                LOGI("🎙️ [Oboe] inputStream requestStart resultado: %s", oboe::convertToText(res));
             }
         }
 #endif
@@ -563,6 +574,15 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
             }
         }
     } else {
+#if defined(Q_OS_ANDROID)
+        if (m_inputStream) {
+            const oboe::StreamState st = m_inputStream->getState();
+            if (st == oboe::StreamState::Started || st == oboe::StreamState::Starting) {
+                m_inputStream->requestStop();
+                LOGI("🎙️ [Oboe] inputStream detenido tras finalizar grabación");
+            }
+        }
+#endif
         std::lock_guard<std::mutex> lock(m_recordMutex);
         m_tomaGrabacionTimestamp.clear();
     }
@@ -581,6 +601,14 @@ void NovaAndroidAudioEngine::setPlaying(bool enabled) {
             const oboe::StreamState estado = m_outputStream->getState();
             if (estado != oboe::StreamState::Started && estado != oboe::StreamState::Starting) {
                 m_outputStream->requestStart();
+            }
+        }
+        // Si estamos en modo grabación, asegurar que el stream de entrada esté corriendo
+        if (m_isRecording.load() && m_inputStream) {
+            const oboe::StreamState estadoEntrada = m_inputStream->getState();
+            if (estadoEntrada != oboe::StreamState::Started && estadoEntrada != oboe::StreamState::Starting) {
+                oboe::Result res = m_inputStream->requestStart();
+                LOGI("🎙️ [Oboe] inputStream requestStart en setPlaying: %s", oboe::convertToText(res));
             }
         }
     } else {

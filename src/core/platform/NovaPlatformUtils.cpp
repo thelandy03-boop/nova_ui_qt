@@ -133,21 +133,35 @@ QString NovaPlatformUtils::sanitizePath(const QString &rawPath)
 {
     if (rawPath.isEmpty()) return QString();
 
-    // 1. Si es una URI content:// (Android Storage Access Framework), preservar tal cual
-    if (rawPath.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
-        return copyContentUriToLocal(rawPath);
+    // 1. Detección exhaustiva de URIs content:// (Android Storage Access Framework)
+    // Puede venir como: content://..., file:///content:/..., file://content://..., o percent-encoded
+    int contentIdx = rawPath.indexOf(QLatin1String("content:"), 0, Qt::CaseInsensitive);
+    if (contentIdx != -1) {
+        QString contentUri = rawPath.mid(contentIdx);
+        // Si quedó como content:/ en vez de content://
+        if (contentUri.startsWith(QLatin1String("content:/"), Qt::CaseInsensitive) &&
+            !contentUri.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
+            contentUri.replace(0, 9, QStringLiteral("content://"));
+        }
+        return copyContentUriToLocal(contentUri);
     }
 
     // 2. Decodificar percent-encoding (resuelve %20, %2F, %3A, etc.)
     QString path = QUrl::fromPercentEncoding(rawPath.toUtf8());
 
-    // Si tras decodificar resulta ser content://
-    if (path.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
-        return copyContentUriToLocal(path);
+    // Si tras decodificar contiene content:
+    int decodedContentIdx = path.indexOf(QLatin1String("content:"), 0, Qt::CaseInsensitive);
+    if (decodedContentIdx != -1) {
+        QString contentUri = path.mid(decodedContentIdx);
+        if (contentUri.startsWith(QLatin1String("content:/"), Qt::CaseInsensitive) &&
+            !contentUri.startsWith(QLatin1String("content://"), Qt::CaseInsensitive)) {
+            contentUri.replace(0, 9, QStringLiteral("content://"));
+        }
+        return copyContentUriToLocal(contentUri);
     }
 
     // 3. Si contiene el esquema "file:", extraer la ruta local absoluta de forma robusta
-    if (path.startsWith("file:", Qt::CaseInsensitive)) {
+    if (path.startsWith(QLatin1String("file:"), Qt::CaseInsensitive)) {
         QUrl url(rawPath);
         if (url.isValid() && url.isLocalFile()) {
             path = url.toLocalFile();
@@ -156,21 +170,44 @@ QString NovaPlatformUtils::sanitizePath(const QString &rawPath)
             path.remove(0, 5); // Quita "file:"
             
             // Reemplazar diagonales dobles iniciales de esquemas como file:// o file:///
-            while (path.startsWith("//")) {
+            while (path.startsWith(QLatin1String("//"))) {
                 path.remove(0, 1);
             }
             
             // Garantizar que en Linux/Android empiece con un solo "/"
 #if !defined(Q_OS_WIN)
-            if (!path.startsWith("/")) {
-                path = "/" + path;
+            if (!path.startsWith(QLatin1Char('/'))) {
+                path = QLatin1Char('/') + path;
             }
 #endif
         }
     }
 
     // 4. Normalizar la ruta final del sistema de archivos
-    return QDir::cleanPath(path);
+    QString cleaned = QDir::cleanPath(path);
+
+#if defined(Q_OS_ANDROID)
+    // 5. En Android con Scoped Storage: si el archivo está en almacenamiento externo
+    // (/storage/emulated/0/... o /sdcard/...) y QFile::exists() da false por restricciones de kernel,
+    // intentar copiarlo mediante el puente Java (MediaStore/ContentResolver/FileInputStream).
+    if (!QFile::exists(cleaned) && (cleaned.startsWith(QLatin1String("/storage/")) || cleaned.startsWith(QLatin1String("/sdcard/")))) {
+        QJniObject jPath = QJniObject::fromString(cleaned);
+        QJniObject jResult = QJniObject::callStaticObjectMethod(
+            "com/novastudio/nova/MainActivity",
+            "copyStoragePathToCache",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            jPath.object<jstring>());
+        if (jResult.isValid()) {
+            QString cached = jResult.toString();
+            if (!cached.isEmpty() && QFile::exists(cached)) {
+                qInfo() << "✅ [NovaPlatformUtils] Archivo de almacenamiento externo copiado a caché:" << cached;
+                return QDir::cleanPath(cached);
+            }
+        }
+    }
+#endif
+
+    return cleaned;
 }
 
 bool NovaPlatformUtils::isMobilePlatform()

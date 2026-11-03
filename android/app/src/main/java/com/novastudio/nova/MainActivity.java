@@ -13,8 +13,18 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
-
+import android.Manifest;
+import android.net.Uri;
+import android.provider.Settings;
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.qtproject.qt.android.QtActivityBase;
 
@@ -266,6 +276,75 @@ public class MainActivity extends QtActivityBase {
     }
 
     /**
+     * Comprueba si el permiso de grabación de audio (micrófono) está concedido.
+     */
+    public static boolean hasRecordAudioPermission() {
+        Activity act = getInstance();
+        if (act == null) return false;
+        return ContextCompat.checkSelfPermission(act, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Solicita el permiso de micrófono al usuario en tiempo de ejecución.
+     */
+    public static void requestRecordAudioPermission() {
+        Activity act = getInstance();
+        if (act == null) return;
+        ActivityCompat.requestPermissions(act,
+                new String[]{ Manifest.permission.RECORD_AUDIO },
+                PERMISSION_REQUEST_CODE);
+    }
+
+    /**
+     * Comprueba si el permiso de lectura de archivos de audio está concedido.
+     */
+    public static boolean hasStorageAudioPermission() {
+        Activity act = getInstance();
+        if (act == null) return true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(act, Manifest.permission.READ_MEDIA_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED;
+        } else {
+            return ContextCompat.checkSelfPermission(act, Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    /**
+     * Solicita permiso para acceder y leer archivos de audio del almacenamiento.
+     */
+    public static void requestStorageAudioPermission() {
+        Activity act = getInstance();
+        if (act == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(act,
+                    new String[]{ Manifest.permission.READ_MEDIA_AUDIO },
+                    1002);
+        } else {
+            ActivityCompat.requestPermissions(act,
+                    new String[]{ Manifest.permission.READ_EXTERNAL_STORAGE },
+                    1002);
+        }
+    }
+
+    /**
+     * Abre los Ajustes de la aplicación para permitir al usuario activar permisos manualmente.
+     */
+    public static void openAppSettings() {
+        try {
+            Activity act = getInstance();
+            if (act == null) return;
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + act.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            act.startActivity(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "openAppSettings falló", e);
+        }
+    }
+
+    /**
      * Copia de forma segura un URI con esquema content:// (del selector de archivos
      * o Storage Access Framework de Android) a un archivo local en la caché de la app,
      * utilizando ContentResolver. Retorna la ruta absoluta del archivo local o null si falla.
@@ -280,11 +359,29 @@ public class MainActivity extends QtActivityBase {
                 Log.e(TAG, "copyContentUriToCache: instancia de MainActivity es null");
                 return null;
             }
-            android.net.Uri uri = android.net.Uri.parse(contentUriStr);
+
+            // Normalización y extracción limpia de la URI content://
+            String cleanUriStr = contentUriStr.trim();
+            int contentIdx = cleanUriStr.indexOf("content:");
+            if (contentIdx != -1) {
+                cleanUriStr = cleanUriStr.substring(contentIdx);
+                if (cleanUriStr.startsWith("content:/") && !cleanUriStr.startsWith("content://")) {
+                    cleanUriStr = "content://" + cleanUriStr.substring(9);
+                }
+            }
+
+            Uri uri = Uri.parse(cleanUriStr);
             android.content.ContentResolver resolver = activity.getContentResolver();
             if (resolver == null) {
                 Log.e(TAG, "copyContentUriToCache: ContentResolver es null");
                 return null;
+            }
+
+            // Intentar tomar persistencia de lectura si el proveedor lo admite
+            try {
+                resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {
+                // Proveedores que no soportan persistencia continúan normalmente
             }
 
             // Deducir el nombre real del archivo mediante OpenableColumns
@@ -297,28 +394,29 @@ public class MainActivity extends QtActivityBase {
                     }
                 }
             } catch (Exception ex) {
-                Log.w(TAG, "No se pudo leer DISPLAY_NAME para: " + contentUriStr, ex);
+                Log.w(TAG, "No se pudo leer DISPLAY_NAME para: " + cleanUriStr, ex);
             }
 
             if (displayName == null || displayName.isEmpty()) {
-                displayName = "imported_" + System.currentTimeMillis() + ".wav";
+                displayName = "audio_" + System.currentTimeMillis() + ".wav";
             }
 
             // Reemplazar caracteres ilegales en el nombre de archivo
             displayName = displayName.replace('/', '_').replace('\\', '_').replace(':', '_');
+            String uniqueName = System.currentTimeMillis() + "_" + displayName;
 
-            java.io.File cacheDir = new java.io.File(activity.getCacheDir(), "imported_media");
+            File cacheDir = new File(activity.getCacheDir(), "imported_media");
             if (!cacheDir.exists()) {
                 cacheDir.mkdirs();
             }
-            java.io.File outFile = new java.io.File(cacheDir, displayName);
+            File outFile = new File(cacheDir, uniqueName);
 
-            Log.i(TAG, "Copiando SAF content URI: " + contentUriStr + " -> " + outFile.getAbsolutePath());
+            Log.i(TAG, "Copiando SAF content URI: " + cleanUriStr + " -> " + outFile.getAbsolutePath());
 
-            try (java.io.InputStream in = resolver.openInputStream(uri);
-                 java.io.OutputStream out = new java.io.FileOutputStream(outFile)) {
+            try (InputStream in = resolver.openInputStream(uri);
+                 OutputStream out = new FileOutputStream(outFile)) {
                 if (in == null) {
-                    Log.e(TAG, "openInputStream devolvió null para: " + contentUriStr);
+                    Log.e(TAG, "openInputStream devolvió null para: " + cleanUriStr);
                     return null;
                 }
                 byte[] buf = new byte[65536];
@@ -332,7 +430,47 @@ public class MainActivity extends QtActivityBase {
             Log.i(TAG, "✅ Copia SAF completada exitosamente (" + outFile.length() + " bytes): " + outFile.getAbsolutePath());
             return outFile.getAbsolutePath();
         } catch (Exception e) {
-            Log.e(TAG, "copyContentUriToCache error", e);
+            Log.e(TAG, "copyContentUriToCache error: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Copia un archivo desde almacenamiento compartido (/storage/emulated/0/...)
+     * al almacenamiento de caché privado de la aplicación si el acceso C++ directo falla.
+     */
+    public static String copyStoragePathToCache(String localFilePath) {
+        if (localFilePath == null || localFilePath.isEmpty()) return null;
+        try {
+            MainActivity activity = getInstance();
+            if (activity == null) return null;
+
+            File srcFile = new File(localFilePath);
+            if (!srcFile.exists() || !srcFile.canRead()) {
+                Log.w(TAG, "copyStoragePathToCache: archivo de origen no legible directamente: " + localFilePath);
+                return null;
+            }
+
+            File cacheDir = new File(activity.getCacheDir(), "imported_media");
+            if (!cacheDir.exists()) cacheDir.mkdirs();
+
+            String uniqueName = System.currentTimeMillis() + "_" + srcFile.getName();
+            File outFile = new File(cacheDir, uniqueName);
+
+            try (InputStream in = new FileInputStream(srcFile);
+                 OutputStream out = new FileOutputStream(outFile)) {
+                byte[] buf = new byte[65536];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+                out.flush();
+            }
+
+            Log.i(TAG, "✅ Copia de archivo local completada: " + outFile.getAbsolutePath());
+            return outFile.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "copyStoragePathToCache error: " + e.getMessage(), e);
             return null;
         }
     }

@@ -61,6 +61,8 @@ public:
     Q_INVOKABLE bool importAudioAndroid(int trackIndex, const QString &path, double startBeat = 0.0);
     Q_INVOKABLE void reverseAudioAndroid();
     Q_INVOKABLE void setPitchSemitonesAndroid(int semitones);
+    Q_INVOKABLE void requestStoragePermission();
+    Q_INVOKABLE void openAppSettings();
 #endif
 
     // Controles de Transporte

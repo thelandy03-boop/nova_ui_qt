@@ -310,24 +310,33 @@ void NovaAudioEngine::toggleRecord() {
         qCDebug(novaCore) << "🎙️ [Android] Grabación detenida; importando captura.";
     } else {
         // Comprobar / solicitar permiso de micrófono antes de capturar audio
-        QMicrophonePermission micPerm;
-        auto status = qApp->checkPermission(micPerm);
-        if (status == Qt::PermissionStatus::Undetermined) {
+        bool concedido = false;
+        jboolean hasPerm = QJniObject::callStaticMethod<jboolean>(
+            "com/novastudio/nova/MainActivity",
+            "hasRecordAudioPermission");
+        concedido = (hasPerm == JNI_TRUE);
+
+        if (!concedido) {
+            QMicrophonePermission micPerm;
+            auto status = qApp->checkPermission(micPerm);
+            if (status == Qt::PermissionStatus::Granted) {
+                concedido = true;
+            }
+        }
+
+        if (!concedido) {
             qCDebug(novaCore) << "🎙️ [Android] Solicitando permiso de micrófono al usuario...";
+            QJniObject::callStaticMethod<void>(
+                "com/novastudio/nova/MainActivity",
+                "requestRecordAudioPermission");
+
+            QMicrophonePermission micPerm;
             qApp->requestPermission(micPerm, this, [this](const QPermission &p) {
                 if (p.status() == Qt::PermissionStatus::Granted) {
                     qCDebug(novaCore) << "🎙️ [Android] Permiso de micrófono concedido!";
                     iniciarGrabacionAndroid();
                 } else {
                     qCWarning(novaCore) << "❌ [Android] Permiso de micrófono denegado.";
-                }
-            });
-            return;
-        } else if (status == Qt::PermissionStatus::Denied) {
-            qCWarning(novaCore) << "❌ [Android] Permiso de micrófono denegado previamente. Reintentando solicitud...";
-            qApp->requestPermission(micPerm, this, [this](const QPermission &p) {
-                if (p.status() == Qt::PermissionStatus::Granted) {
-                    iniciarGrabacionAndroid();
                 }
             });
             return;
@@ -355,6 +364,7 @@ void NovaAudioEngine::iniciarGrabacionAndroid()
         if (session) {
             auto routes = session->get_routes();
             bool hasTrack = false;
+            bool foundArmed = false;
             if (routes) {
                 int idx = 0;
                 for (const auto &r : *routes) {
@@ -363,6 +373,7 @@ void NovaAudioEngine::iniciarGrabacionAndroid()
                         auto trk = std::dynamic_pointer_cast<ARDOUR::Track>(r);
                         if (trk && trk->rec_enable_control() && trk->rec_enable_control()->get_value() > 0.5) {
                             armedTrackIdx = idx;
+                            foundArmed = true;
                             break;
                         }
                         idx++;
@@ -373,6 +384,20 @@ void NovaAudioEngine::iniciarGrabacionAndroid()
                 session->new_audio_track(2, 1, nullptr, 1, std::string("Audio 1"),
                                         ARDOUR::PresentationInfo::max_order, ARDOUR::Normal, true, false);
                 armedTrackIdx = 0;
+                foundArmed = true;
+            } else if (!foundArmed) {
+                // Si ninguna pista está armada, armar automáticamente la primera pista para que el usuario pueda grabar sin pasos extra
+                armedTrackIdx = 0;
+                for (const auto &r : *routes) {
+                    if (r && r->is_track()) {
+                        auto trk = std::dynamic_pointer_cast<ARDOUR::Track>(r);
+                        if (trk && trk->rec_enable_control()) {
+                            trk->rec_enable_control()->set_value(1.0, PBD::Controllable::NoGroup);
+                        }
+                        break;
+                    }
+                }
+                Q_EMIT tracksChanged();
             }
             m_androidEngine.setSession(session);
         }
@@ -744,6 +769,24 @@ void NovaAudioEngine::setPitchSemitonesAndroid(int semitones)
     m_androidEngine.setPitchSemitones(semitones);
 }
 
+void NovaAudioEngine::requestStoragePermission()
+{
+#if defined(Q_OS_ANDROID)
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/MainActivity",
+        "requestStorageAudioPermission");
+#endif
+}
+
+void NovaAudioEngine::openAppSettings()
+{
+#if defined(Q_OS_ANDROID)
+    QJniObject::callStaticMethod<void>(
+        "com/novastudio/nova/MainActivity",
+        "openAppSettings");
+#endif
+}
+
 bool NovaAudioEngine::androidPrepararMotor()
 {
     if (m_androidMotorListo) return true;
@@ -970,7 +1013,13 @@ void NovaAudioEngine::importUltimaGrabacionAndroid()
     while (it.hasNext()) {
         wavs.append(it.next());
     }
-    if (wavs.isEmpty()) return;
+    if (wavs.isEmpty()) {
+        qCWarning(novaCore) << "⚠️ [Android] No se encontró ninguna toma WAV grabada en:" << interchange.absolutePath();
+        if (m_regionModel) {
+            m_regionModel->finalizeLiveRecordingClip();
+        }
+        return;
+    }
 
     // El mas reciente por fecha de modificacion.
     std::sort(wavs.begin(), wavs.end(), [](const QString &a, const QString &b) {

@@ -283,6 +283,9 @@ Rectangle {
                 if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
                     AudioEngine.hapticFeedback();
                 }
+                if (Qt.platform.os === "android" && typeof AudioEngine !== "undefined" && AudioEngine.requestStoragePermission) {
+                    AudioEngine.requestStoragePermission();
+                }
                 fileDialog.open();
             }
         }

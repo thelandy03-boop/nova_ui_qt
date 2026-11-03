@@ -9,8 +9,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     
     <!-- 💾 PERMISOS DE ALMACENAMIENTO PARA PROYECTOS Y AUDIO (MP3/WAV) -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
     <!-- ⚡ CARACTERÍSTICAS DE AUDIO DE BAJA LATENCIA -->
     <uses-feature android:name="android.hardware.audio.low_latency" android:required="false" />
