@@ -20,6 +20,9 @@ public:
 
     // 📳 Dispara vibración táctil corta del sistema en dispositivos móviles
     static void hapticFeedback();
+
+    // 🧹 Limpieza preventiva de archivos temporales antiguos en la caché de medios importados
+    static void cleanOldImportedMedia();
 };
 
 #endif // NOVAPLATFORMUTILS_H

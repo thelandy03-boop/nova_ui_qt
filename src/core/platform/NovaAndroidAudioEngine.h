@@ -216,7 +216,6 @@ signals:
 
 private:
 #if defined(Q_OS_ANDROID)
-    // Oboe stream callbacks
     class InputStreamCallback : public oboe::AudioStreamCallback {
     public:
         InputStreamCallback(NovaAndroidAudioEngine* engine) : m_engine(engine) {}
@@ -224,6 +223,7 @@ private:
         void onErrorAfterClose(oboe::AudioStream* stream, oboe::Result error) override;
     private:
         NovaAndroidAudioEngine* m_engine;
+        std::vector<float> m_conversionBuffer;
     };
 
     class OutputStreamCallback : public oboe::AudioStreamCallback {

@@ -96,6 +96,9 @@ public class MainActivity extends QtActivityBase {
         super.onDestroy();
         Log.i(TAG, "onDestroy");
         stopAudioForegroundService();
+        if (instance == this) {
+            instance = null;
+        }
     }
 
     @Override

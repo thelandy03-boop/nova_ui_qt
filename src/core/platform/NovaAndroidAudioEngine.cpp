@@ -545,6 +545,10 @@ void NovaAndroidAudioEngine::closeStreams() {
 void NovaAndroidAudioEngine::setRecording(bool enabled) {
     if (enabled) {
         limpiarPicosEnVivo();
+        {
+            std::lock_guard<std::mutex> lock(m_livePeaksMutex);
+            m_livePeaks.reserve(16384);
+        }
         m_ultimaTomaWavPath.clear();
         m_isRecording.store(true);
 #if defined(Q_OS_ANDROID)
@@ -1012,18 +1016,19 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::InputStreamCallback::onAudioRea
     const oboe::AudioFormat format = stream->getFormat();
     
     const float* floatInput = nullptr;
-    std::vector<float> converted;
 
     if (format == oboe::AudioFormat::Float) {
         floatInput = static_cast<const float*>(audioData);
     } else if (format == oboe::AudioFormat::I16) {
         const int16_t* i16Data = static_cast<const int16_t*>(audioData);
         const size_t totalSamples = static_cast<size_t>(numFrames) * static_cast<size_t>(channels);
-        converted.resize(totalSamples);
-        for (size_t i = 0; i < totalSamples; ++i) {
-            converted[i] = static_cast<float>(i16Data[i]) / 32768.0f;
+        if (m_conversionBuffer.size() < totalSamples) {
+            m_conversionBuffer.resize(totalSamples);
         }
-        floatInput = converted.data();
+        for (size_t i = 0; i < totalSamples; ++i) {
+            m_conversionBuffer[i] = static_cast<float>(i16Data[i]) / 32768.0f;
+        }
+        floatInput = m_conversionBuffer.data();
     } else {
         return oboe::DataCallbackResult::Continue;
     }
@@ -1195,7 +1200,12 @@ void NovaAndroidAudioEngine::OutputStreamCallback::onErrorAfterClose(
 
 void NovaAndroidAudioEngine::registrarPicoEnVivo(float minV, float maxV, float rmsV)
 {
-    std::lock_guard<std::mutex> lock(m_livePeaksMutex);
+    // Usar try_to_lock: el hilo de audio en tiempo real NUNCA debe bloquearse
+    // si el hilo de UI de QML está leyendo los picos en ese milisegundo exacto.
+    std::unique_lock<std::mutex> lock(m_livePeaksMutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return;
+    }
     PeakPoint pt;
     pt.min = minV;
     pt.max = maxV;
@@ -1216,6 +1226,7 @@ void NovaAndroidAudioEngine::limpiarPicosEnVivo()
 {
     std::lock_guard<std::mutex> lock(m_livePeaksMutex);
     m_livePeaks.clear();
+    m_livePeaks.shrink_to_fit();
 }
 
 QString NovaAndroidAudioEngine::ultimaTomaWavPath() const

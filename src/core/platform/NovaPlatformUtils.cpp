@@ -35,6 +35,8 @@ QString NovaPlatformUtils::copyContentUriToLocal(const QString &contentUri)
         return contentUri;
     }
 
+    cleanOldImportedMedia();
+
 #if defined(Q_OS_ANDROID)
     QJniObject jUri = QJniObject::fromString(contentUri);
     QJniObject jResult = QJniObject::callStaticObjectMethod(
@@ -230,4 +232,24 @@ void NovaPlatformUtils::hapticFeedback()
         activity.callMethod<void>("vibrateTick");
     }
 #endif
+}
+
+void NovaPlatformUtils::cleanOldImportedMedia()
+{
+    QString baseDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (baseDir.isEmpty()) {
+        baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    }
+    if (baseDir.isEmpty()) return;
+
+    QDir importsDir(baseDir + QStringLiteral("/imported_media"));
+    if (!importsDir.exists()) return;
+
+    const QDateTime cutoff = QDateTime::currentDateTime().addDays(-3);
+    const QFileInfoList files = importsDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+    for (const QFileInfo &fi : files) {
+        if (fi.lastModified() < cutoff) {
+            QFile::remove(fi.absoluteFilePath());
+        }
+    }
 }
