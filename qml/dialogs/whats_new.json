@@ -1,5 +1,37 @@
 {
   "releases": {
+    "1.0.14": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Grabación universal Oboe, decodificadores FLAC/OGG nativos y feedback visual:",
+      "buttonText": "¡Empezar a Crear! ➜",
+      "features": [
+        {
+          "category": "NUEVO",
+          "icon": "🎙️",
+          "title": "Grabación Universal de Micrófono (Oboe Fallback)",
+          "description": "Compatibilidad absoluta con cualquier micrófono o dispositivo Android. Si el driver no admite Float 32-bit exclusivo, el motor se degrada limpiamente a PCM 16-bit compartido con conversión en caliente sin fallos."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "🎵",
+          "title": "Soporte Nativo FLAC y OGG Vorbis",
+          "description": "Importa pistas y samples en formato FLAC y OGG Vorbis sin dependencias externas. El motor detecta los archivos por contenido mágico ('fLaC' y 'OggS') con fidelidad sonora de estudio."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "⏱️",
+          "title": "Grabación en Compás Exacto y Feedback en Vivo",
+          "description": "El audio grabado se coloca con precisión de compás y compás en la pista que hayas armado, mientras un clip rojo crece en vivo a 60 FPS sobre el timeline durante la toma."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "✨",
+          "title": "Novedades Incrustadas (QRC)",
+          "description": "Carga garantizada de la lista de novedades dentro del paquete del APK tras actualizar, asegurando que siempre conozcas los cambios de cada versión."
+        }
+      ]
+    },
     "1.0.13": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
