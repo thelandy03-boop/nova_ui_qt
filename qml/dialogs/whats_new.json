@@ -1,5 +1,37 @@
 {
   "releases": {
+    "1.0.15": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Compatibilidad total de importación y grabación para Android 13/14/15:",
+      "buttonText": "¡Empezar a Crear! ➜",
+      "features": [
+        {
+          "category": "CORRECCIÓN",
+          "icon": "📂",
+          "title": "Importación de Audios Universal (Android 13+)",
+          "description": "Se integró el permiso READ_MEDIA_AUDIO y soporte completo para Storage Access Framework (SAF) y rutas directas, permitiendo agregar canciones y samples desde cualquier carpeta del teléfono sin bloqueos."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "🎙️",
+          "title": "Arranque Inmediato de Grabación de Micrófono",
+          "description": "Se corrigió el ciclo de sincronización del stream de Oboe para iniciar la captura de audio en hardware al instante en cuanto pulsas Grabar."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🔴",
+          "title": "Auto-armado Inteligente de Pista",
+          "description": "Al pulsar Grabar en el transporte, Nova Studio arma automáticamente la pista activa si no la habías armado a mano, evitando tomas perdidas."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "⚡",
+          "title": "Mapeo Flexible de Tasas de Muestreo de Entrada",
+          "description": "Soporte de tasa de hardware nativa automática (48 kHz, 44.1 kHz o 16 kHz) adaptándose dinámicamente a la capacidad del micro de cualquier teléfono."
+        }
+      ]
+    },
     "1.0.14": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
