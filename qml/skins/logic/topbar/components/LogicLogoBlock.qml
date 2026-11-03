@@ -4,7 +4,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    implicitWidth: (Qt.platform.os === "android") ? 175 : 160
+    implicitWidth: (Qt.platform.os === "android") ? 145 : 130
     implicitHeight: 70
     color: maLogo.pressed ? "#22252D" : (maLogo.containsMouse ? "#1A1D23" : "#15171C")
 
@@ -20,7 +20,7 @@ Rectangle {
 
     Row {
         anchors.centerIn: parent
-        spacing: 8
+        spacing: 6
 
         // Indicador visual de regreso al menú de proyectos en móvil
         Text {
@@ -30,18 +30,6 @@ Rectangle {
             font.pixelSize: 26
             font.bold: true
             visible: Qt.platform.os === "android"
-        }
-
-        // 🎨 Logo Oficial de NOVA Studio
-        Image {
-            id: appLogoImg
-            anchors.verticalCenter: parent.verticalCenter
-            width: 32
-            height: 32
-            source: Qt.resolvedUrl("../../../../assets/app_logo_512.png")
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            mipmap: true
         }
 
         Column {
