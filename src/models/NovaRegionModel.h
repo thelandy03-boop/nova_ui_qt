@@ -158,6 +158,7 @@ public:
     // Control de Grabación en Vivo
     void createLiveRecordingClip(double startBeat, int trackIndex = -1);
     void updateLiveRecordingClip(double lengthBeats);
+    void updateLiveRecordingClipWithPeaks(double lengthBeats, const PeakData &livePeaks);
     void finalizeLiveRecordingClip();
     void rebuildRegionCache();
 

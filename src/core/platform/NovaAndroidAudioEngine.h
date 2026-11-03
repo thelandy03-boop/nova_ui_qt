@@ -14,6 +14,7 @@
 // El audio ya decodificado que el motor reproduce (lo recibe movido: el
 // fichero se decodifica una sola vez y el PCM no se copia).
 #include "audio/NovaDecodedAudio.h"
+#include "core/NovaPeakData.h"
 
 #if defined(Q_OS_ANDROID)
 #include <oboe/Oboe.h>
@@ -196,6 +197,14 @@ public:
         return real > 0 ? real : m_sampleRate;
     }
 
+    /** 🎙️ Picos en tiempo real del micrófono físico para dibujo de forma de onda */
+    void registrarPicoEnVivo(float minV, float maxV, float rmsV);
+    void obtenerPicosEnVivo(PeakData &outData);
+    void limpiarPicosEnVivo();
+
+    /** 📁 Ruta del fichero WAV exacto generado en la toma actual */
+    QString ultimaTomaWavPath() const;
+
 signals:
     void audioInitialized(bool success);
     // Se emite cuando el fichero/rango se agota (y no hay loop).
@@ -328,6 +337,10 @@ private:
 
     // Número máximo de tracks con ring buffer propio.
     static constexpr int kMaxTracks = 32;
+
+    QString m_ultimaTomaWavPath;
+    mutable std::mutex m_livePeaksMutex;
+    std::vector<PeakPoint> m_livePeaks;
 };
 
 #endif // NOVAAUDIOENGINE_ANDROID_H

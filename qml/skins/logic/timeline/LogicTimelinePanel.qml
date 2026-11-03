@@ -102,6 +102,7 @@ Rectangle {
                 PinchHandler {
                     id: pinchHandler
                     target: null
+                    grabPermissions: PointerHandler.CanTakeOverFromAnything | PointerHandler.ApprovesTakeOverByAnything
                     property real initialBarWidth: 80.0
 
                     onActiveChanged: {
@@ -159,6 +160,110 @@ Rectangle {
             timelineX: root.currentPlayheadX
             contentX: gridFlickable.contentX
             barWidth: root.barWidth
+        }
+    }
+
+    // 🔍 CONTROLES FLOTANTES DE ZOOM RÁPIDO PARA CELULARES (1-TOQUE)
+    Rectangle {
+        id: zoomControlsBar
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 14
+        width: 108
+        height: 36
+        radius: 18
+        color: "#E6141824"
+        border.color: "#2C344B"
+        border.width: 1
+        z: 60
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 2
+
+            // Botón Zoom Out (-)
+            Rectangle {
+                width: 34
+                height: 30
+                radius: 15
+                color: btnZoomOutMouse.pressed ? "#40FFFFFF" : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "－"
+                    color: root.barWidth <= root.minBarWidth ? "#64748B" : "#F1F5F9"
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+
+                MouseArea {
+                    id: btnZoomOutMouse
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.barWidth = Math.max(root.minBarWidth, root.barWidth * 0.8)
+                    }
+                }
+            }
+
+            // Botón Reset 1:1
+            Rectangle {
+                width: 32
+                height: 30
+                radius: 15
+                color: btnZoomResetMouse.pressed ? "#40FFFFFF" : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "1:1"
+                    color: Math.abs(root.barWidth - 80.0) < 1.0 ? "#38BDF8" : "#94A3B8"
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+
+                MouseArea {
+                    id: btnZoomResetMouse
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.barWidth = 80.0
+                    }
+                }
+            }
+
+            // Botón Zoom In (+)
+            Rectangle {
+                width: 34
+                height: 30
+                radius: 15
+                color: btnZoomInMouse.pressed ? "#40FFFFFF" : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "＋"
+                    color: root.barWidth >= root.maxBarWidth ? "#64748B" : "#F1F5F9"
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+
+                MouseArea {
+                    id: btnZoomInMouse
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.barWidth = Math.min(root.maxBarWidth, root.barWidth * 1.25)
+                    }
+                }
+            }
         }
     }
 }

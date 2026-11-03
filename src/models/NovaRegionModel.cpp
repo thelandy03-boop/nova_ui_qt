@@ -1316,70 +1316,22 @@ void NovaRegionModel::updateLiveRecordingClip(double lengthBeats)
     auto &item = m_regions[static_cast<size_t>(m_liveRecordingIndex)];
     item.lengthBeats = lengthBeats;
 
-    // ── INYECCIÓN DINÁMICA DE PICOS EN CALIENTE (LIVE PEAK DRAWING) ──
-    PeakData currentData;
-    if (NovaWaveformCache::getPeaks(item.id, currentData)) {
-        // We have existing data, we'll append to it
-        std::vector<PeakPoint> &peaks = currentData.peaks;
-        size_t targetSize = static_cast<size_t>(lengthBeats * 30.0);
-        if (targetSize < 10) targetSize = 10;
+    Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole, RegionIdRole});
+}
 
-        if (peaks.size() < targetSize) {
-            size_t pointsToAdd = targetSize - peaks.size();
-            for (size_t i = 0; i < pointsToAdd; ++i) {
-                size_t step = peaks.size() + i;
+void NovaRegionModel::updateLiveRecordingClipWithPeaks(double lengthBeats, const PeakData &livePeaks)
+{
+    if (m_liveRecordingIndex < 0 || m_liveRecordingIndex >= static_cast<int>(m_regions.size())) return;
 
-                float baseSine = std::sin(static_cast<float>(step) * 0.15f);
-                float modulation = std::cos(static_cast<float>(step) * 0.04f);
-                float noise = static_cast<float>(std::rand() % 100) / 100.0f;
+    auto &item = m_regions[static_cast<size_t>(m_liveRecordingIndex)];
+    item.lengthBeats = lengthBeats;
 
-                float peakVal = std::abs(baseSine * modulation) * 0.5f + noise * 0.15f;
-
-                if (peakVal < 0.12f) peakVal = 0.02f;
-                if (peakVal > 0.92f) peakVal = 0.92f;
-
-                PeakPoint pt;
-                pt.max = peakVal;
-                pt.min = -peakVal;
-                pt.rms = peakVal * 0.707f;
-                peaks.push_back(pt);
-            }
-            // Recalculate overview if needed (optional, for now we just mark dirty)
-            // For simplicity, we'll just set the data back; the overview will be regenerated on save or if we implement a live overview update.
-            NovaWaveformCache::setPeaks(item.id, currentData);
-        }
-    } else {
-        // No existing data, create a new PeakData with simulated peaks
-        PeakData newData;
-        newData.sampleRate = 48000; // Assume, we don't have session here? Actually we do via m_session but we are in live recording, so we can get it.
-        newData.channels = 2; // Assume stereo, but we should get from the track. For simplicity, we'll use 2.
-        if (m_session) {
-            newData.sampleRate = m_session->sample_rate();
-            // We don't have the track channel count easily here, but we can assume 2 for now.
-            // In a real implementation, we would get the track's channel count.
-            newData.channels = 2;
-        }
-        size_t targetSize = static_cast<size_t>(lengthBeats * 30.0);
-        if (targetSize < 10) targetSize = 10;
-        for (size_t i = 0; i < targetSize; ++i) {
-            float baseSine = std::sin(static_cast<float>(i) * 0.15f);
-            float modulation = std::cos(static_cast<float>(i) * 0.04f);
-            float noise = static_cast<float>(std::rand() % 100) / 100.0f;
-
-            float peakVal = std::abs(baseSine * modulation) * 0.5f + noise * 0.15f;
-
-            if (peakVal < 0.12f) peakVal = 0.02f;
-            if (peakVal > 0.92f) peakVal = 0.92f;
-
-            PeakPoint pt;
-            pt.max = peakVal;
-            pt.min = -peakVal;
-            pt.rms = peakVal * 0.707f;
-            newData.peaks.push_back(pt);
-        }
-        // For now, we don't generate overview in live update; we'll leave it empty and it will be built on save or when needed.
-        newData.crc32 = crc32_peaks(newData.peaks);
-        NovaWaveformCache::setPeaks(item.id, newData);
+    if (!livePeaks.peaks.empty()) {
+        PeakData dataCopy = livePeaks;
+        dataCopy.sampleRate = m_session ? m_session->sample_rate() : 48000;
+        dataCopy.channels = 2;
+        dataCopy.crc32 = crc32_peaks(dataCopy.peaks);
+        NovaWaveformCache::setPeaks(item.id, dataCopy);
     }
 
     Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole, RegionIdRole});

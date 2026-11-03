@@ -544,6 +544,8 @@ void NovaAndroidAudioEngine::closeStreams() {
 
 void NovaAndroidAudioEngine::setRecording(bool enabled) {
     if (enabled) {
+        limpiarPicosEnVivo();
+        m_ultimaTomaWavPath.clear();
         m_isRecording.store(true);
 #if defined(Q_OS_ANDROID)
         if (!m_inputStream) {
@@ -921,6 +923,7 @@ void NovaAndroidAudioEngine::writeWavFile(
     }
     
     std::string filename = interchangeDir + "/" + track->name() + "_" + timestamp + ".wav";
+    m_ultimaTomaWavPath = QString::fromStdString(filename);
     
     size_t totalSamples = frames * channels;
     size_t dataBytes = totalSamples * sizeof(float);
@@ -1028,6 +1031,20 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::InputStreamCallback::onAudioRea
     if (!m_engine->isRecording()) {
         return oboe::DataCallbackResult::Continue;
     }
+
+    // Calcular picos en tiempo real del micrófono físico para la forma de onda
+    float maxV = 0.0f;
+    float minV = 0.0f;
+    double sumSq = 0.0;
+    const size_t totalSamples = static_cast<size_t>(numFrames) * static_cast<size_t>(channels);
+    for (size_t s = 0; s < totalSamples; ++s) {
+        float val = floatInput[s];
+        if (val > maxV) maxV = val;
+        if (val < minV) minV = val;
+        sumSq += static_cast<double>(val) * static_cast<double>(val);
+    }
+    float rmsV = (totalSamples > 0) ? static_cast<float>(std::sqrt(sumSq / totalSamples)) : 0.0f;
+    m_engine->registrarPicoEnVivo(minV, maxV, rmsV);
 
     // Write to all armed track input buffers
     for (int i = 0; i < kMaxTracks; ++i) { // max tracks
@@ -1175,3 +1192,33 @@ void NovaAndroidAudioEngine::OutputStreamCallback::onErrorAfterClose(
     m_engine->Q_EMIT bufferUnderrun();
 }
 #endif // Q_OS_ANDROID
+
+void NovaAndroidAudioEngine::registrarPicoEnVivo(float minV, float maxV, float rmsV)
+{
+    std::lock_guard<std::mutex> lock(m_livePeaksMutex);
+    PeakPoint pt;
+    pt.min = minV;
+    pt.max = maxV;
+    pt.rms = rmsV;
+    m_livePeaks.push_back(pt);
+}
+
+void NovaAndroidAudioEngine::obtenerPicosEnVivo(PeakData &outData)
+{
+    std::lock_guard<std::mutex> lock(m_livePeaksMutex);
+    outData.peaks = m_livePeaks;
+    outData.sampleRate = m_sampleRate > 0 ? m_sampleRate : 48000;
+    outData.channels = 2;
+    outData.version = 3;
+}
+
+void NovaAndroidAudioEngine::limpiarPicosEnVivo()
+{
+    std::lock_guard<std::mutex> lock(m_livePeaksMutex);
+    m_livePeaks.clear();
+}
+
+QString NovaAndroidAudioEngine::ultimaTomaWavPath() const
+{
+    return m_ultimaTomaWavPath;
+}

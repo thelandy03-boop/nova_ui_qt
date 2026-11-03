@@ -140,12 +140,14 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
     connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackFinished,
             this, &NovaAudioEngine::androidAutoAdvance);
 
-    // Feedback visual en vivo: actualizar el clip de grabación en tiempo real conforme avanza el cabezal
+    // Feedback visual en vivo: actualizar el clip de grabación en tiempo real conforme avanza el cabezal con picos reales del micro
     connect(&m_transport, &NovaTransportController::positionChanged, this, [this]() {
         if (m_androidGrabando && m_regionModel && m_transport.isPlaying()) {
             double currentBeat = m_transport.currentBeat();
             double lengthBeats = (std::max)(0.0, currentBeat - m_androidGrabacionStartBeat);
-            m_regionModel->updateLiveRecordingClip(lengthBeats);
+            PeakData livePeaks;
+            m_androidEngine.obtenerPicosEnVivo(livePeaks);
+            m_regionModel->updateLiveRecordingClipWithPeaks(lengthBeats, livePeaks);
         }
     });
 #endif
@@ -1021,35 +1023,49 @@ void NovaAudioEngine::androidAutoAdvance()
 
 void NovaAudioEngine::importUltimaGrabacionAndroid()
 {
-    // Busca el WAV mas reciente en la carpeta interchange del proyecto.
-    QString dir = currentProjectPath();
-    if (dir.isEmpty()) return;
+    // 1. Obtener la ruta exacta del fichero WAV generado en esta toma
+    QString wavPath = m_androidEngine.ultimaTomaWavPath();
 
-    QDir interchange(dir + QStringLiteral("/interchange"));
-    if (!interchange.exists()) return;
-
-    QStringList wavs;
-    // Recorrer subcarpetas (una por pista).
-    QDirIterator it(interchange.absolutePath(), QStringList() << QStringLiteral("*.wav"),
-                    QDir::Files, QDirIterator::Subdirectories);
-    while (it.hasNext()) {
-        wavs.append(it.next());
-    }
-    if (wavs.isEmpty()) {
-        qCWarning(novaCore) << "⚠️ [Android] No se encontró ninguna toma WAV grabada en:" << interchange.absolutePath();
-        if (m_regionModel) {
-            m_regionModel->finalizeLiveRecordingClip();
+    // 2. Si no está en memoria o está vacío, buscar archivo reciente (<30s) en interchange
+    if (wavPath.isEmpty() || !QFile::exists(wavPath) || QFileInfo(wavPath).size() <= 44) {
+        QString dir = currentProjectPath();
+        if (dir.isEmpty()) {
+            if (m_regionModel) m_regionModel->finalizeLiveRecordingClip();
+            return;
         }
-        return;
+
+        QDir interchange(dir + QStringLiteral("/interchange"));
+        if (!interchange.exists()) {
+            if (m_regionModel) m_regionModel->finalizeLiveRecordingClip();
+            return;
+        }
+
+        QStringList wavs;
+        QDirIterator it(interchange.absolutePath(), QStringList() << QStringLiteral("*.wav"),
+                        QDir::Files, QDirIterator::Subdirectories);
+        const QDateTime hacePoco = QDateTime::currentDateTime().addSecs(-30);
+        while (it.hasNext()) {
+            QString cand = it.next();
+            // Descartar audios de sesiones anteriores o archivos sin datos
+            if (QFileInfo(cand).lastModified() >= hacePoco && QFileInfo(cand).size() > 44) {
+                wavs.append(cand);
+            }
+        }
+        if (wavs.isEmpty()) {
+            qCWarning(novaCore) << "⚠️ [Android] No se generó audio en la toma (micrófono sin datos):" << wavPath;
+            if (m_regionModel) {
+                m_regionModel->finalizeLiveRecordingClip();
+            }
+            return;
+        }
+
+        std::sort(wavs.begin(), wavs.end(), [](const QString &a, const QString &b) {
+            return QFileInfo(a).lastModified() > QFileInfo(b).lastModified();
+        });
+        wavPath = wavs.first();
     }
 
-    // El mas reciente por fecha de modificacion.
-    std::sort(wavs.begin(), wavs.end(), [](const QString &a, const QString &b) {
-        return QFileInfo(a).lastModified() > QFileInfo(b).lastModified();
-    });
-
-    QString wavPath = wavs.first();
-    qCDebug(novaCore) << "🎙️ [Android] Importando toma grabada:" << wavPath
+    qCDebug(novaCore) << "🎙️ [Android] Importando toma real grabada:" << wavPath
                       << "en pista:" << m_androidGrabacionTrackIndex
                       << "beat:" << m_androidGrabacionStartBeat;
 
