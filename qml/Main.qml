@@ -129,9 +129,9 @@ Window {
 
     // Escuchar cuando la app recupera el foco para refrescar el permiso de instalación
     Connections {
-        target: root
-        function onActiveChanged() {
-            if (root.active && typeof UpdateChecker !== "undefined") {
+        target: Qt.application
+        function onStateChanged() {
+            if (Qt.application.state === Qt.ApplicationActive && typeof UpdateChecker !== "undefined") {
                 UpdateChecker.checkInstallPermission()
             }
         }
@@ -227,25 +227,23 @@ Window {
                     spacing: 8
                     visible: (typeof UpdateChecker !== "undefined") && UpdateChecker.downloading
 
-                    Row {
+                    Item {
                         width: parent.width
+                        height: 20
                         Text {
                             text: "Descargando actualización..."
                             color: "#93C5FD"
                             font.pixelSize: 12
+                            anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
-                        }
-                        Item {
-                            width: 1
-                            height: 1
                         }
                         Text {
                             text: (typeof UpdateChecker !== "undefined" ? UpdateChecker.downloadProgress : 0) + "%"
                             color: "#FFFFFF"
                             font.bold: true
                             font.pixelSize: 13
-                            anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
                         }
                     }
 
