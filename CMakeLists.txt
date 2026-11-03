@@ -152,6 +152,10 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaWavReader.cpp
     src/audio/NovaMp3Decoder.h
     src/audio/NovaMp3Decoder.cpp
+    src/audio/NovaFlacDecoder.h
+    src/audio/NovaFlacDecoder.cpp
+    src/audio/NovaOggDecoder.h
+    src/audio/NovaOggDecoder.cpp
     src/audio/NovaAudioPlayer.h
     src/audio/NovaAudioPlayer.cpp
     src/audio/NovaResampler.h
@@ -161,6 +165,7 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaTapeStop.h
     src/audio/NovaTapeStop.cpp
     third_party/minimp3/minimp3.h
+    third_party/dr_libs/dr_flac.h
 )
 
 # Common Qt libraries for all platforms
@@ -324,13 +329,15 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_include_directories(test_simd_peaks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME simd_peaks COMMAND test_simd_peaks)
 
-    # El decodificador de audio (WAV propio + MP3 con minimp3). Usa QString,
+    # El decodificador de audio (WAV propio + MP3 con minimp3 + FLAC + OGG). Usa QString,
     # por eso enlaza Qt6::Core.
     add_executable(test_audio_decoder
         tests/test_audio_decoder.cpp
         src/audio/NovaAudioDecoder.cpp
         src/audio/NovaWavReader.cpp
         src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaFlacDecoder.cpp
+        src/audio/NovaOggDecoder.cpp
     )
     target_link_libraries(test_audio_decoder PRIVATE Qt6::Core)
     target_include_directories(test_audio_decoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -347,6 +354,8 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaAudioDecoder.cpp
         src/audio/NovaWavReader.cpp
         src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaFlacDecoder.cpp
+        src/audio/NovaOggDecoder.cpp
         src/audio/NovaTapeStop.cpp
     )
     target_link_libraries(test_audio_player PRIVATE Qt6::Core)
@@ -363,6 +372,8 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaAudioDecoder.cpp
         src/audio/NovaWavReader.cpp
         src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaFlacDecoder.cpp
+        src/audio/NovaOggDecoder.cpp
         src/core/NovaSimdPeaks.cpp
     )
     target_link_libraries(test_audio_peaks PRIVATE Qt6::Core)
@@ -380,6 +391,8 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaAudioDecoder.cpp
         src/audio/NovaWavReader.cpp
         src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaFlacDecoder.cpp
+        src/audio/NovaOggDecoder.cpp
         src/audio/NovaAudioPlayer.cpp
         src/audio/NovaResampler.cpp
         src/core/NovaSimdPeaks.cpp

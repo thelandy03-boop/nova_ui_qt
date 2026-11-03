@@ -694,6 +694,46 @@ int main()
         std::filesystem::remove(fichero);
     }
 
+    // ------------------------------------------------------------------
+    // 15. El FLAC se decodifica entero: 1 s de mono a 44,1 kHz
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-mono.flac"),
+                                         audio, &error);
+
+        CHECK_NAMED("flac_se_decodifica_completo",
+                    ok && error.isEmpty() && audio.sampleRate == 44100
+                        && audio.channels == 1 && audio.frameCount() >= 44090
+                        && audio.frameCount() <= 44110,
+                    "el FLAC debe decodificarse entero: 44100 Hz, mono, 44100 fotogramas y sin error");
+
+        const float pico = picoAbsoluto(audio.samples);
+        CHECK_NAMED("flac_preserva_la_amplitud", pico >= 0.45f && pico <= 0.55f,
+                    "el pico del FLAC debe estar entre 0,45 y 0,55");
+    }
+
+    // ------------------------------------------------------------------
+    // 16. El OGG se decodifica entero: 1 s de mono a 44,1 kHz
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio;
+        QString error;
+        const bool ok = decodeAudioFile(rutaFixture("tono-1s-44100-mono.ogg"),
+                                         audio, &error);
+
+        CHECK_NAMED("ogg_se_decodifica_completo",
+                    ok && error.isEmpty() && audio.sampleRate == 44100
+                        && audio.channels == 1 && audio.frameCount() >= 43000
+                        && audio.frameCount() <= 45000,
+                    "el OGG debe decodificarse entero: 44100 Hz, mono y sin error");
+
+        const float pico = picoAbsoluto(audio.samples);
+        CHECK_NAMED("ogg_preserva_la_amplitud", pico >= 0.40f && pico <= 0.55f,
+                    "el pico del OGG debe estar entre 0,40 y 0,55");
+    }
+
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

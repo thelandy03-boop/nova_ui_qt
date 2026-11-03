@@ -1,6 +1,8 @@
 #include "audio/NovaAudioDecoder.h"
 
+#include "audio/NovaFlacDecoder.h"
 #include "audio/NovaMp3Decoder.h"
+#include "audio/NovaOggDecoder.h"
 #include "audio/NovaWavReader.h"
 
 #include <QByteArray>
@@ -15,6 +17,8 @@ enum class FormatoFichero {
     Desconocido,
     Wav,
     Mp3,
+    Flac,
+    Ogg,
 };
 
 // El formato se deduce del contenido y no de la extension: un fichero con la
@@ -32,6 +36,12 @@ FormatoFichero detectarFormato(const QString& path)
             && std::memcmp(inicio.constData() + 8, "WAVE", 4) == 0) {
             return FormatoFichero::Wav;
         }
+        if (inicio.size() >= 4 && std::memcmp(inicio.constData(), "fLaC", 4) == 0) {
+            return FormatoFichero::Flac;
+        }
+        if (inicio.size() >= 4 && std::memcmp(inicio.constData(), "OggS", 4) == 0) {
+            return FormatoFichero::Ogg;
+        }
         if (inicio.size() >= 3 && std::memcmp(inicio.constData(), "ID3", 3) == 0) {
             return FormatoFichero::Mp3; // etiqueta ID3v2 al principio
         }
@@ -48,6 +58,12 @@ FormatoFichero detectarFormato(const QString& path)
     }
     if (extension == "mp3" || extension == "mp2") {
         return FormatoFichero::Mp3;
+    }
+    if (extension == "flac") {
+        return FormatoFichero::Flac;
+    }
+    if (extension == "ogg" || extension == "oga") {
+        return FormatoFichero::Ogg;
     }
     return FormatoFichero::Desconocido;
 }
@@ -79,12 +95,16 @@ bool decodeAudioFile(const QString& path, NovaDecodedAudio& out, QString* error)
         return nova::decodeWavFile(path, out, error);
     case FormatoFichero::Mp3:
         return nova::decodeMp3File(path, out, error);
+    case FormatoFichero::Flac:
+        return nova::decodeFlacFile(path, out, error);
+    case FormatoFichero::Ogg:
+        return nova::decodeOggFile(path, out, error);
     case FormatoFichero::Desconocido:
         break;
     }
 
     if (error) {
-        *error = QStringLiteral("'%1' no tiene un formato de audio soportado: solo se admiten WAV y MP3").arg(path);
+        *error = QStringLiteral("'%1' no tiene un formato de audio soportado: solo se admiten WAV, MP3, FLAC y OGG").arg(path);
     }
     return false;
 }
