@@ -7,6 +7,7 @@ Rectangle {
     color: (index % 2 === 0) ? "#1E1F24" : "#191A1E"
 
     property int trackIndex: index
+    property var timelineGrid: null
 
     // Si algún clip de este carril está seleccionado, este carril tiene prioridad visual (z: 100)
     // para que la barra de acciones flotante (arriba o abajo) se dibuje por encima de todas las demás pistas.
@@ -71,6 +72,7 @@ Rectangle {
             // Se dibuja solo si el clip pertenece a este carril/pista
             visible: model.trackIndex === root.trackIndex
             barWidth: root.barWidth
+            timelineGrid: root.timelineGrid
         }
     }
 }

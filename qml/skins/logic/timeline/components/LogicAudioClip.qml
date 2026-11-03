@@ -15,9 +15,12 @@ Item {
     property bool isLiveRecording: (typeof model.isLiveRecording !== "undefined") ? model.isLiveRecording : false
 
     // Propiedades de Edición Avanzada (Honeydew / Mobile DAW)
+    property var timelineGrid: null
+    property int clipIndex: index
     property int trackIndex: (typeof model.trackIndex !== "undefined") ? model.trackIndex : 0
     property bool showAbove: root.trackIndex > 0
     property real bubbleTapX: width / 2
+    property bool isDragging: mainDragArea.drag.active || leftHandleArea.pressed || rightHandleArea.pressed
     property bool isReversed: (typeof model.isReversed !== "undefined") ? model.isReversed : false
     property bool isMuted: (typeof model.isMuted !== "undefined") ? model.isMuted : false
     property int pitchSemitones: (typeof model.pitchSemitones !== "undefined") ? model.pitchSemitones : 0
@@ -33,6 +36,17 @@ Item {
 
     opacity: root.isMuted ? 0.45 : 1.0
 
+    // Notificación centralizada de click/tap hacia el overlay global de LogicTimelineGrid
+    function handleTap(mouseX, mouseY) {
+        AudioEngine.regions.selectedRegionIndex = index
+        root.bubbleTapX = Math.max(16, Math.min(root.width - 16, mouseX))
+        if (timelineGrid) {
+            timelineGrid.selectedClip = root
+            var pt = mapToItem(timelineGrid, mouseX, mouseY)
+            timelineGrid.selectedTapX = pt.x
+        }
+    }
+
     // Posición y ancho calculados con C++ Helpers
     x: AudioEngine.beatToPixel(startBeat, barWidth)
     width: root.isLiveRecording ? AudioEngine.beatToPixel(lengthBeats, barWidth) : Math.max(32, AudioEngine.beatToPixel(lengthBeats, barWidth))
@@ -44,10 +58,22 @@ Item {
         if (parent) {
             parent.z = root.isSelected ? 50 : 1
         }
+        if (root.isSelected && timelineGrid) {
+            timelineGrid.selectedClip = root
+            var globalPt = mapToItem(timelineGrid, Math.min(root.width / 2, 200), 0)
+            timelineGrid.selectedTapX = globalPt.x
+        } else if (!root.isSelected && timelineGrid && timelineGrid.selectedClip === root) {
+            timelineGrid.selectedClip = null
+        }
     }
     Component.onCompleted: {
         if (root.isSelected && parent) {
             parent.z = 50
+        }
+        if (root.isSelected && timelineGrid) {
+            timelineGrid.selectedClip = root
+            var globalPt = mapToItem(timelineGrid, Math.min(root.width / 2, 200), 0)
+            timelineGrid.selectedTapX = globalPt.x
         }
     }
 
@@ -94,10 +120,7 @@ Item {
             // Clic en la barra selecciona el clip y ancla los tips al punto del clic
             MouseArea {
                 anchors.fill: parent
-                onPressed: (mouse) => {
-                    AudioEngine.regions.selectedRegionIndex = index
-                    root.bubbleTapX = Math.max(16, Math.min(root.width - 16, mouse.x))
-                }
+                onPressed: (mouse) => root.handleTap(mouse.x, mouse.y)
             }
 
             Row {
@@ -336,8 +359,7 @@ Item {
                 property real startGain: 0
 
                 onPressed: (mouse) => {
-                    AudioEngine.regions.selectedRegionIndex = index
-                    root.bubbleTapX = Math.max(16, Math.min(root.width - 16, mouse.x))
+                    root.handleTap(mouse.x, mouse.y)
                     startY = mouse.y
                     startGain = root.clipGainDb
                 }
@@ -482,9 +504,8 @@ Item {
                 property real pressParentX: 0
 
                 onPressed: (mouse) => {
-                    AudioEngine.regions.selectedRegionIndex = index
                     var clipPt = mapToItem(root, mouse.x, mouse.y)
-                    root.bubbleTapX = Math.max(16, Math.min(root.width - 16, clipPt.x))
+                    root.handleTap(clipPt.x, clipPt.y)
                     initialX = root.x
                     initialWidth = root.width
                     var pt = mapToItem(root.parent, mouse.x, mouse.y)
@@ -563,9 +584,8 @@ Item {
                 property real pressParentX: 0
 
                 onPressed: (mouse) => {
-                    AudioEngine.regions.selectedRegionIndex = index
                     var clipPt = mapToItem(root, mouse.x, mouse.y)
-                    root.bubbleTapX = Math.max(16, Math.min(root.width - 16, clipPt.x))
+                    root.handleTap(clipPt.x, clipPt.y)
                     initialWidth = root.width
                     var pt = mapToItem(root.parent, mouse.x, mouse.y)
                     pressParentX = pt.x
@@ -600,10 +620,7 @@ Item {
             drag.minimumX: 0
             drag.maximumX: root.parent ? root.parent.width - root.width : 4800
 
-            onPressed: (mouse) => {
-                AudioEngine.regions.selectedRegionIndex = index
-                root.bubbleTapX = Math.max(16, Math.min(root.width - 16, mouse.x))
-            }
+            onPressed: (mouse) => root.handleTap(mouse.x, mouse.y)
 
             onReleased: {
                 var rawBeat = AudioEngine.pixelToBeat(root.x, root.barWidth)
@@ -613,40 +630,6 @@ Item {
                 AudioEngine.regions.moveRegion(index, snappedBeat)
             }
         }
-    }
-
-    // ── BARRA FLOTANTE DE ACCIONES MODULAR (ESTILO HONEYDEW / LOGIC MOBILE) ──
-    LogicClipBubbleBar {
-        id: clipBubbleBar
-        visible: root.isSelected && !root.isLiveRecording && !mainDragArea.drag.active && !leftHandleArea.pressed && !rightHandleArea.pressed
-        z: 300
-        clipIndex: index
-        startBeat: root.startBeat
-        snapGridBeats: root.snapGridBeats
-        showAbove: root.showAbove
-
-        // Posicionamiento Vertical Inteligente (Estilo Honeydew):
-        // En Pista 0: Se coloca DEBAJO del clip (+8px) para no quedar recortado por la regla ni por clip:true.
-        // En Pistas 1+: Se coloca ARRIBA del clip (-height - 8px).
-        y: root.showAbove ? (-height - 8) : (root.height + 8)
-
-        // Posicionamiento Horizontal Dinámico Anclado al Click/Tap:
-        // Centrado exactamente en la coordenada X donde el usuario hizo clic o tap (root.bubbleTapX),
-        // asegurando que no se salga de los márgenes visibles de la pista.
-        x: {
-            var halfW = width / 2
-            var desiredX = root.bubbleTapX - halfW
-            var minX = -root.x + 8
-            var maxX = (root.parent ? root.parent.width : 4800) - root.x - width - 8
-            return Math.max(minX, Math.min(maxX, desiredX))
-        }
-
-        // Animación Pop-in y deslizamiento suave idéntico a Honeydew
-        scale: visible ? 1.0 : 0.8
-        opacity: visible ? 1.0 : 0.0
-        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
-        Behavior on opacity { NumberAnimation { duration: 100 } }
-        Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 
     // Tooltip Flotante Táctil de Posición y Fades
