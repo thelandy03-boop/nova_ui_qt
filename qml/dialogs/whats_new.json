@@ -1,5 +1,37 @@
 {
   "releases": {
+    "1.0.16": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Novedades para grabar y crear música más fácil, rápido y sin fallos:",
+      "buttonText": "¡Empezar a Crear! ➜",
+      "features": [
+        {
+          "category": "MEJORA",
+          "icon": "✨",
+          "title": "Pistas Listas al Instante",
+          "description": "Al grabar tu voz o agregar una canción, Nova crea la pista automáticamente para que empieces a crear sin pasos complicados."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🔴",
+          "title": "Onda de Grabación en Vivo",
+          "description": "Mira cómo se dibuja tu música en tiempo real en la pantalla mientras estás grabando. Al terminar, tu toma queda guardada y lista para escuchar."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "⏱️",
+          "title": "Regla de Tiempo Más Clara",
+          "description": "Los números y marcas de compás arriba en tu proyecto ahora son más grandes, limpios y fáciles de seguir a simple vista."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "🛡️",
+          "title": "Mayor Estabilidad y Fluidez",
+          "description": "Tu música siempre a salvo: corregimos fallos que podían cerrar la aplicación al terminar de grabar o reproducir en tu teléfono."
+        }
+      ]
+    },
     "1.0.15": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
