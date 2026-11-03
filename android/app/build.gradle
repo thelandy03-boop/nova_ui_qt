@@ -32,6 +32,8 @@ android {
                 storePassword 'novastudio2026'
                 keyAlias 'novastudio'
                 keyPassword 'novastudio2026'
+                v1SigningEnabled true
+                v2SigningEnabled true
             }
         }
     }

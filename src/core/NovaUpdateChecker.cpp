@@ -343,6 +343,8 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     QString apkUrl;
     QString fallbackApkUrl;
     QString fallbackSha256;
+    qint64 fallbackSize = 0;
+    qint64 expectedSize = 0;
     const QString abi = currentAbiToken();
     QJsonArray assets = obj.value(QStringLiteral("assets")).toArray();
     for (const QJsonValue &a : assets) {
@@ -351,6 +353,7 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
         if (!name.endsWith(QStringLiteral(".apk"), Qt::CaseInsensitive)) continue;
         if (!abi.isEmpty() && name.contains(abi, Qt::CaseInsensitive)) {
             apkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+            expectedSize = ao.value(QStringLiteral("size")).toInteger();
             // Extraer SHA256 del asset si esta disponible (API de GitHub).
             QString digest = ao.value(QStringLiteral("digest")).toString();
             if (digest.startsWith(QStringLiteral("sha256:"), Qt::CaseInsensitive)) {
@@ -361,6 +364,7 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
         // Permitir NovaStudio.apk sin sufijo de arquitectura como paquete estándar de teléfono
         if (fallbackApkUrl.isEmpty() && name.compare(QStringLiteral("NovaStudio.apk"), Qt::CaseInsensitive) == 0) {
             fallbackApkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+            fallbackSize = ao.value(QStringLiteral("size")).toInteger();
             QString digest = ao.value(QStringLiteral("digest")).toString();
             if (digest.startsWith(QStringLiteral("sha256:"), Qt::CaseInsensitive)) {
                 fallbackSha256 = digest.mid(7).toLower();
@@ -370,10 +374,12 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     // Si no hubo asset específico del ABI y estamos en teléfono (arm64-v8a o por defecto), usar NovaStudio.apk
     if (apkUrl.isEmpty() && !fallbackApkUrl.isEmpty() && (abi.isEmpty() || abi == QStringLiteral("arm64-v8a"))) {
         apkUrl = fallbackApkUrl;
+        expectedSize = fallbackSize;
         if (!fallbackSha256.isEmpty()) {
             m_expectedSha256 = fallbackSha256;
         }
     }
+    m_expectedFileSize = expectedSize;
     // Sin asset para este ABI: abrir la pagina de la release, nunca ofrecer
     // un APK de otra arquitectura.
     if (apkUrl.isEmpty()) {
@@ -460,8 +466,8 @@ void NovaUpdateChecker::downloadAndInstall()
     QUrl url(m_downloadUrl);
     QNetworkRequest req(url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-UpdateChecker"));
-    // Timeout explicito de 30 segundos.
-    req.setTransferTimeout(30000);
+    // Timeout explicito de 300 segundos (5 minutos) para permitir descargas completas de archivos de ~40MB
+    req.setTransferTimeout(300000);
     // Seguir redirecciones (GitHub redirige a S3).
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
@@ -515,7 +521,19 @@ void NovaUpdateChecker::onDownloadFinished()
     m_downloadReply->deleteLater();
     m_downloadReply = nullptr;
 
-    qCInfo(novaCore) << "UpdateChecker: APK descargado en" << m_apkPath;
+    qint64 downloadedSize = QFileInfo(m_apkPath).size();
+    qCInfo(novaCore) << "UpdateChecker: APK descargado en" << m_apkPath << "Tamaño:" << downloadedSize << "bytes";
+
+    // Validar integridad mínima: un APK de NovaStudio completo pesa ~39MB.
+    // Si pesa menos de 5MB o difiere del tamaño esperado de GitHub, está truncado/corrupto.
+    if (downloadedSize < 5 * 1024 * 1024 || (m_expectedFileSize > 0 && downloadedSize != m_expectedFileSize)) {
+        m_downloadError = QStringLiteral("La descarga se interrumpió o el archivo quedó incompleto. Pulsa en Descargar para reintentar.");
+        Q_EMIT downloadErrorChanged();
+        QFile::remove(m_apkPath);
+        qCWarning(novaCore) << "UpdateChecker: APK incompleto (" << downloadedSize
+                            << "bytes vs esperado:" << m_expectedFileSize << "), archivo eliminado.";
+        return;
+    }
 
     // Verificar SHA256 si tenemos hash esperado.
     if (!m_expectedSha256.isEmpty()) {

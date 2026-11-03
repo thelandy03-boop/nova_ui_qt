@@ -130,6 +130,7 @@ private:
     QString m_downloadError;
     bool m_apkReady = false;
     QString m_expectedSha256;
+    qint64 m_expectedFileSize = 0;
     bool m_installPermissionGranted = false;
     bool m_showWhatsNew = false;
     QVariantMap m_currentWhatsNew;
