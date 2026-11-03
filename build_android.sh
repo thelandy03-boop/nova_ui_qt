@@ -139,6 +139,7 @@ ${QT_ANDROID_CMAKE} -B ${BUILD_DIR} \
     -DANDROID_ABI="${ABI}" \
     -DANDROID_PLATFORM="android-31" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     ${QT_HOST_PATH_ARG}
 
 echo "📦 [NOVA ANDROID BUILD] Compilando código nativo..."

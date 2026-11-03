@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Android-specific settings
 if(ANDROID)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Compatibilidad con subproyectos como Oboe" FORCE)
     set(CMAKE_ANDROID_NDK_VERSION "26.1.10909125" CACHE STRING "NDK version")
     set(CMAKE_ANDROID_API 24)  # Android 7.0 minimum for Oboe
     set(CMAKE_ANDROID_STL_TYPE c++_shared)
