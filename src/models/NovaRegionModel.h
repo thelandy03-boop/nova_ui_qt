@@ -44,6 +44,11 @@ struct NovaRegionItem {
     double fadeInBeats = 0.0;
     double fadeOutBeats = 0.0;
 
+    // Propiedades de Edición Avanzada (Honeydew / Mobile DAW)
+    bool isReversed = false;
+    bool isMuted = false;
+    int pitchSemitones = 0;
+
     std::shared_ptr<ARDOUR::Region> regionPtr = nullptr;
 };
 
@@ -103,7 +108,10 @@ public:
         IsLiveRecordingRole,
         ClipGainDbRole,
         FadeInBeatsRole,
-        FadeOutBeatsRole
+        FadeOutBeatsRole,
+        IsReversedRole,
+        IsMutedRole,
+        PitchSemitonesRole
     };
     Q_ENUM(RegionRoles)
 
@@ -138,6 +146,11 @@ public:
     Q_INVOKABLE void setFadeInBeats(int regionIndex, double beats);
     Q_INVOKABLE void setFadeOutBeats(int regionIndex, double beats);
     Q_INVOKABLE void normalizeClip(int regionIndex); // ⚡ Auto-Gain 1-Toque
+
+    // 🎛️ Herramientas de Clip Avanzadas (Honeydew / Mobile DAW)
+    Q_INVOKABLE void reverseRegion(int regionIndex);
+    Q_INVOKABLE void toggleMuteRegion(int regionIndex);
+    Q_INVOKABLE void setPitchSemitones(int regionIndex, int semitones);
 
     // Control de Grabación en Vivo
     void createLiveRecordingClip(double startBeat);

@@ -703,6 +703,16 @@ bool NovaAudioEngine::importAudioAndroid(int trackIndex, const QString &path, do
     return true;
 }
 
+void NovaAudioEngine::reverseAudioAndroid()
+{
+    m_androidEngine.reverseCurrentAudio();
+}
+
+void NovaAudioEngine::setPitchSemitonesAndroid(int semitones)
+{
+    m_androidEngine.setPitchSemitones(semitones);
+}
+
 bool NovaAudioEngine::androidPrepararMotor()
 {
     if (m_androidMotorListo) return true;

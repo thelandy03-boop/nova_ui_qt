@@ -138,6 +138,66 @@ Item {
             }
         }
 
+        // 🔄 Botón Circular: Rev (Invertir Audio)
+        Rectangle {
+            width: 34
+            height: 34
+            radius: 17
+            color: revMouse.pressed ? "#BAC7D5" : (revMouse.containsMouse ? "#E2E8F0" : "#D5DBE1")
+            border.color: "#8A9BA8"
+            border.width: 1
+
+            Text {
+                anchors.centerIn: parent
+                text: "Rev"
+                font.pixelSize: 10
+                font.bold: true
+                color: "#1E293B"
+            }
+
+            MouseArea {
+                id: revMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (root.clipIndex >= 0) {
+                        AudioEngine.regions.reverseRegion(root.clipIndex)
+                    }
+                }
+            }
+        }
+
+        // 🔇 Botón Circular: Mute (Silenciar Clip)
+        Rectangle {
+            width: 34
+            height: 34
+            radius: 17
+            color: muteMouse.pressed ? "#BAC7D5" : (muteMouse.containsMouse ? "#E2E8F0" : "#D5DBE1")
+            border.color: "#8A9BA8"
+            border.width: 1
+
+            Text {
+                anchors.centerIn: parent
+                text: "Mute"
+                font.pixelSize: 9
+                font.bold: true
+                color: "#1E293B"
+            }
+
+            MouseArea {
+                id: muteMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (root.clipIndex >= 0) {
+                        AudioEngine.regions.toggleMuteRegion(root.clipIndex)
+                    }
+                }
+            }
+        }
+
         // ⋯ Botón Circular: More... (Menú de Opciones Adicionales)
         Rectangle {
             id: moreBtn
@@ -176,7 +236,7 @@ Item {
         anchors.right: bubbleRow.right
         anchors.bottom: bubbleRow.top
         anchors.bottomMargin: 6
-        width: 168
+        width: 190
         height: moreColumn.implicitHeight + 12
         radius: 8
         color: "#1E222A"
@@ -284,6 +344,101 @@ Item {
                             AudioEngine.regions.setFadeOutBeats(root.clipIndex, 0.0)
                         }
                         moreMenuPopup.visible = false
+                    }
+                }
+            }
+
+            // Separador
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 6
+                height: 1
+                color: "#2E3644"
+            }
+
+            // Fila de Tono / Pitch Semitonos
+            Item {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 4
+                height: 28
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "🎵 Tono:"
+                    color: "#A0AEC0"
+                    font.pixelSize: 10
+                }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 4
+
+                    // -1 semitono
+                    Rectangle {
+                        width: 24; height: 20; radius: 3
+                        color: pitchDownMouse.pressed ? "#4A5568" : (pitchDownMouse.containsMouse ? "#374151" : "#2D3748")
+                        Text { anchors.centerIn: parent; text: "-1"; color: "#FFFFFF"; font.pixelSize: 9; font.bold: true }
+                        MouseArea {
+                            id: pitchDownMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.clipIndex >= 0) {
+                                    var currentPitch = 0
+                                    var idx = AudioEngine.regions.index(root.clipIndex, 0)
+                                    var val = AudioEngine.regions.data(idx, 269) // PitchSemitonesRole
+                                    if (typeof val === "number") currentPitch = val
+                                    AudioEngine.regions.setPitchSemitones(root.clipIndex, currentPitch - 1)
+                                }
+                            }
+                        }
+                    }
+
+                    // Reset 0
+                    Rectangle {
+                        width: 28; height: 20; radius: 3
+                        color: pitchResetMouse.pressed ? "#4A5568" : (pitchResetMouse.containsMouse ? "#374151" : "#2D3748")
+                        Text { anchors.centerIn: parent; text: "0 st"; color: "#FFCC00"; font.pixelSize: 8; font.bold: true }
+                        MouseArea {
+                            id: pitchResetMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.clipIndex >= 0) {
+                                    AudioEngine.regions.setPitchSemitones(root.clipIndex, 0)
+                                }
+                            }
+                        }
+                    }
+
+                    // +1 semitono
+                    Rectangle {
+                        width: 24; height: 20; radius: 3
+                        color: pitchUpMouse.pressed ? "#4A5568" : (pitchUpMouse.containsMouse ? "#374151" : "#2D3748")
+                        Text { anchors.centerIn: parent; text: "+1"; color: "#FFFFFF"; font.pixelSize: 9; font.bold: true }
+                        MouseArea {
+                            id: pitchUpMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.clipIndex >= 0) {
+                                    var currentPitch = 0
+                                    var idx = AudioEngine.regions.index(root.clipIndex, 0)
+                                    var val = AudioEngine.regions.data(idx, 269) // PitchSemitonesRole
+                                    if (typeof val === "number") currentPitch = val
+                                    AudioEngine.regions.setPitchSemitones(root.clipIndex, currentPitch + 1)
+                                }
+                            }
+                        }
                     }
                 }
             }

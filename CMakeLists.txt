@@ -158,6 +158,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaResampler.cpp
     src/audio/NovaSpikeLoader.h
     src/audio/NovaSpikeLoader.cpp
+    src/audio/NovaTapeStop.h
+    src/audio/NovaTapeStop.cpp
     third_party/minimp3/minimp3.h
 )
 
@@ -345,6 +347,7 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaAudioDecoder.cpp
         src/audio/NovaWavReader.cpp
         src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaTapeStop.cpp
     )
     target_link_libraries(test_audio_player PRIVATE Qt6::Core)
     target_include_directories(test_audio_player PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

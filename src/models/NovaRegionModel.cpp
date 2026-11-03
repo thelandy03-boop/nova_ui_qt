@@ -452,6 +452,12 @@ QVariant NovaRegionModel::data(const QModelIndex &index, int role) const
         return item.fadeInBeats;
     case FadeOutBeatsRole:
         return item.fadeOutBeats;
+    case IsReversedRole:
+        return item.isReversed;
+    case IsMutedRole:
+        return item.isMuted;
+    case PitchSemitonesRole:
+        return item.pitchSemitones;
     default:
         return {};
     }
@@ -471,7 +477,10 @@ QHash<int, QByteArray> NovaRegionModel::roleNames() const
         { IsLiveRecordingRole, "isLiveRecording" },
         { ClipGainDbRole,      "clipGainDb"      },
         { FadeInBeatsRole,     "fadeInBeats"     },
-        { FadeOutBeatsRole,    "fadeOutBeats"    }
+        { FadeOutBeatsRole,    "fadeOutBeats"    },
+        { IsReversedRole,      "isReversed"      },
+        { IsMutedRole,         "isMuted"         },
+        { PitchSemitonesRole,  "pitchSemitones"  }
     };
 }
 
@@ -1080,6 +1089,56 @@ void NovaRegionModel::normalizeClip(int regionIndex)
         float gainDb = NovaAudioUtils::coeffToDb(targetCoeff);
         setClipGainDb(regionIndex, gainDb);
     }
+}
+
+void NovaRegionModel::reverseRegion(int regionIndex)
+{
+    if (regionIndex < 0 || regionIndex >= static_cast<int>(m_regions.size())) return;
+
+    auto &item = m_regions[static_cast<size_t>(regionIndex)];
+    item.isReversed = !item.isReversed;
+
+    // Invertir los picos en la caché para actualizar el renderizador OpenGL de inmediato
+    PeakData peaks;
+    if (NovaWaveformCache::getPeaks(item.id, peaks)) {
+        std::reverse(peaks.peaks.begin(), peaks.peaks.end());
+        std::reverse(peaks.overview.begin(), peaks.overview.end());
+        NovaWaveformCache::setPeaks(item.id, peaks);
+    }
+
+#if defined(Q_OS_ANDROID)
+    if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
+        eng->reverseAudioAndroid();
+    }
+#endif
+
+    Q_EMIT dataChanged(index(regionIndex), index(regionIndex), QList<int>{IsReversedRole});
+}
+
+void NovaRegionModel::toggleMuteRegion(int regionIndex)
+{
+    if (regionIndex < 0 || regionIndex >= static_cast<int>(m_regions.size())) return;
+
+    auto &item = m_regions[static_cast<size_t>(regionIndex)];
+    item.isMuted = !item.isMuted;
+
+    Q_EMIT dataChanged(index(regionIndex), index(regionIndex), QList<int>{IsMutedRole});
+}
+
+void NovaRegionModel::setPitchSemitones(int regionIndex, int semitones)
+{
+    if (regionIndex < 0 || regionIndex >= static_cast<int>(m_regions.size())) return;
+
+    auto &item = m_regions[static_cast<size_t>(regionIndex)];
+    item.pitchSemitones = std::clamp(semitones, -24, 24);
+
+#if defined(Q_OS_ANDROID)
+    if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
+        eng->setPitchSemitonesAndroid(item.pitchSemitones);
+    }
+#endif
+
+    Q_EMIT dataChanged(index(regionIndex), index(regionIndex), QList<int>{PitchSemitonesRole});
 }
 
 // ── PERSISTENCIA BINARIA DE PICOS (.novapeak) ─────────────────────────

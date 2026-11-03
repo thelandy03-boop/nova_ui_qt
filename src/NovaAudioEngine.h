@@ -59,6 +59,8 @@ public:
     // Fase 2b: carga (decodifica) y reproduce un fichero en Android.
     Q_INVOKABLE bool loadAndPlayAndroid(const QString &path);
     Q_INVOKABLE bool importAudioAndroid(int trackIndex, const QString &path, double startBeat = 0.0);
+    Q_INVOKABLE void reverseAudioAndroid();
+    Q_INVOKABLE void setPitchSemitonesAndroid(int semitones);
 #endif
 
     // Controles de Transporte

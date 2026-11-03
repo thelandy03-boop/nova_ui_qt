@@ -14,6 +14,11 @@ Item {
     property bool isSelected: AudioEngine.regions.selectedRegionIndex === index
     property bool isLiveRecording: (typeof model.isLiveRecording !== "undefined") ? model.isLiveRecording : false
 
+    // Propiedades de Edición Avanzada (Honeydew / Mobile DAW)
+    property bool isReversed: (typeof model.isReversed !== "undefined") ? model.isReversed : false
+    property bool isMuted: (typeof model.isMuted !== "undefined") ? model.isMuted : false
+    property int pitchSemitones: (typeof model.pitchSemitones !== "undefined") ? model.pitchSemitones : 0
+
     // Propiedades de Ganancia y Fundidos (Fades)
     property real clipGainDb: (typeof model.clipGainDb !== "undefined") ? model.clipGainDb : 0.0
     property real fadeInBeats: (typeof model.fadeInBeats !== "undefined") ? model.fadeInBeats : 0.0
@@ -22,6 +27,8 @@ Item {
     // Conversión de Beats a Píxeles para los Fades
     property real fadeInPixels: AudioEngine.beatToPixel(root.fadeInBeats, root.barWidth)
     property real fadeOutPixels: AudioEngine.beatToPixel(root.fadeOutBeats, root.barWidth)
+
+    opacity: root.isMuted ? 0.45 : 1.0
 
     // Posición y ancho calculados con C++ Helpers
     x: AudioEngine.beatToPixel(startBeat, barWidth)
@@ -115,6 +122,40 @@ Item {
                     font.bold: true
                     elide: Text.ElideRight
                     anchors.verticalCenter: parent.verticalCenter
+                }
+
+                // Badge: Reverse
+                Rectangle {
+                    visible: root.isReversed
+                    width: 32; height: 14; radius: 3
+                    color: "#4A90E2"
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { anchors.centerIn: parent; text: "🔄 Rev"; color: "#FFFFFF"; font.pixelSize: 8; font.bold: true }
+                }
+
+                // Badge: Pitch
+                Rectangle {
+                    visible: root.pitchSemitones !== 0
+                    width: pitchBadgeText.implicitWidth + 8; height: 14; radius: 3
+                    color: "#9333EA"
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text {
+                        id: pitchBadgeText
+                        anchors.centerIn: parent
+                        text: (root.pitchSemitones > 0 ? "+" : "") + root.pitchSemitones + " st"
+                        color: "#FFFFFF"
+                        font.pixelSize: 8
+                        font.bold: true
+                    }
+                }
+
+                // Badge: Muted
+                Rectangle {
+                    visible: root.isMuted
+                    width: 24; height: 14; radius: 3
+                    color: "#EF4444"
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { anchors.centerIn: parent; text: "🔇"; color: "#FFFFFF"; font.pixelSize: 8 }
                 }
             }
 

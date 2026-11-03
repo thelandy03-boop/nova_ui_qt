@@ -13,6 +13,7 @@
 //     buffer (el overrun que rompe el audio en el móvil).
 #include "audio/NovaAudioDecoder.h"
 #include "audio/NovaAudioPlayer.h"
+#include "audio/NovaTapeStop.h"
 
 #include <algorithm>
 #include <cmath>
@@ -551,6 +552,66 @@ int main()
                         && maxDiferencia < 0.000001f && decimacionExacta,
                     "con razón 4 la salida tiene que ser la entrada decimada (la n vale la 4n) y "
                     "da igual si se pide en un bloque o en muchos");
+    }
+
+    // ------------------------------------------------------------------
+    // 15. Inversión de audio (reverse) y cambio de tono (pitch).
+    // ------------------------------------------------------------------
+    {
+        NovaDecodedAudio audio = tonoSintetico(48000, 1, 0.5);
+        // Marcamos el inicio y final para verificar inversión
+        audio.samples.front() = 0.99f;
+        audio.samples.back() = -0.99f;
+
+        NovaAudioPlayer player;
+        player.load(audio, nullptr);
+        player.reverse();
+
+        std::vector<float> salida(audio.samples.size());
+        player.play();
+        int leidos = player.renderFrames(salida.data(), salida.size());
+
+        bool invertidoOk = (leidos > 0 && std::fabs(salida.front() - (-0.99f)) < 0.05f
+                                       && std::fabs(salida.back() - (0.99f)) < 0.05f);
+
+        // Prueba de Pitch +12 semitonos (octava arriba = doble de velocidad = mitad de duración)
+        NovaAudioPlayer pitchPlayer;
+        pitchPlayer.load(audio, nullptr);
+        pitchPlayer.setOutputSampleRate(48000);
+        qint64 durOriginal = pitchPlayer.durationFrames();
+        pitchPlayer.setPitchSemitones(12);
+        qint64 durDobleSpeed = pitchPlayer.durationFrames();
+
+        bool pitchOk = (durDobleSpeed > 0 && std::abs(durDobleSpeed - durOriginal / 2) <= 2);
+
+        CHECK_NAMED("reverse_y_pitch_clip_tools",
+                    invertidoOk && pitchOk,
+                    "reverse debe invertir los fotogramas y pitchSemitones(+12) debe reducir la duracion a la mitad");
+    }
+
+    // ------------------------------------------------------------------
+    // 16. DSP Tape Stop (Honeydew port).
+    // ------------------------------------------------------------------
+    {
+        NovaTapeStop tape(48000.0f, 120.0f);
+        float outL = 0.0f, outR = 0.0f;
+
+        // En estado normal pasa el audio transparente
+        tape.processFrame(0.5f, -0.5f, outL, outR);
+        bool passthroughOk = (std::abs(outL - 0.5f) < 0.01f && std::abs(outR - (-0.5f)) < 0.01f);
+
+        // Disparar parada
+        tape.trigger(true, 0.1f);
+        bool frenaOk = tape.isActive();
+
+        // Procesar muestras mientras frena
+        for (int i = 0; i < 4800; ++i) {
+            tape.processFrame(0.5f, -0.5f, outL, outR);
+        }
+
+        CHECK_NAMED("tape_stop_dsp_honeydew",
+                    passthroughOk && frenaOk,
+                    "NovaTapeStop debe ser transparente en reposo y activo durante el frenado");
     }
 
     std::printf("\n%d comprobaciones, %d fallos\n", g_checks, g_failures);

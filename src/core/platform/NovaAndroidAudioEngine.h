@@ -155,6 +155,8 @@ public:
     }
     void resetPlaybackRange() { m_player.setPlaybackRange(0, 0); }
     void seekToFrame(qint64 frame) { m_player.seekToFrame(frame); m_currentFrame.store(frame, std::memory_order_relaxed); }
+    void reverseCurrentAudio() { m_player.reverse(); }
+    void setPitchSemitones(int semitones) { m_player.setPitchSemitones(semitones); }
 #endif
 
     void setLoopRangeFrames(qint64 startFrame, qint64 endFrame) {

@@ -139,6 +139,13 @@ public:
     qint64 playbackRangeStart() const { return m_rangoInicio; }
     qint64 playbackRangeEnd() const { return m_rangoFin; }  // 0 = hasta el final
 
+    /** Invierte las muestras del audio cargado (reverse). */
+    void reverse();
+
+    /** Ajusta el pitch en semitonos [-24, +24]. 0 = normal. */
+    void setPitchSemitones(int semitones);
+    int pitchSemitones() const { return m_pitchSemitones; }
+
 private:
     /** Recalcula la duración con la tasa de salida vigente. */
     void recalcularDuracion();
@@ -179,6 +186,9 @@ private:
     // Rango de reproducción (fotogramas de salida). 0,0 = fichero entero.
     qint64 m_rangoInicio = 0;
     qint64 m_rangoFin = 0;
+
+    /** Tono / Pitch en semitonos [-24, +24]. */
+    int m_pitchSemitones = 0;
 
     /** true si hay audio cargado. */
     bool m_cargado = false;

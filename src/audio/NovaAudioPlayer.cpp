@@ -266,9 +266,19 @@ void NovaAudioPlayer::recalcularDuracion()
         return;
     }
 
+    double factorPitch = 1.0;
+    if (m_pitchSemitones != 0) {
+        factorPitch = std::pow(2.0, static_cast<double>(m_pitchSemitones) / 12.0);
+    }
+    const double tasaEfectiva = static_cast<double>(m_tasaEntrada) * factorPitch;
+    if (tasaEfectiva <= 0.0) {
+        m_fotogramasDuracion = 0;
+        return;
+    }
+
     const double duracion = static_cast<double>(m_fotogramasEntrada)
                           * static_cast<double>(m_tasaSalida)
-                          / static_cast<double>(m_tasaEntrada);
+                          / tasaEfectiva;
     m_fotogramasDuracion = static_cast<qint64>(std::llround(duracion));
 }
 
@@ -277,5 +287,46 @@ double NovaAudioPlayer::ratioEntradaPorSalida() const
     if (m_tasaEntrada <= 0 || m_tasaSalida <= 0) {
         return 1.0;
     }
-    return static_cast<double>(m_tasaEntrada) / static_cast<double>(m_tasaSalida);
+    double factorPitch = 1.0;
+    if (m_pitchSemitones != 0) {
+        factorPitch = std::pow(2.0, static_cast<double>(m_pitchSemitones) / 12.0);
+    }
+    return (static_cast<double>(m_tasaEntrada) * factorPitch) / static_cast<double>(m_tasaSalida);
+}
+
+void NovaAudioPlayer::reverse()
+{
+    if (!m_cargado || m_audio.samples.empty() || m_canales <= 0) {
+        return;
+    }
+
+    const size_t totalFrames = static_cast<size_t>(m_fotogramasEntrada);
+    const size_t ch = static_cast<size_t>(m_canales);
+    std::vector<float> temp(ch);
+
+    for (size_t i = 0; i < totalFrames / 2; ++i) {
+        size_t j = totalFrames - 1 - i;
+        float* frameA = m_audio.samples.data() + i * ch;
+        float* frameB = m_audio.samples.data() + j * ch;
+        std::memcpy(temp.data(), frameA, ch * sizeof(float));
+        std::memcpy(frameA, frameB, ch * sizeof(float));
+        std::memcpy(frameB, temp.data(), ch * sizeof(float));
+    }
+
+    m_remuestreador.reset();
+}
+
+void NovaAudioPlayer::setPitchSemitones(int semitones)
+{
+    m_pitchSemitones = std::clamp(semitones, -24, 24);
+    if (!m_cargado || m_tasaEntrada <= 0 || m_tasaSalida <= 0) {
+        return;
+    }
+
+    const double factorPitch = std::pow(2.0, static_cast<double>(m_pitchSemitones) / 12.0);
+    int tasaEfectiva = static_cast<int>(std::round(static_cast<double>(m_tasaEntrada) * factorPitch));
+    if (tasaEfectiva <= 0) tasaEfectiva = m_tasaEntrada;
+
+    m_remuestreador.setRates(tasaEfectiva, m_tasaSalida, m_canales);
+    recalcularDuracion();
 }
