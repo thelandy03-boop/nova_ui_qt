@@ -1,4 +1,5 @@
 #include "NovaAndroidAudioEngine.h"
+#include "audio/dsp/NovaDspChain.h"
 
 #if defined(Q_OS_ANDROID)
 #include <oboe/Oboe.h>
@@ -631,6 +632,17 @@ void NovaAndroidAudioEngine::setPlaying(bool enabled) {
     Q_EMIT playbackStateChanged(enabled);
 }
 
+void NovaAndroidAudioEngine::setDspChain(NovaDspChain* chain) {
+#if defined(Q_OS_ANDROID)
+    m_player.setDspChain(chain);
+#endif
+    m_activeDspChain.store(chain, std::memory_order_release);
+}
+
+NovaDspChain* NovaAndroidAudioEngine::dspChain() const {
+    return m_activeDspChain.load(std::memory_order_acquire);
+}
+
 bool NovaAndroidAudioEngine::tieneFicheroCargado() const {
 #if defined(Q_OS_ANDROID)
     // El reproductor guarda los canales del fichero cargado (0 si no hay
@@ -1115,6 +1127,10 @@ oboe::DataCallbackResult NovaAndroidAudioEngine::OutputStreamCallback::onAudioRe
         auto* track0Output = m_engine->getOutputBuffer(0);
         if (track0Output && track0Output->channels() == channels) {
             emitidos = static_cast<int>(track0Output->read(outputBuffer, numFrames));
+            NovaDspChain* dsp = m_engine->m_activeDspChain.load(std::memory_order_relaxed);
+            if (dsp && emitidos > 0) {
+                dsp->process(outputBuffer, emitidos, channels, stream->getSampleRate());
+            }
         }
     }
     

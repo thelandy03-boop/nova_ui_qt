@@ -2,6 +2,11 @@
 #include "core/NovaLogging.h"
 #include "core/NovaAudioUtils.h"
 #include "core/platform/NovaAndroidStubs.h"
+#include "audio/dsp/NovaDspChain.h"
+#include "audio/dsp/NovaBiquadEq.h"
+#include "audio/dsp/NovaCompressor.h"
+#include "audio/dsp/NovaStereoDelay.h"
+#include "audio/dsp/NovaReverb.h"
 
 #include <QMetaObject>
 
@@ -54,8 +59,10 @@ public:
         QString category;
         bool bypassed = false;
         QVariantList parameters;
+        std::shared_ptr<NovaDspEffect> dspEffect;
     };
     QMap<int, QList<PluginStubInfo>> stubPlugins;
+    QMap<int, std::shared_ptr<NovaDspChain>> trackDspChains;
 
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_WIN)
     ARDOUR::Session *session = nullptr;
@@ -669,6 +676,8 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
 
     NovaTrackListModelPrivate::PluginStubInfo stub;
     stub.id = pluginId;
+    std::shared_ptr<NovaDspEffect> effect;
+
     if (pluginId.contains(QStringLiteral("a-eq"))) {
         stub.name = QStringLiteral("ACE EQ");
         stub.category = QStringLiteral("EQ");
@@ -677,6 +686,7 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Medios 1kHz")}, {QStringLiteral("value"), 0.0}, {QStringLiteral("min"), -12.0}, {QStringLiteral("max"), 12.0}, {QStringLiteral("unit"), QStringLiteral("dB")}},
             QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Agudos 10kHz")}, {QStringLiteral("value"), 0.0}, {QStringLiteral("min"), -12.0}, {QStringLiteral("max"), 12.0}, {QStringLiteral("unit"), QStringLiteral("dB")}}
         };
+        effect = std::make_shared<NovaBiquadEq>();
     } else if (pluginId.contains(QStringLiteral("a-comp"))) {
         stub.name = QStringLiteral("ACE Compressor");
         stub.category = QStringLiteral("DINÁMICA");
@@ -685,6 +695,7 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Ratio")}, {QStringLiteral("value"), 3.0}, {QStringLiteral("min"), 1.0}, {QStringLiteral("max"), 20.0}, {QStringLiteral("unit"), QStringLiteral(":1")}},
             QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Ganancia")}, {QStringLiteral("value"), 2.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 20.0}, {QStringLiteral("unit"), QStringLiteral("dB")}}
         };
+        effect = std::make_shared<NovaCompressor>();
     } else if (pluginId.contains(QStringLiteral("a-delay"))) {
         stub.name = QStringLiteral("ACE Delay");
         stub.category = QStringLiteral("DELAY");
@@ -693,6 +704,7 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Feedback")}, {QStringLiteral("value"), 30.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}},
             QVariantMap{{QStringLiteral("index"), 2}, {QStringLiteral("name"), QStringLiteral("Mezcla")}, {QStringLiteral("value"), 25.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
         };
+        effect = std::make_shared<NovaStereoDelay>();
     } else if (pluginId.contains(QStringLiteral("a-reverb"))) {
         stub.name = QStringLiteral("ACE Reverb");
         stub.category = QStringLiteral("ESPACIO");
@@ -700,9 +712,18 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 0}, {QStringLiteral("name"), QStringLiteral("Tamaño Sala")}, {QStringLiteral("value"), 45.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}},
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Mezcla Wet")}, {QStringLiteral("value"), 20.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
         };
+        effect = std::make_shared<NovaReverb>();
     } else {
         stub.name = pluginId;
         stub.category = QStringLiteral("EFECTO");
+    }
+
+    if (effect) {
+        stub.dspEffect = effect;
+        if (!d_ptr->trackDspChains.contains(trackRow)) {
+            d_ptr->trackDspChains[trackRow] = std::make_shared<NovaDspChain>();
+        }
+        d_ptr->trackDspChains[trackRow]->addEffect(effect);
     }
 
     d_ptr->stubPlugins[trackRow].append(stub);
@@ -741,6 +762,9 @@ bool NovaTrackListModel::removePluginFromTrack(int trackRow, int pluginIndex)
     if (d_ptr->stubPlugins.contains(trackRow) &&
         pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
         d_ptr->stubPlugins[trackRow].removeAt(pluginIndex);
+        if (d_ptr->trackDspChains.contains(trackRow)) {
+            d_ptr->trackDspChains[trackRow]->removeEffect(pluginIndex);
+        }
         Q_EMIT trackPluginsChanged(trackRow);
         return true;
     }
@@ -778,6 +802,9 @@ bool NovaTrackListModel::setPluginBypassed(int trackRow, int pluginIndex, bool b
     if (d_ptr->stubPlugins.contains(trackRow) &&
         pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
         d_ptr->stubPlugins[trackRow][pluginIndex].bypassed = bypassed;
+        if (d_ptr->stubPlugins[trackRow][pluginIndex].dspEffect) {
+            d_ptr->stubPlugins[trackRow][pluginIndex].dspEffect->setBypassed(bypassed);
+        }
         Q_EMIT trackPluginsChanged(trackRow);
         return true;
     }
@@ -807,6 +834,9 @@ bool NovaTrackListModel::setTrackPluginsBypassed(int trackRow, bool bypassed)
     if (d_ptr->stubPlugins.contains(trackRow)) {
         for (auto &p : d_ptr->stubPlugins[trackRow]) {
             p.bypassed = bypassed;
+            if (p.dspEffect) {
+                p.dspEffect->setBypassed(bypassed);
+            }
         }
         Q_EMIT trackPluginsChanged(trackRow);
         return true;
@@ -880,8 +910,19 @@ bool NovaTrackListModel::setPluginParameter(int trackRow, int pluginIndex, int p
             QVariantMap m = params[paramIndex].toMap();
             m[QStringLiteral("value")] = value;
             params[paramIndex] = m;
+            if (d_ptr->stubPlugins[trackRow][pluginIndex].dspEffect) {
+                d_ptr->stubPlugins[trackRow][pluginIndex].dspEffect->setParameter(paramIndex, value);
+            }
             return true;
         }
     }
     return false;
+}
+
+NovaDspChain* NovaTrackListModel::dspChainForTrack(int trackRow) const
+{
+    if (d_ptr->trackDspChains.contains(trackRow)) {
+        return d_ptr->trackDspChains[trackRow].get();
+    }
+    return nullptr;
 }

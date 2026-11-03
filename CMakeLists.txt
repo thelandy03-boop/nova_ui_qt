@@ -165,6 +165,17 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaSpikeLoader.cpp
     src/audio/NovaTapeStop.h
     src/audio/NovaTapeStop.cpp
+    src/audio/dsp/NovaDspEffect.h
+    src/audio/dsp/NovaDspChain.h
+    src/audio/dsp/NovaDspChain.cpp
+    src/audio/dsp/NovaBiquadEq.h
+    src/audio/dsp/NovaBiquadEq.cpp
+    src/audio/dsp/NovaCompressor.h
+    src/audio/dsp/NovaCompressor.cpp
+    src/audio/dsp/NovaStereoDelay.h
+    src/audio/dsp/NovaStereoDelay.cpp
+    src/audio/dsp/NovaReverb.h
+    src/audio/dsp/NovaReverb.cpp
     third_party/minimp3/minimp3.h
     third_party/dr_libs/dr_flac.h
 )
@@ -358,6 +369,7 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaFlacDecoder.cpp
         src/audio/NovaOggDecoder.cpp
         src/audio/NovaTapeStop.cpp
+        src/audio/dsp/NovaDspChain.cpp
     )
     target_link_libraries(test_audio_player PRIVATE Qt6::Core)
     target_include_directories(test_audio_player PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -396,12 +408,26 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/NovaOggDecoder.cpp
         src/audio/NovaAudioPlayer.cpp
         src/audio/NovaResampler.cpp
+        src/audio/dsp/NovaDspChain.cpp
         src/core/NovaSimdPeaks.cpp
     )
     target_link_libraries(test_audio_loader PRIVATE Qt6::Core)
     target_include_directories(test_audio_loader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(test_audio_loader PRIVATE NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_test(NAME audio_loader COMMAND test_audio_loader)
+
+    # Los procesadores de efectos DSP (ACE EQ, Compresor, Delay, Reverb)
+    add_executable(test_audio_dsp
+        tests/test_audio_dsp.cpp
+        src/audio/dsp/NovaDspChain.cpp
+        src/audio/dsp/NovaBiquadEq.cpp
+        src/audio/dsp/NovaCompressor.cpp
+        src/audio/dsp/NovaStereoDelay.cpp
+        src/audio/dsp/NovaReverb.cpp
+    )
+    target_link_libraries(test_audio_dsp PRIVATE Qt6::Core)
+    target_include_directories(test_audio_dsp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME audio_dsp COMMAND test_audio_dsp)
 
     # El gestor de parches de colaboración local (.novapatch)
     add_executable(test_patch_manager

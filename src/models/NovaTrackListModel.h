@@ -66,6 +66,9 @@ public:
     Q_INVOKABLE bool isTrackPluginsBypassed(int trackRow) const;
     Q_INVOKABLE bool setPluginParameter(int trackRow, int pluginIndex, int paramIndex, float value);
 
+    /** Devuelve la cadena DSP activa para una pista dada. */
+    class NovaDspChain* dspChainForTrack(int trackRow) const;
+
 signals:
     void trackCountChanged(int count);
     void trackAddFailed(const QString &reason);

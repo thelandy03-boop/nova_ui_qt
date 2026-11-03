@@ -1,4 +1,5 @@
 #include "audio/NovaAudioPlayer.h"
+#include "audio/dsp/NovaDspChain.h"
 
 #include <algorithm>
 #include <cmath>
@@ -247,6 +248,10 @@ int NovaAudioPlayer::renderFrames(float* interleavedOut, int frames)
                         static_cast<size_t>(m_canales) * sizeof(float));
         }
         escritos += faltan;
+    }
+
+    if (m_dspChain != nullptr && escritos > 0 && m_tasaSalida > 0) {
+        m_dspChain->process(interleavedOut, escritos, m_canales, m_tasaSalida);
     }
 
     m_fotogramasPosicion += escritos;

@@ -150,6 +150,16 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
             m_regionModel->updateLiveRecordingClipWithPeaks(lengthBeats, livePeaks);
         }
     });
+
+    // Conexión para activar plugins DSP de la pista en tiempo real sobre el motor Oboe
+    connect(m_trackModel, &NovaTrackListModel::trackPluginsChanged, this, [this](int trackRow) {
+        if (m_trackModel) {
+            auto* chain = m_trackModel->dspChainForTrack(trackRow);
+            if (chain) {
+                m_androidEngine.setDspChain(chain);
+            }
+        }
+    });
 #endif
 }
 
@@ -226,6 +236,15 @@ void NovaAudioEngine::play() {
             m_androidMotorListo = androidPrepararMotor();
         }
         if (m_androidMotorListo) {
+            // Asignar cadena de efectos DSP de la pista asociada si existe
+            if (m_trackModel) {
+                int trackIdx = (m_pendingImportTrackIndex >= 0) ? m_pendingImportTrackIndex : 0;
+                auto* chain = m_trackModel->dspChainForTrack(trackIdx);
+                if (chain) {
+                    m_androidEngine.setDspChain(chain);
+                }
+            }
+
             // Split real: si el playhead cae dentro de una region, se
             // reproduce solo esa porcion (rango). Si no, fichero completo.
             double curFrame = currentFrame();

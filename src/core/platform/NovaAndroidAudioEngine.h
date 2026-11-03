@@ -98,6 +98,10 @@ public:
     bool isRecording() const { return m_isRecording.load(); }
     bool isPlaying() const { return m_isPlaying.load(); }
 
+    // DSP effects chain
+    void setDspChain(class NovaDspChain* chain);
+    class NovaDspChain* dspChain() const;
+
     /**
      * true si el motor tiene un fichero cargado (el del reproductor).
      *
@@ -341,6 +345,7 @@ private:
     QString m_ultimaTomaWavPath;
     mutable std::mutex m_livePeaksMutex;
     std::vector<PeakPoint> m_livePeaks;
+    std::atomic<class NovaDspChain*> m_activeDspChain{nullptr};
 };
 
 #endif // NOVAAUDIOENGINE_ANDROID_H

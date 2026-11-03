@@ -146,6 +146,10 @@ public:
     void setPitchSemitones(int semitones);
     int pitchSemitones() const { return m_pitchSemitones; }
 
+    /** Asigna la cadena de efectos DSP a procesar en renderFrames. */
+    void setDspChain(class NovaDspChain* chain) { m_dspChain = chain; }
+    class NovaDspChain* dspChain() const { return m_dspChain; }
+
 private:
     /** Recalcula la duración con la tasa de salida vigente. */
     void recalcularDuracion();
@@ -200,4 +204,7 @@ private:
      * lo lee el hilo de audio (el callback de Oboe), que son hilos distintos.
      */
     std::atomic<bool> m_sonando{false};
+
+    /** Cadena de efectos DSP opcional. */
+    class NovaDspChain* m_dspChain = nullptr;
 };
