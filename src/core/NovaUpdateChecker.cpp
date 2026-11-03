@@ -135,6 +135,8 @@ void NovaUpdateChecker::triggerWhatsNew()
 void NovaUpdateChecker::loadWhatsNewData()
 {
     const QStringList candidates = {
+        QStringLiteral(":/qt/qml/NovaStudio/qml/dialogs/whats_new.json"),
+        QStringLiteral("qrc:/qt/qml/NovaStudio/qml/dialogs/whats_new.json"),
         QDir::current().filePath(QStringLiteral("qml/dialogs/whats_new.json")),
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../qml/dialogs/whats_new.json")),
         QStringLiteral(":/nova_ui_qt/qml/dialogs/whats_new.json"),
