@@ -222,6 +222,10 @@ fi
 if [ -f "${APK_SRC}" ]; then
     cp "${APK_SRC}" "${APK_DEST}"
     echo "  ✅ APK copiado a ${APK_DEST} ($(du -h "${APK_DEST}" | cut -f1))"
+    if [ "${BUILD_TYPE}" = "release" ] && [ "${ABI}" = "arm64-v8a" ]; then
+        cp "${APK_SRC}" "${EXPORT_DIR}/NovaStudio.apk"
+        echo "  ✅ APK copiado a ${EXPORT_DIR}/NovaStudio.apk ($(du -h "${EXPORT_DIR}/NovaStudio.apk" | cut -f1))"
+    fi
 else
     echo "  ❌ No se encontró el APK en ${APK_SRC}"
 fi

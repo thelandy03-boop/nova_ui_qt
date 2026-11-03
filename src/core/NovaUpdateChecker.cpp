@@ -341,6 +341,8 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
     // Buscar un asset .apk para descarga directa, prefiriendo el ABI actual
     // (arm64-v8a en telefonos, x86_64 en Waydroid/emulador).
     QString apkUrl;
+    QString fallbackApkUrl;
+    QString fallbackSha256;
     const QString abi = currentAbiToken();
     QJsonArray assets = obj.value(QStringLiteral("assets")).toArray();
     for (const QJsonValue &a : assets) {
@@ -355,6 +357,21 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
                 m_expectedSha256 = digest.mid(7).toLower();
             }
             break;
+        }
+        // Permitir NovaStudio.apk sin sufijo de arquitectura como paquete estándar de teléfono
+        if (fallbackApkUrl.isEmpty() && name.compare(QStringLiteral("NovaStudio.apk"), Qt::CaseInsensitive) == 0) {
+            fallbackApkUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+            QString digest = ao.value(QStringLiteral("digest")).toString();
+            if (digest.startsWith(QStringLiteral("sha256:"), Qt::CaseInsensitive)) {
+                fallbackSha256 = digest.mid(7).toLower();
+            }
+        }
+    }
+    // Si no hubo asset específico del ABI y estamos en teléfono (arm64-v8a o por defecto), usar NovaStudio.apk
+    if (apkUrl.isEmpty() && !fallbackApkUrl.isEmpty() && (abi.isEmpty() || abi == QStringLiteral("arm64-v8a"))) {
+        apkUrl = fallbackApkUrl;
+        if (!fallbackSha256.isEmpty()) {
+            m_expectedSha256 = fallbackSha256;
         }
     }
     // Sin asset para este ABI: abrir la pagina de la release, nunca ofrecer
