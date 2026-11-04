@@ -15,8 +15,10 @@ Rectangle {
     property int currentLine: 1
     property int currentCol: 1
 
+    signal pasteClicked()
+
     Layout.fillWidth: true
-    Layout.preferredHeight: 46
+    Layout.preferredHeight: (Qt.platform.os === "android") ? 46 : 40
     color: "#16171B"
     border.color: "#202229"
     border.width: 1
@@ -57,61 +59,67 @@ Rectangle {
             }
         }
 
-        // Indicadores de estado estilo VS Code a la derecha
-        RowLayout {
-            spacing: 14
+        // Botón Pegar texto de portapapeles a la derecha
+        Rectangle {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 32 : 26
+            Layout.preferredWidth: pasteRow.implicitWidth + 20
+            color: pasteMouse.containsMouse ? "#2E323D" : "#20232B"
+            border.color: pasteMouse.containsMouse ? "#4D5366" : "#2B2E38"
+            border.width: 1
+            radius: 3
 
-            Text {
-                text: root.currentSection
-                color: "#D4B16A"
-                font.pixelSize: 11
-                font.bold: true
-                font.family: "Monospace, Consolas, Courier New"
+            RowLayout {
+                id: pasteRow
+                anchors.centerIn: parent
+                spacing: 7
+
+                // Icono vectorial de portapapeles
+                Canvas {
+                    Layout.preferredWidth: 13
+                    Layout.preferredHeight: 14
+                    Layout.alignment: Qt.AlignVCenter
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, 13, 14)
+                        ctx.strokeStyle = pasteMouse.containsMouse ? "#FFFFFF" : "#AEAFAD"
+                        ctx.lineWidth = 1.2
+                        // Tabla de portapapeles
+                        ctx.strokeRect(1.5, 2.5, 10, 10)
+                        // Presilla / clip superior
+                        ctx.fillStyle = "#D4B16A"
+                        ctx.fillRect(4.5, 0.5, 4, 3)
+                        // Líneas de texto simuladas
+                        ctx.beginPath()
+                        ctx.moveTo(3.5, 5.5)
+                        ctx.lineTo(9.5, 5.5)
+                        ctx.moveTo(3.5, 8.5)
+                        ctx.lineTo(9.5, 8.5)
+                        ctx.stroke()
+                    }
+                }
+
+                Text {
+                    text: "Pegar portapapeles"
+                    color: pasteMouse.containsMouse ? "#FFFFFF" : "#D4D4D4"
+                    font.pixelSize: (Qt.platform.os === "android") ? 12 : 11
+                    font.bold: true
+                    font.family: "Segoe UI, Inter, Sans-serif"
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
 
-            Rectangle { width: 1; height: 14; color: "#2B2E38" }
-
-            Text {
-                text: "Ln " + root.currentLine + ", Col " + root.currentCol
-                color: "#8F94A0"
-                font.pixelSize: 11
-                font.family: "Segoe UI, Inter, Sans-serif"
-            }
-
-            Rectangle {
-                width: 1; height: 14; color: "#2B2E38"
-                visible: root.width > 550 && Qt.platform.os !== "android"
-            }
-
-            Text {
-                text: "Spaces: 4"
-                color: "#8F94A0"
-                font.pixelSize: 11
-                font.family: "Segoe UI, Inter, Sans-serif"
-                visible: root.width > 550 && Qt.platform.os !== "android"
-            }
-
-            Rectangle {
-                width: 1; height: 14; color: "#2B2E38"
-                visible: root.width > 550 && Qt.platform.os !== "android"
-            }
-
-            Text {
-                text: "UTF-8"
-                color: "#8F94A0"
-                font.pixelSize: 11
-                font.family: "Segoe UI, Inter, Sans-serif"
-                visible: root.width > 550 && Qt.platform.os !== "android"
-            }
-
-            Rectangle { width: 1; height: 14; color: "#2B2E38" }
-
-            Text {
-                text: "EEL2 (JSFX)"
-                color: "#8F94A0"
-                font.pixelSize: 11
-                font.family: "Segoe UI, Inter, Sans-serif"
+            MouseArea {
+                id: pasteMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                ToolTip.visible: containsMouse
+                ToolTip.text: "Pegar texto del portapapeles en el editor"
+                ToolTip.delay: 300
+                onClicked: {
+                    root.pasteClicked()
+                }
             }
         }
     }

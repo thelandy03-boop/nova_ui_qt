@@ -184,6 +184,7 @@ Rectangle {
             currentSection: editorArea.currentSection
             currentLine: editorArea.currentLine
             currentCol: editorArea.currentCol
+            onPasteClicked: editorArea.pasteFromClipboard()
         }
     }
 

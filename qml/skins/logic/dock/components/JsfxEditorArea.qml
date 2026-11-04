@@ -56,6 +56,11 @@ Item {
         codeTextEdit.forceActiveFocus()
     }
 
+    function pasteFromClipboard() {
+        codeTextEdit.forceActiveFocus()
+        codeTextEdit.paste()
+    }
+
     function updateCursorPosition() {
         var pos = codeTextEdit.cursorPosition
         var sub = codeTextEdit.text.substring(0, pos)
