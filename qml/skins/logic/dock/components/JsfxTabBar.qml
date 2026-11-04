@@ -15,6 +15,7 @@ Rectangle {
     property bool searchActive: false
     property bool sidebarOpen: true
     property string activeView: "code" // "code" o "ui"
+    property bool isMaximized: false
 
     signal compileClicked()
     signal saveClicked()
@@ -26,6 +27,7 @@ Rectangle {
     signal formatClicked()
     signal revertClicked()
     signal viewModeChanged(string mode)
+    signal toggleMaximizeClicked()
 
     Layout.fillWidth: true
     Layout.preferredHeight: (Qt.platform.os === "android") ? 38 : 34
@@ -442,6 +444,47 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.searchClicked()
+            }
+        }
+
+        // Botón ⛶ Maximizar / Restaurar (útil especialmente en Android)
+        Rectangle {
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
+            Layout.preferredWidth: (Qt.platform.os === "android") ? 30 : 26
+            radius: 3
+            color: maxMouse.containsMouse ? "#323846" : "transparent"
+
+            Canvas {
+                id: maxCanvas
+                width: 12; height: 12
+                anchors.centerIn: parent
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = "#9AA0A6"
+                    ctx.lineWidth = 1.3
+                    if (root.isMaximized) {
+                        // Dos recuadros solapados (Restaurar)
+                        ctx.strokeRect(3, 1, 8, 7)
+                        ctx.strokeRect(1, 4, 8, 7)
+                    } else {
+                        // Un recuadro único (Maximizar)
+                        ctx.strokeRect(1, 1, 10, 10)
+                        ctx.strokeRect(1, 1, 10, 3) // Barra superior del recuadro
+                    }
+                }
+                Connections {
+                    target: root
+                    function onIsMaximizedChanged() { maxCanvas.requestPaint() }
+                }
+            }
+
+            MouseArea {
+                id: maxMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.toggleMaximizeClicked()
             }
         }
 

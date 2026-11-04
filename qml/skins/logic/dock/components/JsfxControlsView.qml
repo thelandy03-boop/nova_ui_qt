@@ -181,17 +181,18 @@ Rectangle {
             ListView {
                 id: stripsList
                 anchors.fill: parent
-                anchors.margins: 16
+                anchors.margins: 14
                 orientation: ListView.Horizontal
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: (Qt.platform.os === "android") ? Flickable.DragOverBounds : Flickable.StopAtBounds
                 visible: root.slidersList.length > 0
                 clip: true
-                boundsBehavior: Flickable.StopAtBounds
                 model: root.slidersList
                 spacing: 12
 
                 delegate: Rectangle {
                     id: stripCard
-                    width: Math.max(104, Math.min(150, (stripsList.width - (root.slidersList.length - 1) * 12) / Math.max(1, root.slidersList.length)))
+                    width: Math.max(108, Math.min(150, (stripsList.width - (root.slidersList.length - 1) * 12) / Math.max(1, root.slidersList.length)))
                     height: Math.max(160, stripsList.height - 4)
                     radius: 4
                     color: stripMouse.containsMouse ? "#232631" : "#1D1F27"
@@ -201,6 +202,12 @@ Rectangle {
                     property var param: modelData
                     property real currentVal: param.value
                     property real normVal: (param.max > param.min) ? Math.max(0.0, Math.min(1.0, (currentVal - param.min) / (param.max - param.min))) : 0.0
+
+                    function triggerHaptic() {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                    }
 
                     function updateFromNorm(nVal) {
                         nVal = Math.max(0.0, Math.min(1.0, nVal))
@@ -217,10 +224,26 @@ Rectangle {
                         }
                     }
 
+                    function stepChange(direction) {
+                        var delta = (param.step > 0) ? (param.step * direction) : ((param.max - param.min) * 0.02 * direction)
+                        var newVal = Math.max(param.min, Math.min(param.max, currentVal + delta))
+                        if (param.step > 0) {
+                            newVal = Math.round(newVal / param.step) * param.step
+                        }
+                        currentVal = newVal
+                        triggerHaptic()
+                        root.parameterChanged(param.index, newVal)
+
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&
+                            root.trackIndex >= 0 && root.pluginIndex >= 0) {
+                            AudioEngine.tracks.setPluginParameter(root.trackIndex, root.pluginIndex, param.index, newVal)
+                        }
+                    }
+
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 8
-                        spacing: 8
+                        spacing: 6
 
                         // 1. Rótulo superior del parámetro
                         Text {
@@ -234,7 +257,7 @@ Rectangle {
                             elide: Text.ElideRight
                         }
 
-                        // 2. Fader vertical de REAPER
+                        // 2. Fader vertical de REAPER con Touch Target ampliado
                         Item {
                             id: verticalFader
                             Layout.fillWidth: true
@@ -278,8 +301,8 @@ Rectangle {
                                 id: vertCap
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: Math.max(0, Math.min(parent.height - height, (parent.height - height) * (1.0 - stripCard.normVal)))
-                                width: 28
-                                height: 15
+                                width: 30
+                                height: 16
                                 radius: 2
                                 border.color: "#111216"
                                 border.width: 1
@@ -301,7 +324,7 @@ Rectangle {
                                 // Muesca horizontal central de posición
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    width: 18
+                                    width: 20
                                     height: 1.5
                                     color: stripMouse.drag.active ? "#60A5FA" : "#000000"
 
@@ -330,9 +353,12 @@ Rectangle {
                                 }
                             }
 
+                            // Área táctil del fader optimizada para Android
                             MouseArea {
                                 id: stripMouse
                                 anchors.fill: parent
+                                anchors.margins: (Qt.platform.os === "android") ? -16 : -4
+                                preventStealing: true
                                 hoverEnabled: true
                                 cursorShape: Qt.SizeVerCursor
 
@@ -342,7 +368,10 @@ Rectangle {
                                     stripCard.updateFromNorm(n)
                                 }
 
-                                onPressed: (mouse) => applyY(mouse.y)
+                                onPressed: (mouse) => {
+                                    stripCard.triggerHaptic()
+                                    applyY(mouse.y)
+                                }
                                 onPositionChanged: (mouse) => {
                                     if (pressed) applyY(mouse.y)
                                 }
@@ -351,42 +380,99 @@ Rectangle {
                                     stripCard.updateFromNorm(stripCard.normVal + delta)
                                 }
                                 onDoubleClicked: {
+                                    stripCard.triggerHaptic()
                                     stripCard.currentVal = stripCard.param.value
                                     stripCard.updateFromNorm((stripCard.param.value - stripCard.param.min) / (stripCard.param.max - stripCard.param.min))
                                 }
                             }
                         }
 
-                        // 3. Display numérico biselado hundido en la base
-                        Rectangle {
+                        // 3. Fila de Micro-Ajuste táctil paso a paso (▲ y ▼) + Display numérico
+                        RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 22
-                            radius: 2
-                            color: "#0E0F14"
-                            border.color: "#282B37"
-                            border.width: 1
+                            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 22
+                            spacing: 4
 
-                            // Sombra superior interior
+                            // Botón paso abajo ▼
                             Rectangle {
-                                anchors.top: parent.top
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                height: 1
-                                color: "#000000"
-                                opacity: 0.6
+                                Layout.preferredWidth: (Qt.platform.os === "android") ? 24 : 18
+                                Layout.fillHeight: true
+                                radius: 2
+                                color: downMouse.containsMouse ? "#3A3F50" : "#242732"
+                                border.color: "#323746"
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "▼"
+                                    color: "#94A3B8"
+                                    font.pixelSize: 8
+                                }
+
+                                MouseArea {
+                                    id: downMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: stripCard.stepChange(-1)
+                                }
                             }
 
-                            Text {
-                                anchors.centerIn: parent
-                                text: {
-                                    var num = stripCard.currentVal
-                                    var fmt = (Math.abs(num) >= 100) ? num.toFixed(0) : ((Math.abs(num) >= 10) ? num.toFixed(1) : num.toFixed(2))
-                                    return fmt + (stripCard.param.unit ? (" " + stripCard.param.unit) : "")
+                            // Display numérico biselado central
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                radius: 2
+                                color: "#0E0F14"
+                                border.color: "#282B37"
+                                border.width: 1
+
+                                Rectangle {
+                                    anchors.top: parent.top
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    height: 1
+                                    color: "#000000"
+                                    opacity: 0.6
                                 }
-                                color: "#60A5FA"
-                                font.pixelSize: 10
-                                font.family: "Monospace, Consolas, Courier New"
-                                horizontalAlignment: Text.AlignHCenter
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: {
+                                        var num = stripCard.currentVal
+                                        var fmt = (Math.abs(num) >= 100) ? num.toFixed(0) : ((Math.abs(num) >= 10) ? num.toFixed(1) : num.toFixed(2))
+                                        return fmt + (stripCard.param.unit ? (" " + stripCard.param.unit) : "")
+                                    }
+                                    color: "#60A5FA"
+                                    font.pixelSize: (Qt.platform.os === "android") ? 11 : 10
+                                    font.family: "Monospace, Consolas, Courier New"
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                            }
+
+                            // Botón paso arriba ▲
+                            Rectangle {
+                                Layout.preferredWidth: (Qt.platform.os === "android") ? 24 : 18
+                                Layout.fillHeight: true
+                                radius: 2
+                                color: upMouse.containsMouse ? "#3A3F50" : "#242732"
+                                border.color: "#323746"
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "▲"
+                                    color: "#94A3B8"
+                                    font.pixelSize: 8
+                                }
+
+                                MouseArea {
+                                    id: upMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: stripCard.stepChange(1)
+                                }
                             }
                         }
                     }

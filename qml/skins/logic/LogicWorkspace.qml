@@ -74,7 +74,8 @@ Rectangle {
                 LogicTimelinePanel {
                     id: timelinePanel
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.fillHeight: !jsfxDock.isMaximized
+                    visible: !jsfxDock.isMaximized
 
                     // 🔄 SINCRONIZACIÓN DE SCROLL VERTICAL PERFECTA
                     Binding {
@@ -93,7 +94,8 @@ Rectangle {
                 LogicJsfxDock {
                     id: jsfxDock
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.showJsfxDock ? Math.min(root.height * 0.72, 450) : 0
+                    Layout.fillHeight: root.showJsfxDock && jsfxDock.isMaximized
+                    Layout.preferredHeight: root.showJsfxDock ? (jsfxDock.isMaximized ? parent.height : Math.min(root.height * 0.72, 450)) : 0
                     visible: root.showJsfxDock
                     clip: true
 

@@ -34,6 +34,7 @@ Rectangle {
 
     property bool searchVisible: false
     property string activeView: "code" // "code" o "ui"
+    property bool isMaximized: false
 
     signal closeRequested()
     signal scriptApplied()
@@ -96,6 +97,7 @@ Rectangle {
             searchActive: root.searchVisible
             sidebarOpen: root.showSidebar
             activeView: root.activeView
+            isMaximized: root.isMaximized
 
             onCompileClicked: root.compileAndApply()
             onSaveClicked: root.saveAndInsert()
@@ -110,6 +112,7 @@ Rectangle {
             onFormatClicked: root.formatScript()
             onRevertClicked: root.loadFileByName(root.selectedFile)
             onViewModeChanged: (mode) => root.activeView = mode
+            onToggleMaximizeClicked: root.isMaximized = !root.isMaximized
         }
 
         // 2. Barra de búsqueda desplegable
