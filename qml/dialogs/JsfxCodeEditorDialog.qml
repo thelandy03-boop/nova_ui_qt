@@ -3,9 +3,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /**
- * Editor de Código en Vivo para Scripts JSFX (REAPER EEL2).
- * Permite ver, modificar, compilar en caliente y crear efectos DSP
- * sin interrumpir la reproducción de audio.
+ * Editor de Código en Vivo para Scripts JSFX (REAPER EEL2) con Estilo VS Code.
+ * Proporciona un entorno de desarrollo integrado completo para crear, editar,
+ * depurar y probar efectos de audio DSP en tiempo real.
  */
 Rectangle {
     id: root
@@ -14,12 +14,30 @@ Rectangle {
     property int pluginIndex: -1
     property string pluginName: "Script JSFX"
     property bool isNewPlugin: false
+    property bool isModified: false
+
+    // Estado de cursor y posición
+    property int currentLine: 1
+    property int currentCol: 1
+
+    // Vistas de la barra de actividades (0: Explorer, 1: Sliders en vivo, 2: Referencia EEL2, 3: Salida/Logs)
+    property int activeSidebarTab: 0
+    property bool sidebarVisible: true
+
+    // Estado del panel inferior (0: Problemas, 1: Salida del compilador)
+    property int activeBottomTab: 1
+    property bool bottomPanelVisible: true
+    property string lastCompilationLog: "Listo para compilar. Presiona Ctrl+S o F5."
+    property string compilationError: ""
+
+    // Sliders parseados dinámicamente
+    property var parsedSliders: []
 
     signal scriptApplied()
     signal closed()
 
     anchors.fill: parent
-    color: "#D90B0D13" // Fondo semitransparente oscuro
+    color: "#B3000000" // Backdrop oscuro
     z: 10000
 
     // Evitar que los clics traspasen al fondo
@@ -28,7 +46,7 @@ Rectangle {
         onClicked: {}
     }
 
-    // Atajos de teclado para flujo de trabajo rápido
+    // Atajos de teclado estilo VS Code
     Shortcut {
         sequence: "Ctrl+S"
         onActivated: root.compileAndApply()
@@ -38,19 +56,29 @@ Rectangle {
         onActivated: root.compileAndApply()
     }
     Shortcut {
+        sequence: "Ctrl+B"
+        onActivated: root.sidebarVisible = !root.sidebarVisible
+    }
+    Shortcut {
+        sequence: "Ctrl+`"
+        onActivated: root.bottomPanelVisible = !root.bottomPanelVisible
+    }
+    Shortcut {
         sequence: "Escape"
         onActivated: root.closeDialog()
     }
 
-    // Contenedor principal de la ventana del editor
+    // =========================================================================
+    // VENTANA PRINCIPAL ESTILO VS CODE
+    // =========================================================================
     Rectangle {
-        id: windowCard
+        id: vsCodeWindow
         anchors.centerIn: parent
-        width: Math.min(parent.width - 40, 960)
-        height: Math.min(parent.height - 40, 680)
-        radius: 10
-        color: "#181B22"
-        border.color: "#2C313E"
+        width: Math.min(parent.width - 24, 1120)
+        height: Math.min(parent.height - 24, 760)
+        radius: 6
+        color: "#1E1E1E" // Color de fondo característico de VS Code Dark+
+        border.color: "#333333"
         border.width: 1
         clip: true
 
@@ -58,101 +86,112 @@ Rectangle {
             anchors.fill: parent
             spacing: 0
 
-            // ── CABECERA DEL EDITOR ─────────────────────────────────────────────
+            // ─────────────────────────────────────────────────────────────────
+            // 1. BARRA DE TÍTULO SUPERIOR (VS Code Title Bar)
+            // ─────────────────────────────────────────────────────────────────
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                color: "#12141A"
-                border.color: "#232733"
+                Layout.preferredHeight: 34
+                color: "#323233"
+                border.color: "#252526"
                 border.width: 1
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 12
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 8
 
-                    // Icono de código
+                    // Icono de la aplicación estilo VS Code
                     Rectangle {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
-                        radius: 6
-                        color: "#2563EB"
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        radius: 4
+                        color: "#007ACC"
 
                         Text {
                             anchors.centerIn: parent
-                            text: "</>"
+                            text: "⚡"
+                            font.pixelSize: 11
                             color: "#FFFFFF"
-                            font.pixelSize: 13
-                            font.bold: true
-                            font.family: "Monospace"
                         }
                     }
 
-                    ColumnLayout {
-                        spacing: 1
+                    Text {
+                        text: "NOVA Studio — Editor JSFX (EEL2)"
+                        color: "#CCCCCC"
+                        font.pixelSize: 12
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Breadcrumb del archivo activo en el centro
+                    Rectangle {
+                        Layout.preferredHeight: 22
+                        Layout.preferredWidth: titleCenterText.implicitWidth + 24
+                        radius: 4
+                        color: "#1F1F1F"
+                        border.color: "#3C3C3C"
+                        border.width: 1
+
                         Text {
-                            text: root.isNewPlugin ? "Nuevo Script JSFX (EEL2)" : ("Editor JSFX — " + root.pluginName)
-                            color: "#F1F5F9"
-                            font.pixelSize: 14
-                            font.bold: true
-                        }
-                        Text {
-                            text: "Procesador matemático en tiempo real • Compatible con REAPER JSFX"
-                            color: "#94A3B8"
+                            id: titleCenterText
+                            anchors.centerIn: parent
+                            text: (root.isNewPlugin ? "nuevo_script.jsfx" : (root.pluginName.toLowerCase().replace(/ /g, "_") + ".jsfx")) + (root.isModified ? " ●" : "")
+                            color: root.isModified ? "#E2C08D" : "#CCCCCC"
                             font.pixelSize: 11
+                            font.family: "monospace"
                         }
                     }
 
                     Item { Layout.fillWidth: true }
 
-                    // Selector de Plantillas
-                    Text {
-                        text: "Cargar plantilla:"
-                        color: "#94A3B8"
-                        font.pixelSize: 11
-                    }
+                    // Botones de acción rápida en cabecera
+                    Rectangle {
+                        Layout.preferredHeight: 24
+                        Layout.preferredWidth: compileHeadBtnText.implicitWidth + 20
+                        radius: 3
+                        color: headCompileArea.containsMouse ? "#0098FF" : "#007ACC"
 
-                    ComboBox {
-                        id: templateCombo
-                        Layout.preferredWidth: 200
-                        Layout.preferredHeight: 32
-                        model: [
-                            "-- Seleccionar plantilla --",
-                            "Saturador de Tubos analógico",
-                            "Filtro Pasa-Bajos con resonancia",
-                            "Stereo Widener Mid/Side",
-                            "Delay Estéreo simple",
-                            "Ganancia y Balance básico"
-                        ]
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 5
+                            Text { text: "▶"; color: "#FFFFFF"; font.pixelSize: 10 }
+                            Text {
+                                id: compileHeadBtnText
+                                text: "Compilar (Ctrl+S)"
+                                color: "#FFFFFF"
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
+                        }
 
-                        onActivated: (index) => {
-                            if (index === 1) root.loadTemplateTube()
-                            else if (index === 2) root.loadTemplateFilter()
-                            else if (index === 3) root.loadTemplateWidener()
-                            else if (index === 4) root.loadTemplateDelay()
-                            else if (index === 5) root.loadTemplateGain()
-                            templateCombo.currentIndex = 0
+                        MouseArea {
+                            id: headCompileArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.compileAndApply()
                         }
                     }
 
-                    // Botón Cerrar
+                    // Botón Cerrar ventana
                     Rectangle {
-                        Layout.preferredWidth: 30
-                        Layout.preferredHeight: 30
-                        radius: 6
-                        color: closeArea.containsMouse ? "#EF4444" : "#232733"
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                        radius: 3
+                        color: closeHeadArea.containsMouse ? "#E81123" : "transparent"
 
                         Text {
                             anchors.centerIn: parent
                             text: "✕"
-                            color: "#FFFFFF"
-                            font.pixelSize: 13
-                            font.bold: true
+                            color: closeHeadArea.containsMouse ? "#FFFFFF" : "#CCCCCC"
+                            font.pixelSize: 12
                         }
 
                         MouseArea {
-                            id: closeArea
+                            id: closeHeadArea
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -162,194 +201,941 @@ Rectangle {
                 }
             }
 
-            // ── CUERPO DEL EDITOR DE CÓDIGO CON NÚMEROS DE LÍNEA ────────────────
-            Rectangle {
+            // ─────────────────────────────────────────────────────────────────
+            // 2. CUERPO CENTRAL (Activity Bar + Sidebar + Editor + Panel)
+            // ─────────────────────────────────────────────────────────────────
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: "#0F1117"
+                spacing: 0
 
-                RowLayout {
-                    anchors.fill: parent
-                    spacing: 0
+                // 2.1 ACTIVITY BAR LATERAL IZQUIERDA (VS Code Activity Bar)
+                Rectangle {
+                    Layout.preferredWidth: 48
+                    Layout.fillHeight: true
+                    color: "#333333"
+                    border.color: "#252526"
+                    border.width: 1
 
-                    // Columna de Números de Línea
-                    Rectangle {
-                        Layout.preferredWidth: 46
-                        Layout.fillHeight: true
-                        color: "#141720"
-                        border.color: "#1E222D"
-                        border.width: 1
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 4
+                        anchors.topMargin: 4
+                        anchors.bottomMargin: 8
 
-                        Flickable {
-                            id: lineFlick
-                            anchors.fill: parent
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            contentY: codeFlick.contentY
-                            interactive: false
-                            clip: true
+                        // Botón 1: Explorador de Archivos / Plantillas
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 48
+                            color: root.activeSidebarTab === 0 && root.sidebarVisible ? "#252526" : "transparent"
+
+                            // Indicador de pestaña activa (línea blanca izquierda)
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 2
+                                color: "#FFFFFF"
+                                visible: root.activeSidebarTab === 0 && root.sidebarVisible
+                            }
 
                             Text {
-                                width: parent.width
-                                text: root.calculateLineNumbers(codeEditor.text)
-                                color: "#4B5563"
-                                font.family: "Monospace"
-                                font.pixelSize: 12
-                                horizontalAlignment: Text.AlignRight
-                                rightPadding: 10
+                                anchors.centerIn: parent
+                                text: "📁"
+                                font.pixelSize: 18
+                                opacity: (root.activeSidebarTab === 0 && root.sidebarVisible) ? 1.0 : 0.6
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (root.activeSidebarTab === 0 && root.sidebarVisible) {
+                                        root.sidebarVisible = false
+                                    } else {
+                                        root.activeSidebarTab = 0
+                                        root.sidebarVisible = true
+                                    }
+                                }
+                            }
+                        }
+
+                        // Botón 2: Sliders y Parámetros en Vivo
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 48
+                            color: root.activeSidebarTab === 1 && root.sidebarVisible ? "#252526" : "transparent"
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 2
+                                color: "#FFFFFF"
+                                visible: root.activeSidebarTab === 1 && root.sidebarVisible
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "🎛️"
+                                font.pixelSize: 18
+                                opacity: (root.activeSidebarTab === 1 && root.sidebarVisible) ? 1.0 : 0.6
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.refreshParsedSliders()
+                                    if (root.activeSidebarTab === 1 && root.sidebarVisible) {
+                                        root.sidebarVisible = false
+                                    } else {
+                                        root.activeSidebarTab = 1
+                                        root.sidebarVisible = true
+                                    }
+                                }
+                            }
+                        }
+
+                        // Botón 3: Referencia EEL2 y Snippets
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 48
+                            color: root.activeSidebarTab === 2 && root.sidebarVisible ? "#252526" : "transparent"
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 2
+                                color: "#FFFFFF"
+                                visible: root.activeSidebarTab === 2 && root.sidebarVisible
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "📖"
+                                font.pixelSize: 18
+                                opacity: (root.activeSidebarTab === 2 && root.sidebarVisible) ? 1.0 : 0.6
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (root.activeSidebarTab === 2 && root.sidebarVisible) {
+                                        root.sidebarVisible = false
+                                    } else {
+                                        root.activeSidebarTab = 2
+                                        root.sidebarVisible = true
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        // Botón Toggle Consola / Panel inferior
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+                            color: "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "📋"
+                                font.pixelSize: 16
+                                opacity: root.bottomPanelVisible ? 1.0 : 0.5
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.bottomPanelVisible = !root.bottomPanelVisible
                             }
                         }
                     }
+                }
 
-                    // Área de texto del código fuente
-                    Flickable {
-                        id: codeFlick
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        contentWidth: codeEditor.paintedWidth + 40
-                        contentHeight: codeEditor.paintedHeight + 40
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
+                // 2.2 SIDEBAR COLAPSABLE (VS Code Sidebar)
+                Rectangle {
+                    id: sideBar
+                    Layout.preferredWidth: root.sidebarVisible ? 220 : 0
+                    Layout.fillHeight: true
+                    visible: root.sidebarVisible
+                    clip: true
+                    color: "#252526"
+                    border.color: "#1E1E1E"
+                    border.width: 1
 
-                        ScrollBar.vertical: ScrollBar {
-                            active: true
-                            policy: ScrollBar.AsNeeded
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+
+                        // Cabecera de la Sidebar
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 35
+                            color: "#252526"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 8
+
+                                Text {
+                                    text: {
+                                        if (root.activeSidebarTab === 0) return "EXPLORADOR"
+                                        if (root.activeSidebarTab === 1) return "PARÁMETROS EN VIVO"
+                                        return "REFERENCIA EEL2"
+                                    }
+                                    color: "#BBBBBB"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    font.letterSpacing: 0.5
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // Botón colapsar
+                                Text {
+                                    text: "‹"
+                                    color: "#858585"
+                                    font.pixelSize: 16
+                                    font.bold: true
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.sidebarVisible = false
+                                    }
+                                }
+                            }
                         }
-                        ScrollBar.horizontal: ScrollBar {
-                            active: true
-                            policy: ScrollBar.AsNeeded
+
+                        // Divisor fino
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#333333"
                         }
 
-                        TextEdit {
-                            id: codeEditor
-                            x: 14
-                            y: 12
-                            width: Math.max(codeFlick.width - 28, paintedWidth)
-                            color: "#E2E8F0"
-                            selectionColor: "#2563EB"
-                            selectedTextColor: "#FFFFFF"
-                            font.family: "Monospace"
-                            font.pixelSize: 12
-                            font.weight: Font.Normal
-                            selectByMouse: true
-                            wrapMode: TextEdit.NoWrap
-                            tabStopDistance: 32
-                            cursorVisible: true
+                        // Contenido dinámico según la pestaña activa
+                        StackLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            currentIndex: root.activeSidebarTab
 
-                            onTextChanged: {
-                                statusBanner.text = "Modificado (Presiona Ctrl+S para compilar)"
-                                statusBanner.color = "#94A3B8"
-                                statusBannerBox.color = "#1E222D"
+                            // ── PESTAÑA 0: EXPLORADOR Y PLANTILLAS ──
+                            ScrollView {
+                                clip: true
+                                contentWidth: availableWidth
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: 8
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    anchors.topMargin: 8
+
+                                    // Sección: Script actual
+                                    Text {
+                                        text: "▼ SCRIPT ACTIVO"
+                                        color: "#717171"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 3
+                                        color: "#37373D"
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            spacing: 6
+
+                                            Text { text: "📄"; font.pixelSize: 12 }
+                                            Text {
+                                                text: (root.isNewPlugin ? "nuevo_script.jsfx" : root.pluginName) + (root.isModified ? " *" : "")
+                                                color: "#E0E0E0"
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+
+                                    Item { height: 10 }
+
+                                    // Sección: Plantillas Disponibles
+                                    Text {
+                                        text: "▼ PLANTILLAS DSP LISTAS"
+                                        color: "#717171"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: [
+                                            { name: "Saturador de Tubos", fn: function() { root.loadTemplateTube() }, desc: "Calidez analógica triodo" },
+                                            { name: "Filtro Pasa-Bajos con Q", fn: function() { root.loadTemplateFilter() }, desc: "Biquad resonante 12dB" },
+                                            { name: "Stereo Widener M/S", fn: function() { root.loadTemplateWidener() }, desc: "Amplitud espacial Mid/Side" },
+                                            { name: "Delay Estéreo Simple", fn: function() { root.loadTemplateDelay() }, desc: "Eco temporal con feedback" },
+                                            { name: "Ganancia Básica", fn: function() { root.loadTemplateGain() }, desc: "Controlador dB elemental" }
+                                        ]
+
+                                        delegate: Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 40
+                                            radius: 3
+                                            color: tplMouse.containsMouse ? "#2A2D2E" : "transparent"
+
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                spacing: 2
+                                                alignment: Qt.AlignVCenter
+
+                                                Text {
+                                                    text: "⚡ " + modelData.name
+                                                    color: tplMouse.containsMouse ? "#FFFFFF" : "#CCCCCC"
+                                                    font.pixelSize: 11
+                                                }
+                                                Text {
+                                                    text: modelData.desc
+                                                    color: "#7F7F7F"
+                                                    font.pixelSize: 9
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: tplMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: modelData.fn()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── PESTAÑA 1: PARÁMETROS EN VIVO (SLIDERS) ──
+                            ScrollView {
+                                clip: true
+                                contentWidth: availableWidth
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: 12
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    anchors.topMargin: 10
+
+                                    Text {
+                                        text: "Prueba los sliders en tiempo real mientras el audio se reproduce:"
+                                        color: "#999999"
+                                        font.pixelSize: 10
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Repeater {
+                                        model: root.parsedSliders
+
+                                        delegate: ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 4
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Text {
+                                                    text: modelData.name
+                                                    color: "#D4D4D4"
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    Layout.fillWidth: true
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    text: Number(sliderCtrl.value).toFixed(1)
+                                                    color: "#007ACC"
+                                                    font.pixelSize: 11
+                                                    font.family: "monospace"
+                                                }
+                                            }
+
+                                            Slider {
+                                                id: sliderCtrl
+                                                Layout.fillWidth: true
+                                                from: modelData.min
+                                                to: modelData.max
+                                                stepSize: modelData.step || 0.1
+                                                value: modelData.value
+
+                                                onMoved: {
+                                                    // Actualizar valor en el motor de audio si el plugin existe
+                                                    if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && root.pluginIndex >= 0) {
+                                                        AudioEngine.tracks.setPluginParameter(root.trackIndex, root.pluginIndex, modelData.index, sliderCtrl.value)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        visible: root.parsedSliders.length === 0
+                                        text: "No se detectaron sliders definidos (usa la sintaxis slider1:def<min,max>Nombre)."
+                                        color: "#777777"
+                                        font.pixelSize: 11
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
+                                    }
+                                }
+                            }
+
+                            // ── PESTAÑA 2: REFERENCIA Y SNIPPETS EEL2 ──
+                            ScrollView {
+                                clip: true
+                                contentWidth: availableWidth
+
+                                ColumnLayout {
+                                    width: parent.width
+                                    spacing: 8
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 10
+                                    anchors.topMargin: 8
+
+                                    Text {
+                                        text: "Haz clic para insertar fragmentos de código:"
+                                        color: "#888888"
+                                        font.pixelSize: 10
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Repeater {
+                                        model: [
+                                            { label: "@init", snippet: "@init\n// Inicialización de variables y tablas\n", desc: "Se ejecuta al iniciar o cambiar srate" },
+                                            { label: "@slider", snippet: "@slider\n// Recalcular coeficientes dependientes de sliders\n", desc: "Se ejecuta cuando un slider cambia" },
+                                            { label: "@sample", snippet: "@sample\nspl0 = spl0 * gain;\nspl1 = spl1 * gain;\n", desc: "Procesa cada muestra estéreo" },
+                                            { label: "Biquad Lowpass", snippet: "w0 = 2 * $pi * freq / srate;\nalpha = sin(w0) / (2 * q);\nb0 = (1 - cos(w0)) * 0.5;\n", desc: "Cálculo de filtro rápido" },
+                                            { label: "Saturación Tanh", snippet: "spl0 = tanh(spl0 * drive);\nspl1 = tanh(spl1 * drive);\n", desc: "Clipper armónico suave" }
+                                        ]
+
+                                        delegate: Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 38
+                                            radius: 3
+                                            color: snipArea.containsMouse ? "#37373D" : "#2D2D30"
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+
+                                                ColumnLayout {
+                                                    spacing: 1
+                                                    Layout.fillWidth: true
+                                                    Text {
+                                                        text: modelData.label
+                                                        color: "#9CDCFE"
+                                                        font.pixelSize: 11
+                                                        font.bold: true
+                                                    }
+                                                    Text {
+                                                        text: modelData.desc
+                                                        color: "#6A9955"
+                                                        font.pixelSize: 9
+                                                        elide: Text.ElideRight
+                                                    }
+                                                }
+
+                                                Text { text: "+"; color: "#007ACC"; font.pixelSize: 14; font.bold: true }
+                                            }
+
+                                            MouseArea {
+                                                id: snipArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    codeEditor.insert(codeEditor.cursorPosition, modelData.snippet)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2.3 ÁREA CENTRAL DEL EDITOR (Tabs + Breadcrumbs + Text Editor)
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: "#1E1E1E"
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+
+                        // ── PESTAÑAS SUPERIORES (VS Code Editor Tabs) ────────────────
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 35
+                            color: "#252526"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 0
+
+                                // Pestaña activa
+                                Rectangle {
+                                    Layout.preferredWidth: Math.min(220, tabLabel.implicitWidth + 50)
+                                    Layout.fillHeight: true
+                                    color: "#1E1E1E" // Mismo color del editor
+
+                                    // Barra azul superior de pestaña activa
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        height: 2
+                                        color: "#007ACC"
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 8
+                                        spacing: 6
+
+                                        Text { text: "JS"; color: "#E5C07B"; font.pixelSize: 11; font.bold: true }
+
+                                        Text {
+                                            id: tabLabel
+                                            text: root.isNewPlugin ? "nuevo_script.jsfx" : (root.pluginName.replace(/ /g, "_") + ".jsfx")
+                                            color: "#FFFFFF"
+                                            font.pixelSize: 12
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+
+                                        // Indicador de modificado
+                                        Text {
+                                            visible: root.isModified
+                                            text: "●"
+                                            color: "#FFFFFF"
+                                            font.pixelSize: 11
+                                        }
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // Botón Revertir cambios
+                                Rectangle {
+                                    Layout.preferredHeight: 26
+                                    Layout.preferredWidth: 70
+                                    radius: 3
+                                    color: revertArea.containsMouse ? "#37373D" : "transparent"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "↺ Revertir"
+                                        color: "#CCCCCC"
+                                        font.pixelSize: 11
+                                    }
+
+                                    MouseArea {
+                                        id: revertArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (root.isNewPlugin) root.loadTemplateTube()
+                                            else root.openForPlugin(root.trackIndex, root.pluginIndex, root.pluginName)
+                                        }
+                                    }
+                                }
+
+                                Item { width: 8 }
+                            }
+                        }
+
+                        // ── BREADCRUMBS BAR (VS Code Breadcrumbs) ─────────────────────
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 22
+                            color: "#1E1E1E"
+                            border.color: "#282828"
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                spacing: 6
+
+                                Text { text: "nova_studio"; color: "#888888"; font.pixelSize: 11 }
+                                Text { text: "›"; color: "#555555"; font.pixelSize: 11 }
+                                Text { text: "audio"; color: "#888888"; font.pixelSize: 11 }
+                                Text { text: "›"; color: "#555555"; font.pixelSize: 11 }
+                                Text { text: "jsfx"; color: "#888888"; font.pixelSize: 11 }
+                                Text { text: "›"; color: "#555555"; font.pixelSize: 11 }
+                                Text {
+                                    text: (root.isNewPlugin ? "nuevo_script.jsfx" : root.pluginName) + " › @sample"
+                                    color: "#CCCCCC"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+                        }
+
+                        // ── ÁREA DE CÓDIGO MONOESPACIADA CON GUTTER ──────────────────
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            color: "#1E1E1E"
+
+                            ScrollView {
+                                id: editorScrollView
+                                anchors.fill: parent
+                                clip: true
+
+                                Row {
+                                    width: Math.max(editorScrollView.width, codeEditor.contentWidth + 70)
+                                    spacing: 0
+
+                                    // GUTTER: NÚMEROS DE LÍNEA ESTILO VS CODE
+                                    Rectangle {
+                                        id: lineGutter
+                                        width: 48
+                                        height: Math.max(codeEditor.height, editorScrollView.height)
+                                        color: "#1E1E1E"
+
+                                        Column {
+                                            anchors.fill: parent
+                                            anchors.topMargin: 6
+
+                                            Repeater {
+                                                model: Math.max(1, codeEditor.lineCount)
+                                                delegate: Text {
+                                                    width: 40
+                                                    text: (index + 1).toString()
+                                                    color: (index + 1 === root.currentLine) ? "#C6C6C6" : "#858585"
+                                                    font.family: "Monospace, Consolas, Courier New"
+                                                    font.pixelSize: 12
+                                                    horizontalAlignment: Text.AlignRight
+                                                }
+                                            }
+                                        }
+
+                                        // Línea divisoria del gutter
+                                        Rectangle {
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            width: 1
+                                            color: "#2B2B2B"
+                                        }
+                                    }
+
+                                    // ÁREA DE EDICIÓN DE TEXTO
+                                    TextEdit {
+                                        id: codeEditor
+                                        width: Math.max(editorScrollView.width - 50, contentWidth + 80)
+                                        height: Math.max(contentHeight + 40, editorScrollView.height)
+                                        color: "#D4D4D4"
+                                        selectionColor: "#264F78"
+                                        selectedTextColor: "#FFFFFF"
+                                        font.family: "Monospace, Consolas, 'Courier New'"
+                                        font.pixelSize: 12
+                                        leftPadding: 12
+                                        topPadding: 6
+                                        wrapMode: TextEdit.NoWrap
+                                        tabStopDistance: 32
+                                        cursorVisible: true
+
+                                        onCursorPositionChanged: {
+                                            root.updateCursorPosition()
+                                        }
+
+                                        onTextChanged: {
+                                            root.isModified = true
+                                            root.updateCursorPosition()
+                                        }
+
+                                        Component.onCompleted: {
+                                            if (text.length === 0) root.loadTemplateTube()
+                                            root.updateCursorPosition()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 2.4 PANEL INFERIOR (VS Code Terminal / Salida / Problemas) ──
+                        Rectangle {
+                            id: bottomPanel
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.bottomPanelVisible ? 140 : 0
+                            visible: root.bottomPanelVisible
+                            clip: true
+                            color: "#1E1E1E"
+                            border.color: "#2B2B2B"
+                            border.width: 1
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 0
+
+                                // Cabecera de pestañas del panel inferior
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 28
+                                    color: "#252526"
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        spacing: 16
+
+                                        // Pestaña PROBLEMAS
+                                        Row {
+                                            spacing: 6
+                                            Text {
+                                                text: "PROBLEMAS"
+                                                color: root.activeBottomTab === 0 ? "#FFFFFF" : "#858585"
+                                                font.pixelSize: 11
+                                                font.bold: root.activeBottomTab === 0
+                                            }
+
+                                            Rectangle {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: 16
+                                                height: 16
+                                                radius: 8
+                                                color: root.compilationError.length > 0 ? "#F14C4C" : "#3C3C3C"
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: root.compilationError.length > 0 ? "1" : "0"
+                                                    color: "#FFFFFF"
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.activeBottomTab = 0
+                                            }
+                                        }
+
+                                        // Pestaña SALIDA
+                                        Text {
+                                            text: "SALIDA"
+                                            color: root.activeBottomTab === 1 ? "#FFFFFF" : "#858585"
+                                            font.pixelSize: 11
+                                            font.bold: root.activeBottomTab === 1
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.activeBottomTab = 1
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        // Botón cerrar panel inferior
+                                        Text {
+                                            text: "✕"
+                                            color: "#858585"
+                                            font.pixelSize: 11
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.bottomPanelVisible = false
+                                            }
+                                        }
+
+                                        Item { width: 6 }
+                                    }
+                                }
+
+                                // Contenido del panel
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    color: "#1E1E1E"
+
+                                    ScrollView {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        clip: true
+
+                                        ColumnLayout {
+                                            width: parent.width
+                                            spacing: 4
+
+                                            // Vista Problemas
+                                            RowLayout {
+                                                visible: root.activeBottomTab === 0
+                                                spacing: 8
+                                                Text {
+                                                    text: root.compilationError.length > 0 ? "⊗" : "✓"
+                                                    color: root.compilationError.length > 0 ? "#F14C4C" : "#73C991"
+                                                    font.pixelSize: 14
+                                                }
+                                                Text {
+                                                    text: root.compilationError.length > 0 ? root.compilationError : "No se han detectado problemas de compilación en el código."
+                                                    color: root.compilationError.length > 0 ? "#F14C4C" : "#CCCCCC"
+                                                    font.family: "Monospace"
+                                                    font.pixelSize: 11
+                                                    Layout.fillWidth: true
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+
+                                            // Vista Salida / Log
+                                            Text {
+                                                visible: root.activeBottomTab === 1
+                                                text: root.lastCompilationLog
+                                                color: root.compilationError.length > 0 ? "#F14C4C" : "#89D185"
+                                                font.family: "Monospace"
+                                                font.pixelSize: 11
+                                                wrapMode: Text.WordWrap
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // ── BARRA INFERIOR: CONSOLA DE COMPILACIÓN Y ACCIONES ───────────────
+            // ─────────────────────────────────────────────────────────────────
+            // 3. BARRA DE ESTADO INFERIOR (VS Code Status Bar)
+            // ─────────────────────────────────────────────────────────────────
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                color: "#12141A"
-                border.color: "#232733"
-                border.width: 1
+                Layout.preferredHeight: 22
+                color: root.compilationError.length > 0 ? "#C5292A" : "#007ACC" // Rojo si hay error, azul VS Code si OK
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
                     spacing: 12
 
-                    // Banner de estado de compilación
-                    Rectangle {
-                        id: statusBannerBox
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        radius: 6
-                        color: "#16281E"
-                        border.color: statusBanner.isError ? "#EF4444" : "#10B981"
-                        border.width: 1
+                    // Indicador de Git
+                    Row {
+                        spacing: 4
+                        Text { text: "⑂"; color: "#FFFFFF"; font.pixelSize: 11 }
+                        Text { text: "main"; color: "#FFFFFF"; font.pixelSize: 11 }
+                    }
 
-                        property bool isError: false
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
-
-                            Text {
-                                text: statusBannerBox.isError ? "⚠" : "✓"
-                                color: statusBannerBox.isError ? "#EF4444" : "#10B981"
-                                font.pixelSize: 14
-                                font.bold: true
-                            }
-
-                            Text {
-                                id: statusBanner
-                                text: "Código listo para ejecutar en tiempo real"
-                                color: "#10B981"
-                                font.pixelSize: 12
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                                property bool isError: false
-                            }
+                    // Contador de Errores y Avisos
+                    Row {
+                        spacing: 6
+                        Text {
+                            text: (root.compilationError.length > 0 ? "⊗ 1" : "⊗ 0") + "  ⚠ 0"
+                            color: "#FFFFFF"
+                            font.pixelSize: 11
+                            font.bold: true
                         }
                     }
 
-                    // Botón Compilar y Aplicar en Caliente
-                    Rectangle {
-                        Layout.preferredWidth: 180
-                        Layout.preferredHeight: 34
-                        radius: 6
-                        color: compileArea.containsMouse ? "#1D4ED8" : "#2563EB"
-
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 6
-                            Text { text: "▶"; color: "#FFFFFF"; font.pixelSize: 12 }
-                            Text { text: "Compilar y Aplicar"; color: "#FFFFFF"; font.pixelSize: 12; font.bold: true }
-                        }
-
-                        MouseArea {
-                            id: compileArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.compileAndApply()
-                        }
+                    // Motor JIT
+                    Text {
+                        text: "JIT EEL2: Activo"
+                        color: "#FFFFFF"
+                        font.pixelSize: 11
                     }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Línea y Columna
+                    Text {
+                        text: "Ln " + root.currentLine + ", Col " + root.currentCol
+                        color: "#FFFFFF"
+                        font.pixelSize: 11
+                    }
+
+                    Text { text: "Espacios: 4"; color: "#FFFFFF"; font.pixelSize: 11 }
+                    Text { text: "UTF-8"; color: "#FFFFFF"; font.pixelSize: 11 }
+                    Text { text: "JSFX / EEL2"; color: "#FFFFFF"; font.pixelSize: 11; font.bold: true }
                 }
             }
         }
     }
 
-    function calculateLineNumbers(text) {
-        var count = (text.match(/\n/g) || []).length + 1
-        var result = ""
-        for (var i = 1; i <= count; ++i) {
-            result += i + "\n"
-        }
-        return result
+    // =========================================================================
+    // FUNCIONES PÚBLICAS Y LÓGICA DE COMPILACIÓN
+    // =========================================================================
+
+    function updateCursorPosition() {
+        var pos = codeEditor.cursorPosition
+        var sub = codeEditor.text.substring(0, pos)
+        var lines = sub.split("\n")
+        root.currentLine = lines.length
+        root.currentCol = lines[lines.length - 1].length + 1
     }
 
-    function openForPlugin(trkIdx, plgIdx, plgName) {
+    function refreshParsedSliders() {
+        var list = []
+        var lines = codeEditor.text.split("\n")
+        for (var i = 0; i < lines.length; ++i) {
+            var l = lines[i].trim()
+            if (l.indexOf("slider") === 0) {
+                var m = l.match(/^slider([0-9]+)\s*:\s*([0-9.\-]+)\s*<([0-9.\-]+)\s*,\s*([0-9.\-]+)(?:\s*,\s*([0-9.\-]+))?>\s*(.*)$/)
+                if (m) {
+                    list.push({
+                        index: parseInt(m[1]),
+                        value: parseFloat(m[2]),
+                        min: parseFloat(m[3]),
+                        max: parseFloat(m[4]),
+                        step: m[5] ? parseFloat(m[5]) : 0.1,
+                        name: m[6] || ("Slider " + m[1])
+                    })
+                }
+            }
+        }
+        root.parsedSliders = list
+    }
+
+    function openForPlugin(trkIdx, plgIdx, plgNm) {
         root.trackIndex = trkIdx
         root.pluginIndex = plgIdx
-        root.pluginName = plgName
+        root.pluginName = plgNm
         root.isNewPlugin = false
+        root.isModified = false
 
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks) {
             var src = AudioEngine.tracks.getPluginScript(trkIdx, plgIdx)
-            codeEditor.text = src.length > 0 ? src : root.defaultScript()
+            if (src && src.length > 0) {
+                codeEditor.text = src
+            } else {
+                root.loadTemplateTube()
+            }
         } else {
-            codeEditor.text = root.defaultScript()
+            root.loadTemplateTube()
         }
 
-        statusBanner.text = "Código cargado correctamente. Listo para editar."
-        statusBanner.color = "#10B981"
-        statusBannerBox.isError = false
-        statusBannerBox.color = "#16281E"
+        root.compilationError = ""
+        root.lastCompilationLog = "[EEL2 JIT] Script cargado para '" + plgNm + "'. Listo para compilar."
+        root.refreshParsedSliders()
         root.visible = true
     }
 
@@ -358,47 +1144,53 @@ Rectangle {
         root.pluginIndex = -1
         root.pluginName = "Nuevo Efecto JSFX"
         root.isNewPlugin = true
+        root.isModified = false
         root.loadTemplateTube()
+        root.compilationError = ""
+        root.lastCompilationLog = "[EEL2 JIT] Nuevo script inicializado desde plantilla. Presiona Ctrl+S para compilar e insertar."
+        root.refreshParsedSliders()
         root.visible = true
     }
 
     function compileAndApply() {
         if (typeof AudioEngine === "undefined" || !AudioEngine.tracks) {
-            statusBanner.text = "Error: El motor de audio no está activo"
-            statusBanner.color = "#EF4444"
-            statusBannerBox.isError = true
-            statusBannerBox.color = "#2E1517"
+            root.compilationError = "El motor de audio no está activo"
+            root.lastCompilationLog = "[Error] No se puede compilar: AudioEngine no está listo."
+            root.activeBottomTab = 0
+            root.bottomPanelVisible = true
             return
         }
+
+        var ts = Qt.formatTime(new Date(), "hh:mm:ss")
 
         if (root.isNewPlugin) {
             var ok = AudioEngine.tracks.createCustomJsfxPlugin(root.trackIndex, "Nuevo Script JSFX", codeEditor.text)
             if (ok) {
-                statusBanner.text = "✓ Script creado y conectado a la pista con éxito"
-                statusBanner.color = "#10B981"
-                statusBannerBox.isError = false
-                statusBannerBox.color = "#16281E"
+                root.compilationError = ""
+                root.lastCompilationLog = "[" + ts + "] [EEL2 JIT] ✓ Compilación exitosa: Script creado e insertado en la pista. Procesando audio en caliente."
+                root.isModified = false
+                root.refreshParsedSliders()
                 root.scriptApplied()
                 root.closeDialog()
             } else {
-                statusBanner.text = "Error al compilar el nuevo script"
-                statusBanner.color = "#EF4444"
-                statusBannerBox.isError = true
-                statusBannerBox.color = "#2E1517"
+                root.compilationError = "Error al compilar el nuevo script (revisa la sintaxis de las secciones @init, @slider, @sample)."
+                root.lastCompilationLog = "[" + ts + "] [Error] Falló la compilación del script JSFX."
+                root.activeBottomTab = 0
+                root.bottomPanelVisible = true
             }
         } else {
             var err = AudioEngine.tracks.updatePluginScript(root.trackIndex, root.pluginIndex, codeEditor.text)
             if (!err || err.length === 0) {
-                statusBanner.text = "✓ Compilación exitosa: audio actualizado en tiempo real"
-                statusBanner.color = "#10B981"
-                statusBannerBox.isError = false
-                statusBannerBox.color = "#16281E"
+                root.compilationError = ""
+                root.lastCompilationLog = "[" + ts + "] [EEL2 JIT] ✓ Compilación exitosa sin errores: audio actualizado en tiempo real."
+                root.isModified = false
+                root.refreshParsedSliders()
                 root.scriptApplied()
             } else {
-                statusBanner.text = "⚠ " + err
-                statusBanner.color = "#EF4444"
-                statusBannerBox.isError = true
-                statusBannerBox.color = "#2E1517"
+                root.compilationError = err
+                root.lastCompilationLog = "[" + ts + "] [Error EEL2] " + err
+                root.activeBottomTab = 0
+                root.bottomPanelVisible = true
             }
         }
     }
@@ -439,6 +1231,8 @@ Rectangle {
             "x1 = spl1 * drive;\n" +
             "spl0 = (tanh(x0) + warmth * (x0 * x0 * 0.1)) * outGain;\n" +
             "spl1 = (tanh(x1) + warmth * (x1 * x1 * 0.1)) * outGain;\n"
+        root.isModified = false
+        root.refreshParsedSliders()
     }
 
     function loadTemplateFilter() {
@@ -468,6 +1262,8 @@ Rectangle {
             "s3 = (b1/a0)*spl1 - (a1/a0)*out1 + s4;\n" +
             "s4 = (b2/a0)*spl1 - (a2/a0)*out1;\n" +
             "spl1 = out1;\n"
+        root.isModified = false
+        root.refreshParsedSliders()
     }
 
     function loadTemplateWidener() {
@@ -486,6 +1282,8 @@ Rectangle {
             "side = (spl0 - spl1) * 0.5 * width * sideTrim;\n" +
             "spl0 = mid + side;\n" +
             "spl1 = mid - side;\n"
+        root.isModified = false
+        root.refreshParsedSliders()
     }
 
     function loadTemplateDelay() {
@@ -513,9 +1311,13 @@ Rectangle {
             "buf_pos >= max_delay ? buf_pos = 0;\n" +
             "spl0 = spl0 * dry + delayed_l * wet;\n" +
             "spl1 = spl1 * dry + delayed_r * wet;\n"
+        root.isModified = false
+        root.refreshParsedSliders()
     }
 
     function loadTemplateGain() {
         codeEditor.text = defaultScript()
+        root.isModified = false
+        root.refreshParsedSliders()
     }
 }
