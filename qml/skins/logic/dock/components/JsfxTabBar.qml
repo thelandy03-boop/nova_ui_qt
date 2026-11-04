@@ -155,9 +155,9 @@ Rectangle {
             spacing: 4
             Layout.alignment: Qt.AlignVCenter
 
-            // Botón [ 🎛️ Controles ]
+            // Botón [ 🎛️ Vista previa ]
             Rectangle {
-                width: 90
+                width: 104
                 height: (Qt.platform.os === "android") ? 28 : 24
                 radius: 3
                 color: root.activeView === "ui" ? "#2563EB" : (uiMouse.containsMouse ? "#323846" : "#252832")
@@ -169,7 +169,7 @@ Rectangle {
                     spacing: 5
                     Text { text: "🎛️"; font.pixelSize: 10 }
                     Text {
-                        text: "Controles"
+                        text: "Vista previa"
                         color: root.activeView === "ui" ? "#FFFFFF" : "#E8EAED"
                         font.pixelSize: 11
                         font.bold: true

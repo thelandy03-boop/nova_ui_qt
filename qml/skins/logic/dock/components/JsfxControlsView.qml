@@ -3,10 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /**
- * Vista de interfaz gráfica (UI) para scripts JSFX.
- * Diseño sobrio, profesional y alineado estilo DAW real (Reaper / Ardour).
- * Renderiza los parámetros sliderN en filas ordenadas que ocupan el ancho
- * completo de la ventana con controles de alta precisión.
+ * Vista de Interfaz Gráfica (UI) para plugins JSFX.
+ * Reinterpretación auténtica del entorno Cockos REAPER FX:
+ * - Cabecera industrial de ventana de plugin (prefijo JS, botón Param, Presets y Reset)
+ * - Faders horizontales estilo REAPER con riel biselado 3D y fader caps metálicos
+ * - Displays de valor numérico biselados hundidos
+ * - Control de alta precisión con arrastre, rueda de ratón y doble clic para resetear
  */
 Rectangle {
     id: root
@@ -15,13 +17,14 @@ Rectangle {
     property int pluginIndex: -1
     property string scriptSource: ""
     property string pluginTitle: "JSFX Plugin"
+    property bool isBypassed: false
     property var slidersList: []
 
     signal editCodeRequested()
     signal parameterChanged(int paramIndex, real value)
     signal insertExampleSliderRequested()
 
-    color: "#14151B"
+    color: "#181A20"
 
     onScriptSourceChanged: refreshSliders()
     Component.onCompleted: refreshSliders()
@@ -30,7 +33,7 @@ Rectangle {
         var list = []
         var detectedTitle = ""
 
-        // 1. Intentar parsear a través del motor C++ si está disponible
+        // 1. Parser C++ si está disponible
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&
             typeof AudioEngine.tracks.parseJsfxSliders === "function") {
             try {
@@ -39,11 +42,11 @@ Rectangle {
                     detectedTitle = AudioEngine.tracks.getJsfxDescription(root.scriptSource)
                 }
             } catch (e) {
-                console.warn("[JsfxControlsView] Error en parse C++:", e)
+                console.warn("[JsfxControlsView] Error parse C++:", e)
             }
         }
 
-        // 2. Parser JavaScript de respaldo
+        // 2. Parser JavaScript de respaldo por expresiones regulares
         if ((!list || list.length === 0) && root.scriptSource && root.scriptSource.length > 0) {
             var lines = root.scriptSource.split(/\r?\n/)
             var sRegex = /^slider(\d+)\s*:\s*([-\d.]+)\s*<\s*([-\d.]+)\s*,\s*([-\d.]+)(?:\s*,\s*([-\d.]+))?[^>]*>\s*(.*)$/
@@ -64,7 +67,7 @@ Rectangle {
                         var minVal = parseFloat(m[3])
                         var maxVal = parseFloat(m[4])
                         var stepVal = m[5] ? parseFloat(m[5]) : 0.01
-                        var rawName = m[6] ? m[6].trim() : ("Control " + sNum)
+                        var rawName = m[6] ? m[6].trim() : ("slider" + sNum)
                         var unitStr = ""
                         var pOpen = rawName.lastIndexOf("(")
                         if (pOpen !== -1 && rawName.endsWith(")")) {
@@ -92,40 +95,176 @@ Rectangle {
         root.slidersList = list
     }
 
+    function resetAllSliders() {
+        for (var i = 0; i < slidersList.length; i++) {
+            var sl = slidersList[i]
+            root.parameterChanged(sl.index, sl.value)
+            if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&
+                root.trackIndex >= 0 && root.pluginIndex >= 0) {
+                AudioEngine.tracks.setPluginParameter(root.trackIndex, root.pluginIndex, sl.index, sl.value)
+            }
+        }
+        refreshSliders()
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
         // =====================================================================
-        // ENCABEZADO MINIMALISTA Y SOBRIO
+        // 1. CABECERA REAPER FX WINDOW (Bypass [✓], JS: Título, Param, Preset)
         // =====================================================================
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 34
-            color: "#181A22"
-            border.color: "#222530"
+            Layout.preferredHeight: 36
+            border.color: "#16171E"
             border.width: 1
+
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#2B2D37" }
+                GradientStop { position: 1.0; color: "#20222A" }
+            }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
                 spacing: 10
 
-                Text {
-                    text: root.pluginTitle || "Efecto JSFX"
-                    color: "#E2E8F0"
-                    font.pixelSize: 12
-                    font.bold: true
-                    font.family: "Segoe UI, Inter, Sans-serif"
+                // Casilla de Bypass estilo REAPER [✓]
+                Rectangle {
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    radius: 2
+                    color: root.isBypassed ? "#1A1B22" : "#242732"
+                    border.color: root.isBypassed ? "#475569" : "#64748B"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✓"
+                        color: root.isBypassed ? "transparent" : "#4ADE80"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.isBypassed = !root.isBypassed
+                            if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&
+                                root.trackIndex >= 0 && root.pluginIndex >= 0) {
+                                AudioEngine.tracks.setPluginBypassed(root.trackIndex, root.pluginIndex, root.isBypassed)
+                            }
+                        }
+                    }
+                }
+
+                // Título con prefijo "JS:" característico de Reaper
+                Row {
+                    spacing: 5
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        text: "JS:"
+                        color: "#E5A93C"
+                        font.pixelSize: 12
+                        font.bold: true
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Text {
+                        text: root.pluginTitle || "Effect"
+                        color: root.isBypassed ? "#94A3B8" : "#F1F5F9"
+                        font.pixelSize: 12
+                        font.bold: true
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
+
+                // Botón [ Param ▾ ] estilo REAPER
+                Rectangle {
+                    Layout.preferredHeight: 22
+                    Layout.preferredWidth: paramRow.implicitWidth + 14
+                    radius: 3
+                    color: paramMouse.containsMouse ? "#3E4250" : "#2F323D"
+                    border.color: "#434757"
+                    border.width: 1
+
+                    Row {
+                        id: paramRow
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text { text: "Param"; color: "#CBD5E1"; font.pixelSize: 10; font.bold: true }
+                        Text { text: "▾"; color: "#94A3B8"; font.pixelSize: 8 }
+                    }
+
+                    MouseArea {
+                        id: paramMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
+
+                // Botón [ + ] Presets estilo REAPER
+                Rectangle {
+                    Layout.preferredHeight: 22
+                    Layout.preferredWidth: 24
+                    radius: 3
+                    color: plusMouse.containsMouse ? "#3E4250" : "#2F323D"
+                    border.color: "#434757"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "+"
+                        color: "#CBD5E1"
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        id: plusMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
+
+                // Botón [ Reset ] estilo REAPER
+                Rectangle {
+                    Layout.preferredHeight: 22
+                    Layout.preferredWidth: resetRow.implicitWidth + 14
+                    radius: 3
+                    color: resetMouse.containsMouse ? "#3E4250" : "#2F323D"
+                    border.color: "#434757"
+                    border.width: 1
+
+                    Row {
+                        id: resetRow
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text { text: "↺"; color: "#94A3B8"; font.pixelSize: 10 }
+                        Text { text: "Reset"; color: "#CBD5E1"; font.pixelSize: 10; font.bold: true }
+                    }
+
+                    MouseArea {
+                        id: resetMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.resetAllSliders()
+                    }
+                }
             }
         }
 
         // =====================================================================
-        // LISTA DE PARÁMETROS / SLIDERS ALINEADOS
+        // 2. CONTENIDO PRINCIPAL: FADERS JSFX DE REAPER
         // =====================================================================
         Item {
             Layout.fillWidth: true
@@ -138,18 +277,21 @@ Rectangle {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "El script actual no define ningún slider (slider1, slider2...)"
+                    text: "Este script JSFX no define sliders (slider1, slider2...)"
                     color: "#64748B"
                     font.pixelSize: 12
                     font.family: "Segoe UI, Inter, Sans-serif"
                 }
             }
 
-            // Lista estructurada de sliders
+            // Lista estructurada de Faders estilo REAPER
             ListView {
                 id: slidersView
                 anchors.fill: parent
-                anchors.margins: 16
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                anchors.topMargin: 14
+                anchors.bottomMargin: 14
                 visible: root.slidersList.length > 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -159,10 +301,10 @@ Rectangle {
                 delegate: Rectangle {
                     id: rowDelegate
                     width: slidersView.width
-                    height: 42
-                    radius: 4
-                    color: rowMouse.containsMouse ? "#1A1D27" : "#161820"
-                    border.color: rowMouse.containsMouse ? "#2C3142" : "#1F222C"
+                    height: 40
+                    radius: 3
+                    color: rowMouse.containsMouse ? "#242732" : "#1E2028"
+                    border.color: rowMouse.containsMouse ? "#3A3F50" : "#282B37"
                     border.width: 1
 
                     property var param: modelData
@@ -186,63 +328,115 @@ Rectangle {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 16
-                        anchors.rightMargin: 16
-                        spacing: 16
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 14
+                        spacing: 14
 
-                        // 1. Nombre del parámetro a la izquierda
+                        // 1. Etiqueta del slider estilo Reaper
                         Text {
-                            Layout.preferredWidth: (parent.width > 500) ? 180 : 130
+                            Layout.preferredWidth: (parent.width > 600) ? 190 : 140
                             text: rowDelegate.param.name
-                            color: "#CBD5E1"
-                            font.pixelSize: 12
-                            font.bold: false
+                            color: "#D8DCE6"
+                            font.pixelSize: 11
+                            font.bold: true
                             font.family: "Segoe UI, Inter, Sans-serif"
                             elide: Text.ElideRight
                         }
 
-                        // 2. Fader / Slider horizontal central expansivo
+                        // 2. Riel y Fader metálico de REAPER
                         Item {
                             id: faderTrack
                             Layout.fillWidth: true
                             Layout.preferredHeight: 28
 
-                            // Canal del fader
+                            // Canal / Riel horizontal con profundidad 3D biselada
                             Rectangle {
+                                id: slotBase
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                height: 6
-                                radius: 3
-                                color: "#0F1015"
-                                border.color: "#272A36"
+                                height: 5
+                                radius: 2
+                                color: "#0D0E12"
+                                border.color: "#050608"
                                 border.width: 1
 
-                                // Relleno activo
+                                // Micro-bisel inferior para profundidad de hardware
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: -1
+                                    height: 1
+                                    color: "#383D4E"
+                                    opacity: 0.6
+                                }
+
+                                // Barra de relleno azul clásico de REAPER
                                 Rectangle {
                                     anchors.left: parent.left
                                     anchors.top: parent.top
                                     anchors.bottom: parent.bottom
-                                    width: Math.max(6, parent.width * rowDelegate.normVal)
-                                    radius: 3
-                                    color: "#2563EB"
+                                    width: Math.max(4, parent.width * rowDelegate.normVal)
+                                    radius: 2
+                                    color: "#3A6EA5"
                                 }
                             }
 
-                            // Manija (thumb) sobria y precisa
+                            // Fader Cap metálico auténtico de REAPER
                             Rectangle {
+                                id: faderCap
                                 x: Math.max(0, Math.min(parent.width - width, (parent.width - width) * rowDelegate.normVal))
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 12; height: 18
+                                width: 16
+                                height: 24
                                 radius: 2
-                                color: rowMouse.drag.active ? "#FFFFFF" : "#E2E8F0"
-                                border.color: "#3B82F6"
+                                border.color: "#111216"
                                 border.width: 1
+                                antialiasing: true
 
+                                // Gradiente metálico de 9 paradas estilo Cockos REAPER
+                                gradient: Gradient {
+                                    GradientStop { position: 0.00; color: "#E0E2E8" }
+                                    GradientStop { position: 0.15; color: "#FFFFFF" }
+                                    GradientStop { position: 0.35; color: "#7B8090" }
+                                    GradientStop { position: 0.48; color: "#3B3F4A" }
+                                    GradientStop { position: 0.50; color: "#000000" } // Ranura central
+                                    GradientStop { position: 0.52; color: "#3B3F4A" }
+                                    GradientStop { position: 0.65; color: "#7B8090" }
+                                    GradientStop { position: 0.85; color: "#CBD0DC" }
+                                    GradientStop { position: 1.00; color: "#585D6C" }
+                                }
+
+                                // Línea de posición central con micro-relieve
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    width: 2; height: 8
-                                    color: "#64748B"
+                                    width: 1.5
+                                    height: 14
+                                    color: rowMouse.drag.active ? "#60A5FA" : "#000000"
+
+                                    // Micro bisel blanco a la derecha
+                                    Rectangle {
+                                        anchors.left: parent.right
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: 1
+                                        color: "#FFFFFF"
+                                        opacity: 0.35
+                                    }
+                                }
+
+                                // Bisel luminoso izquierdo
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.leftMargin: 1
+                                    anchors.topMargin: 1
+                                    anchors.bottomMargin: 1
+                                    width: 1
+                                    color: "#FFFFFF"
+                                    opacity: 0.4
                                 }
                             }
 
@@ -272,14 +466,24 @@ Rectangle {
                             }
                         }
 
-                        // 3. Valor numérico formateado a la derecha
+                        // 3. Display numérico biselado hundido estilo REAPER
                         Rectangle {
-                            Layout.preferredWidth: 84
+                            Layout.preferredWidth: 85
                             Layout.preferredHeight: 22
-                            radius: 3
-                            color: "#0F1015"
-                            border.color: "#272B38"
+                            radius: 2
+                            color: "#0E0F14"
+                            border.color: "#282B37"
                             border.width: 1
+
+                            // Sombra superior interior
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 1
+                                color: "#000000"
+                                opacity: 0.6
+                            }
 
                             Text {
                                 anchors.centerIn: parent
@@ -288,9 +492,9 @@ Rectangle {
                                     var fmt = (Math.abs(num) >= 100) ? num.toFixed(0) : ((Math.abs(num) >= 10) ? num.toFixed(1) : num.toFixed(2))
                                     return fmt + (rowDelegate.param.unit ? (" " + rowDelegate.param.unit) : "")
                                 }
-                                color: "#38BDF8"
+                                color: "#E0E8F2"
                                 font.pixelSize: 11
-                                font.family: "Monospace, Consolas"
+                                font.family: "Monospace, Consolas, Courier New"
                             }
                         }
                     }
