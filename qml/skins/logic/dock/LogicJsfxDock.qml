@@ -5,9 +5,9 @@ import QtQuick.Layouts
 /**
  * Editor JSFX Integrado (Dock) para NOVA Studio.
  * Se acopla directamente bajo la Timeline en la columna derecha del Workspace,
- * con Activity Bar vectorial (sin emojis invisibles), árbol de carpetas/archivos
- * JSFX, pestañas de edición, resaltado de sintaxis en tiempo real, consola de estado
- * y controles de compilación instantánea.
+ * con Activity Bar vectorial, árbol de proyectos/archivos JSFX, editor monoespaciado
+ * con alineación matemática perfecta entre números de línea y código,
+ * resaltado de sintaxis sin corrupción de etiquetas HTML y consola de compilación.
  */
 Rectangle {
     id: root
@@ -20,6 +20,11 @@ Rectangle {
 
     property string statusMessage: "Compiled successfully"
     property bool hasError: false
+
+    // Estado de cursor y posición estilo VS Code
+    property int currentLine: 1
+    property int currentCol: 1
+    property string currentSection: "@init"
 
     // Estado del explorador lateral izquierdo
     property bool showSidebar: true
@@ -98,7 +103,7 @@ Rectangle {
                 Rectangle {
                     Layout.preferredHeight: 28
                     Layout.preferredWidth: tabRow.implicitWidth + 24
-                    anchors.bottom: parent.bottom
+                    Layout.alignment: Qt.AlignBottom
                     radius: 3
                     color: "#181A20" // Se funde con el fondo del editor
                     border.color: "#2D3139"
@@ -475,7 +480,21 @@ Rectangle {
                 Rectangle {
                     width: 20; height: 20; radius: 3
                     color: searchPrevMouse.containsMouse ? "#3D4250" : "transparent"
-                    Text { anchors.centerIn: parent; text: "↑"; color: "#FFFFFF"; font.pixelSize: 12 }
+                    Canvas {
+                        anchors.centerIn: parent
+                        width: 8; height: 8
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, 8, 8)
+                            ctx.strokeStyle = "#FFFFFF"
+                            ctx.lineWidth = 1.3
+                            ctx.beginPath()
+                            ctx.moveTo(1.5, 5.5)
+                            ctx.lineTo(4, 2.5)
+                            ctx.lineTo(6.5, 5.5)
+                            ctx.stroke()
+                        }
+                    }
                     MouseArea {
                         id: searchPrevMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         onClicked: root.findPrev()
@@ -485,7 +504,21 @@ Rectangle {
                 Rectangle {
                     width: 20; height: 20; radius: 3
                     color: searchNextMouse.containsMouse ? "#3D4250" : "transparent"
-                    Text { anchors.centerIn: parent; text: "↓"; color: "#FFFFFF"; font.pixelSize: 12 }
+                    Canvas {
+                        anchors.centerIn: parent
+                        width: 8; height: 8
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, 8, 8)
+                            ctx.strokeStyle = "#FFFFFF"
+                            ctx.lineWidth = 1.3
+                            ctx.beginPath()
+                            ctx.moveTo(1.5, 2.5)
+                            ctx.lineTo(4, 5.5)
+                            ctx.lineTo(6.5, 2.5)
+                            ctx.stroke()
+                        }
+                    }
                     MouseArea {
                         id: searchNextMouse; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         onClicked: root.findNext()
@@ -805,7 +838,21 @@ Rectangle {
                                 anchors.leftMargin: 8
                                 spacing: 6
 
-                                Text { text: "∨"; color: "#8F94A0"; font.pixelSize: 9; font.bold: true }
+                                Canvas {
+                                    width: 8; height: 8
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.clearRect(0, 0, 8, 8)
+                                        ctx.strokeStyle = "#8F94A0"
+                                        ctx.lineWidth = 1.3
+                                        ctx.beginPath()
+                                        ctx.moveTo(1.5, 2.5)
+                                        ctx.lineTo(4, 5.5)
+                                        ctx.lineTo(6.5, 2.5)
+                                        ctx.stroke()
+                                    }
+                                }
                                 Text {
                                     text: "PROJECTS"
                                     color: "#8F94A0"
@@ -816,7 +863,7 @@ Rectangle {
                             }
                         }
 
-                        // Carpeta raíz: ∨ 📁 jsfx_effects (Carpeta vectorial dorada)
+                        // Carpeta raíz: 📁 jsfx_effects (Carpeta vectorial dorada)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 22
@@ -827,7 +874,21 @@ Rectangle {
                                 anchors.leftMargin: 16
                                 spacing: 6
 
-                                Text { text: "∨"; color: "#8F94A0"; font.pixelSize: 8 }
+                                Canvas {
+                                    width: 8; height: 8
+                                    Layout.alignment: Qt.AlignVCenter
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.clearRect(0, 0, 8, 8)
+                                        ctx.strokeStyle = "#8F94A0"
+                                        ctx.lineWidth = 1.3
+                                        ctx.beginPath()
+                                        ctx.moveTo(1.5, 2.5)
+                                        ctx.lineTo(4, 5.5)
+                                        ctx.lineTo(6.5, 2.5)
+                                        ctx.stroke()
+                                    }
+                                }
 
                                 // Icono vectorial de carpeta dorada
                                 Item {
@@ -912,108 +973,250 @@ Rectangle {
                 }
             }
 
-            // ── 3.3 ÁREA DE CÓDIGO CON NÚMEROS DE LÍNEA Y SINTAXIS COLOREADA ──
+            // ── 3.3 ÁREA DE CÓDIGO CON NÚMEROS DE LÍNEA Y EDITOR MONOESPACIADO ──
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 color: "#181A20"
                 clip: true
 
-                Flickable {
-                    id: editorFlickable
+                RowLayout {
                     anchors.fill: parent
-                    contentWidth: Math.max(width, codeColumn.width + 60)
-                    contentHeight: Math.max(height, codeColumn.height + 40)
-                    clip: true
+                    spacing: 0
 
-                    Row {
-                        id: codeColumn
-                        spacing: 0
-                        height: Math.max(codeTextEdit.implicitHeight, editorFlickable.height)
+                    ScrollView {
+                        id: editorScrollView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
 
-                        // GUTTER: NÚMEROS DE LÍNEA
-                        Rectangle {
-                            id: gutter
-                            width: 38
-                            height: Math.max(codeTextEdit.height, editorFlickable.height)
-                            color: "#181A20"
+                        Row {
+                            id: codeRow
+                            spacing: 0
+                            width: Math.max(editorScrollView.width - 60, codeEditorContainer.width + gutter.width + 40)
+                            height: Math.max(editorScrollView.height, codeTextEdit.contentHeight + 30)
 
-                            Column {
-                                anchors.fill: parent
-                                anchors.topMargin: 8
+                            // GUTTER: NÚMEROS DE LÍNEA EXACTOS PÍXEL POR PÍXEL
+                            Rectangle {
+                                id: gutter
+                                width: 44
+                                height: parent.height
+                                color: "#181A20"
 
-                                Repeater {
-                                    model: Math.max(1, codeTextEdit.lineCount)
-                                    delegate: Text {
-                                        width: 28
-                                        text: (index + 1).toString()
-                                        color: "#555C6E"
-                                        font.family: "Monospace, Consolas, 'Courier New', Courier"
-                                        font.pixelSize: 13
-                                        horizontalAlignment: Text.AlignRight
+                                Column {
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 8
+                                    width: parent.width
+
+                                    Repeater {
+                                        model: Math.max(1, codeTextEdit.lineCount)
+                                        delegate: Item {
+                                            width: gutter.width
+                                            height: codeTextEdit.cursorRectangle.height > 0 ? codeTextEdit.cursorRectangle.height : 18
+
+                                            readonly property string rawLineText: {
+                                                var arr = codeTextEdit.text.split("\n")
+                                                return index < arr.length ? arr[index].trim() : ""
+                                            }
+                                            readonly property bool isSection: rawLineText.indexOf("@") === 0
+
+                                            // Indicador de línea actual activa
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                color: (index + 1 === root.currentLine) ? "#252832" : "transparent"
+                                            }
+
+                                            // Número de línea alineado
+                                            Text {
+                                                width: 30
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: 8
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: (index + 1).toString()
+                                                color: (index + 1 === root.currentLine) ? "#E6EDF3" : "#555C6E"
+                                                font.family: codeTextEdit.font.family
+                                                font.pixelSize: codeTextEdit.font.pixelSize
+                                                font.bold: (index + 1 === root.currentLine)
+                                                horizontalAlignment: Text.AlignRight
+                                            }
+
+                                            // Chevron de sección
+                                            Canvas {
+                                                visible: parent.isSection
+                                                width: 7; height: 7
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                x: 5
+                                                onPaint: {
+                                                    var ctx = getContext("2d")
+                                                    ctx.clearRect(0, 0, 7, 7)
+                                                    ctx.strokeStyle = "#858585"
+                                                    ctx.lineWidth = 1.2
+                                                    ctx.beginPath()
+                                                    ctx.moveTo(1, 2)
+                                                    ctx.lineTo(3.5, 5)
+                                                    ctx.lineTo(6, 2)
+                                                    ctx.stroke()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Línea divisoria vertical del gutter
+                                Rectangle {
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 1
+                                    color: "#22252D"
+                                }
+                            }
+
+                            // ZONA EDITABLE DEL CÓDIGO (100% NATIVA Y CRISTALINA)
+                            Item {
+                                id: codeEditorContainer
+                                width: Math.max(editorScrollView.width - gutter.width - 50, codeTextEdit.contentWidth + 40)
+                                height: parent.height
+
+                                // Resaltado de línea activa estilo VS Code
+                                Rectangle {
+                                    x: 0
+                                    y: codeTextEdit.cursorRectangle.y
+                                    width: parent.width
+                                    height: codeTextEdit.cursorRectangle.height > 0 ? codeTextEdit.cursorRectangle.height : 18
+                                    color: "#20232B"
+                                    border.color: "#282C37"
+                                    border.width: 1
+                                    visible: codeTextEdit.activeFocus
+                                }
+
+                                // Guías de indentación verticales
+                                Row {
+                                    x: 10 + 32
+                                    y: 8
+                                    height: codeTextEdit.contentHeight
+                                    spacing: 31
+                                    opacity: 0.12
+
+                                    Repeater {
+                                        model: 6
+                                        delegate: Rectangle {
+                                            width: 1
+                                            height: codeTextEdit.contentHeight
+                                            color: "#8F94A0"
+                                        }
+                                    }
+                                }
+
+                                // TextEdit con renderizado nativo nítido
+                                TextEdit {
+                                    id: codeTextEdit
+                                    anchors.top: parent.top
+                                    anchors.left: parent.left
+                                    anchors.topMargin: 8
+                                    anchors.leftMargin: 10
+                                    width: parent.width
+                                    height: Math.max(contentHeight + 30, editorScrollView.height)
+                                    color: "#D4D4D4"
+                                    selectedTextColor: "#FFFFFF"
+                                    selectionColor: "#264F78"
+                                    font.family: "JetBrains Mono, Consolas, 'Courier New', Monospace"
+                                    font.pixelSize: 13
+                                    wrapMode: TextEdit.NoWrap
+                                    tabStopDistance: 32
+                                    cursorVisible: true
+                                    selectByMouse: true
+
+                                    // Cursor personalizado de 2px estilo VS Code
+                                    cursorDelegate: Rectangle {
+                                        width: 2
+                                        color: "#AEAFAD"
+                                        visible: codeTextEdit.activeFocus
+
+                                        SequentialAnimation on opacity {
+                                            loops: Animation.Infinite
+                                            running: codeTextEdit.activeFocus
+                                            NumberAnimation { to: 1.0; duration: 100 }
+                                            PauseAnimation { duration: 400 }
+                                            NumberAnimation { to: 0.0; duration: 150 }
+                                            PauseAnimation { duration: 300 }
+                                        }
+                                    }
+
+                                    onCursorPositionChanged: {
+                                        root.updateCursorPosition()
+                                    }
+
+                                    onTextChanged: {
+                                        root.isModified = true
+                                        root.updateCursorPosition()
+                                    }
+
+                                    Component.onCompleted: {
+                                        if (text.length === 0) root.loadTemplateDelay()
+                                        root.updateCursorPosition()
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // ZONA EDITABLE CON SINTAXIS COLOREADA
-                        Item {
-                            width: Math.max(editorFlickable.width - 50, codeTextEdit.contentWidth + 40)
-                            height: Math.max(codeTextEdit.contentHeight + 20, editorFlickable.height)
+                    // ── MINIMAPA LATERAL ESTILO VS CODE ──────────
+                    Rectangle {
+                        Layout.preferredWidth: 54
+                        Layout.fillHeight: true
+                        color: "#181A20"
+                        clip: true
 
-                            // Capa 1 (Detrás): Renderizado con colores de sintaxis HTML
-                            Text {
-                                id: syntaxLayer
-                                anchors.fill: parent
-                                anchors.topMargin: 8
-                                anchors.leftMargin: 8
-                                textFormat: Text.RichText
-                                font.family: "Monospace, Consolas, 'Courier New', Courier"
-                                font.pixelSize: 13
-                                wrapMode: Text.NoWrap
-                                text: root.generateHighlightedHtml(codeTextEdit.text)
-                            }
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: 1
+                            color: "#22252D"
+                        }
 
-                            // Capa 2 (Encima): TextEdit nativo con texto transparente para edición
-                            TextEdit {
-                                id: codeTextEdit
-                                anchors.fill: parent
-                                anchors.topMargin: 8
-                                anchors.leftMargin: 8
-                                color: "transparent" // El texto lo pinta syntaxLayer con colores
-                                selectedTextColor: "#FFFFFF"
-                                selectionColor: "#264F78"
-                                font.family: "Monospace, Consolas, 'Courier New', Courier"
-                                font.pixelSize: 13
-                                wrapMode: TextEdit.NoWrap
-                                tabStopDistance: 32
-                                cursorVisible: true
+                        Column {
+                            anchors.fill: parent
+                            anchors.topMargin: 8
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            spacing: 2
+                            opacity: 0.65
 
-                                onTextChanged: {
-                                    root.isModified = true
-                                }
+                            Repeater {
+                                model: Math.min(80, codeTextEdit.lineCount)
+                                delegate: Item {
+                                    width: 42
+                                    height: 2
 
-                                Component.onCompleted: {
-                                    if (text.length === 0) root.loadTemplateDelay()
+                                    readonly property string lineStr: {
+                                        var arr = codeTextEdit.text.split("\n")
+                                        return index < arr.length ? arr[index].trim() : ""
+                                    }
+
+                                    Rectangle {
+                                        width: Math.min(parent.width, Math.max(6, parent.lineStr.length * 1.4))
+                                        height: 2
+                                        radius: 1
+                                        color: {
+                                            if (parent.lineStr.indexOf("//") === 0) return "#628A62"
+                                            if (parent.lineStr.indexOf("@") === 0) return "#F0C674"
+                                            if (parent.lineStr.indexOf("slider") === 0) return "#7EC67E"
+                                            if (parent.lineStr.indexOf("desc:") === 0) return "#E5A44E"
+                                            return "#7A8294"
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-
-                    ScrollBar.vertical: ScrollBar {
-                        active: true
-                        width: 8
-                    }
-                    ScrollBar.horizontal: ScrollBar {
-                        active: true
-                        height: 8
                     }
                 }
             }
         }
 
         // =====================================================================
-        // 4. CONSOLA INFERIOR INTEGRADA (CONSOLE)
+        // 4. CONSOLA INFERIOR Y BARRA DE ESTADO (CONSOLE & STATUS BAR)
         // =====================================================================
         Rectangle {
             Layout.fillWidth: true
@@ -1022,102 +1225,115 @@ Rectangle {
             border.color: "#202229"
             border.width: 1
 
-            ColumnLayout {
+            RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 14
                 anchors.rightMargin: 14
-                anchors.topMargin: 4
-                anchors.bottomMargin: 4
-                spacing: 2
+                spacing: 12
 
-                Text {
-                    text: "Console"
-                    color: "#8F94A0"
-                    font.pixelSize: 11
-                    font.bold: true
-                    font.family: "Segoe UI, Inter, Sans-serif"
+                // Consola de estado a la izquierda
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: "Console"
+                        color: "#8F94A0"
+                        font.pixelSize: 11
+                        font.bold: true
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Row {
+                        spacing: 6
+                        Rectangle {
+                            width: 6; height: 6; radius: 3
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: root.hasError ? "#FF4D4F" : "#52C41A"
+                        }
+                        Text {
+                            text: root.statusMessage
+                            color: root.hasError ? "#FF4D4F" : "#52C41A"
+                            font.pixelSize: 11
+                            font.family: "Monospace, Consolas, 'Courier New'"
+                            elide: Text.ElideRight
+                        }
+                    }
                 }
 
-                Text {
-                    text: root.statusMessage
-                    color: root.hasError ? "#FF4D4F" : "#52C41A"
-                    font.pixelSize: 11
-                    font.family: "Monospace, Consolas, 'Courier New'"
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+                // Indicadores de estado estilo VS Code a la derecha
+                RowLayout {
+                    spacing: 14
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        text: root.currentSection
+                        color: "#D4B16A"
+                        font.pixelSize: 11
+                        font.bold: true
+                        font.family: "Monospace, Consolas, Courier New"
+                    }
+
+                    Rectangle { width: 1; height: 14; color: "#2B2E38" }
+
+                    Text {
+                        text: "Ln " + root.currentLine + ", Col " + root.currentCol
+                        color: "#8F94A0"
+                        font.pixelSize: 11
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Rectangle { width: 1; height: 14; color: "#2B2E38" }
+
+                    Text {
+                        text: "Spaces: 4"
+                        color: "#8F94A0"
+                        font.pixelSize: 11
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Rectangle { width: 1; height: 14; color: "#2B2E38" }
+
+                    Text {
+                        text: "UTF-8"
+                        color: "#8F94A0"
+                        font.pixelSize: 11
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+
+                    Rectangle { width: 1; height: 14; color: "#2B2E38" }
+
+                    Text {
+                        text: "EEL2 (JSFX)"
+                        color: "#8F94A0"
+                        font.pixelSize: 11
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
                 }
             }
         }
     }
 
     // =========================================================================
-    // 5. MOTOR DE RESALTADO DE SINTAXIS EN TIEMPO REAL (HTML RICH TEXT)
+    // 5. CÁLCULO DE POSICIÓN Y ESTADO DE LÍNEA
     // =========================================================================
 
-    function generateHighlightedHtml(code) {
-        if (!code) return ""
+    function updateCursorPosition() {
+        var pos = codeTextEdit.cursorPosition
+        var sub = codeTextEdit.text.substring(0, pos)
+        var lines = sub.split("\n")
+        root.currentLine = lines.length
+        root.currentCol = lines[lines.length - 1].length + 1
 
-        var escaped = code
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-
-        var lines = escaped.split("\n")
-        var result = []
-
-        for (var i = 0; i < lines.length; ++i) {
-            var line = lines[i]
-
-            // 1. Comentarios de línea: // ...
-            var commentIdx = line.indexOf("//")
-            var commentPart = ""
-            if (commentIdx !== -1) {
-                commentPart = "<font color='#628A62'>" + line.substring(commentIdx) + "</font>"
-                line = line.substring(0, commentIdx)
+        var detectedSection = "desc"
+        for (var i = lines.length - 1; i >= 0; --i) {
+            var trimmed = lines[i].trim()
+            if (trimmed.indexOf("@") === 0) {
+                detectedSection = trimmed.split(/\s+/)[0]
+                break
             }
-
-            // 2. Directivas de sección: @init, @slider, @sample, @block
-            if (line.trim().indexOf("@") === 0) {
-                line = "<font color='#F0C674'><b>" + line + "</b></font>"
-            } else if (line.indexOf("desc:") === 0) {
-                // 3. Cabecera desc: ...
-                var descVal = line.substring(5)
-                line = "<font color='#DCDCDC'>desc:</font><font color='#E5A44E'>" + descVal + "</font>"
-            } else if (line.indexOf("slider") === 0) {
-                // 4. Definición de sliders: slider1:200<0,1000,10>Delay (ms)
-                var colonIdx = line.indexOf(":")
-                if (colonIdx !== -1) {
-                    var sName = line.substring(0, colonIdx + 1)
-                    var rest = line.substring(colonIdx + 1)
-                    var gtIdx = rest.indexOf("&gt;")
-                    if (gtIdx !== -1) {
-                        var rangePart = rest.substring(0, gtIdx + 4)
-                        var labelPart = rest.substring(gtIdx + 4)
-                        line = "<font color='#DCDCDC'>" + sName + "</font>" +
-                               "<font color='#7EC67E'>" + rangePart + "</font>" +
-                               "<font color='#E5A44E'>" + labelPart + "</font>"
-                    } else {
-                        line = "<font color='#DCDCDC'>" + sName + "</font><font color='#7EC67E'>" + rest + "</font>"
-                    }
-                }
-            } else {
-                // 5. Palabras clave de control de flujo
-                line = line.replace(/\b(if|then|else|while|loop)\b/g, "<font color='#F97583'><b>$1</b></font>")
-
-                // 6. Operadores lógicos y matemáticos: =, *, /, +, -, >=, <=
-                line = line.replace(/(&gt;=|&lt;=|==|!=|\+=|-=|\*=|\/=|[\+\*\/=])/g, "<font color='#F97583'>$1</font>")
-
-                // 7. Variables de audio universales y canales
-                line = line.replace(/\b(spl0|spl1|srate|num_ch)\b/g, "<font color='#E1E4E8'><b>$1</b></font>")
-
-                // 8. Números
-                line = line.replace(/\b([0-9]+(?:\.[0-9]+)?)\b/g, "<font color='#85E89D'>$1</font>")
-            }
-
-            result.push(line + commentPart)
         }
-
-        return "<pre style='margin:0; padding:0; line-height:1.25; font-family:Monospace;'>" + result.join("<br/>") + "</pre>"
+        root.currentSection = detectedSection
     }
 
     // =========================================================================
@@ -1178,6 +1394,7 @@ Rectangle {
 
         root.statusMessage = "Compiled successfully"
         root.hasError = false
+        root.updateCursorPosition()
     }
 
     function openForPlugin(trkIdx, plgIdx, plgNm) {
@@ -1201,6 +1418,7 @@ Rectangle {
 
         root.statusMessage = "Compiled successfully"
         root.hasError = false
+        root.updateCursorPosition()
     }
 
     function openNewScript(trkIdx) {
@@ -1213,6 +1431,7 @@ Rectangle {
         root.loadTemplateDelay()
         root.statusMessage = "Compiled successfully"
         root.hasError = false
+        root.updateCursorPosition()
     }
 
     function searchInCode(term) {
@@ -1363,7 +1582,7 @@ Rectangle {
             "a4 = a3 * (1 - lfo);\n" +
             "spl0 = spl0 * 0.5 + a4 * 0.5;\n" +
             "spl1 = spl1 * 0.5 + a4 * 0.5;\n"
-}
+    }
 
     function loadTemplateDistortion() {
         codeTextEdit.text =
