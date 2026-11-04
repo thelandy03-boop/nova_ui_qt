@@ -2,23 +2,22 @@ import QtQuick
 
 /**
  * Biblioteca modular de plantillas DSP para scripts JSFX de Cockos EEL2.
- * Contiene presets completos y funciones de formateo de scripts.
+ * Contiene el código real de procesamiento para todos los plugins nativos del sistema.
  */
 QtObject {
     id: root
 
     function getTemplate(fname) {
-        switch (fname) {
-            case "simple_delay.jsfx":  return delayTemplate
-            case "multi_tap.jsfx":     return multiTapTemplate
-            case "chorus.jsfx":        return chorusTemplate
-            case "phaser_stereo.jsfx": return phaserTemplate
-            case "distortion.jsfx":    return distortionTemplate
-            case "lfo_filter.jsfx":    return lfoFilterTemplate
-            case "reverb.jsfx":        return reverbTemplate
-            case "utils.jsh":          return utilsTemplate
-            default:                   return delayTemplate
-        }
+        var lower = (fname || "").toLowerCase()
+        if (lower.indexOf("eq") !== -1) return eqTemplate
+        if (lower.indexOf("comp") !== -1) return compTemplate
+        if (lower.indexOf("gate") !== -1) return gateTemplate
+        if (lower.indexOf("delay") !== -1) return delayTemplate
+        if (lower.indexOf("reverb") !== -1) return reverbTemplate
+        if (lower.indexOf("tube") !== -1 || lower.indexOf("saturat") !== -1) return tubeTemplate
+        if (lower.indexOf("widen") !== -1 || lower.indexOf("stereo") !== -1) return widenerTemplate
+        if (lower.indexOf("air") !== -1 || lower.indexOf("excit") !== -1) return vocalAirTemplate
+        return eqTemplate
     }
 
     function formatScript(rawCode) {
@@ -37,174 +36,228 @@ QtObject {
         return out.join("\n").trim() + "\n"
     }
 
+    // 1. ACE EQ
+    readonly property string eqTemplate:
+        "desc: ACE EQ (Parametric 3-Band)\n" +
+        "slider1:0<-12,12,0.1>Graves 80Hz (dB)\n" +
+        "slider2:0<-12,12,0.1>Medios 1kHz (dB)\n" +
+        "slider3:0<-12,12,0.1>Agudos 10kHz (dB)\n\n" +
+        "@init\n" +
+        "pi = 3.141592653589793;\n" +
+        "x1_lL = 0; x2_lL = 0; y1_lL = 0; y2_lL = 0;\n" +
+        "x1_lR = 0; x2_lR = 0; y1_lR = 0; y2_lR = 0;\n" +
+        "x1_mL = 0; x2_mL = 0; y1_mL = 0; y2_mL = 0;\n" +
+        "x1_mR = 0; x2_mR = 0; y1_mR = 0; y2_mR = 0;\n" +
+        "x1_hL = 0; x2_hL = 0; y1_hL = 0; y2_hL = 0;\n" +
+        "x1_hR = 0; x2_hR = 0; y1_hR = 0; y2_hR = 0;\n\n" +
+        "@slider\n" +
+        "A_l = 10^(slider1 / 40);\n" +
+        "w0_l = 2 * pi * 80 / srate;\n" +
+        "cos_l = cos(w0_l); sin_l = sin(w0_l);\n" +
+        "alpha_l = sin_l / (2 * 0.7071);\n" +
+        "b0_l = A_l * ((A_l + 1) - (A_l - 1) * cos_l + 2 * sqrt(A_l) * alpha_l);\n" +
+        "b1_l = 2 * A_l * ((A_l - 1) - (A_l + 1) * cos_l);\n" +
+        "b2_l = A_l * ((A_l + 1) - (A_l - 1) * cos_l - 2 * sqrt(A_l) * alpha_l);\n" +
+        "a0_l = (A_l + 1) + (A_l - 1) * cos_l + 2 * sqrt(A_l) * alpha_l;\n" +
+        "a1_l = -2 * ((A_l - 1) + (A_l + 1) * cos_l);\n" +
+        "a2_l = (A_l + 1) + (A_l - 1) * cos_l - 2 * sqrt(A_l) * alpha_l;\n\n" +
+        "A_m = 10^(slider2 / 40);\n" +
+        "w0_m = 2 * pi * 1000 / srate;\n" +
+        "cos_m = cos(w0_m); sin_m = sin(w0_m);\n" +
+        "alpha_m = sin_m / (2 * 1.0);\n" +
+        "b0_m = 1 + alpha_m * A_m;\n" +
+        "b1_m = -2 * cos_m;\n" +
+        "b2_m = 1 - alpha_m * A_m;\n" +
+        "a0_m = 1 + alpha_m / A_m;\n" +
+        "a1_m = -2 * cos_m;\n" +
+        "a2_m = 1 - alpha_m / A_m;\n\n" +
+        "A_h = 10^(slider3 / 40);\n" +
+        "w0_h = 2 * pi * 10000 / srate;\n" +
+        "cos_h = cos(w0_h); sin_h = sin(w0_h);\n" +
+        "alpha_h = sin_h / (2 * 0.7071);\n" +
+        "b0_h = A_h * ((A_h + 1) + (A_h - 1) * cos_h + 2 * sqrt(A_h) * alpha_h);\n" +
+        "b1_h = -2 * A_h * ((A_h - 1) + (A_h + 1) * cos_h);\n" +
+        "b2_h = A_h * ((A_h + 1) - (A_h - 1) * cos_h - 2 * sqrt(A_h) * alpha_h);\n" +
+        "a0_h = (A_h + 1) - (A_h - 1) * cos_h + 2 * sqrt(A_h) * alpha_h;\n" +
+        "a1_h = 2 * ((A_h - 1) - (A_h + 1) * cos_h);\n" +
+        "a2_h = (A_h + 1) - (A_h - 1) * cos_h - 2 * sqrt(A_h) * alpha_h;\n\n" +
+        "@sample\n" +
+        "outL = (b0_l * spl0 + b1_l * x1_lL + b2_l * x2_lL - a1_l * y1_lL - a2_l * y2_lL) / a0_l;\n" +
+        "x2_lL = x1_lL; x1_lL = spl0; y2_lL = y1_lL; y1_lL = outL;\n" +
+        "outL2 = (b0_m * outL + b1_m * x1_mL + b2_m * x2_mL - a1_m * y1_mL - a2_m * y2_mL) / a0_m;\n" +
+        "x2_mL = x1_mL; x1_mL = outL; y2_mL = y1_mL; y1_mL = outL2;\n" +
+        "spl0 = (b0_h * outL2 + b1_h * x1_hL + b2_h * x2_hL - a1_h * y1_hL - a2_h * y2_hL) / a0_h;\n" +
+        "x2_hL = x1_hL; x1_hL = outL2; y2_hL = y1_hL; y1_hL = spl0;\n\n" +
+        "outR = (b0_l * spl1 + b1_l * x1_lR + b2_l * x2_lR - a1_l * y1_lR - a2_l * y2_lR) / a0_l;\n" +
+        "x2_lR = x1_lR; x1_lR = spl1; y2_lR = y1_lR; y1_lR = outR;\n" +
+        "outR2 = (b0_m * outR + b1_m * x1_mR + b2_m * x2_mR - a1_m * y1_mR - a2_m * y2_mR) / a0_m;\n" +
+        "x2_mR = x1_mR; x1_mR = outR; y2_mR = y1_mR; y1_mR = outR2;\n" +
+        "spl1 = (b0_h * outR2 + b1_h * x1_hR + b2_h * x2_hR - a1_h * y1_hR - a2_h * y2_hR) / a0_h;\n" +
+        "x2_hR = x1_hR; x1_hR = outR2; y2_hR = y1_hR; y1_hR = spl1;\n"
+
+    // 2. ACE COMPRESSOR
+    readonly property string compTemplate:
+        "desc: ACE Compressor (Studio Dynamics)\n" +
+        "slider1:-12<-40,0,0.5>Umbral (dB)\n" +
+        "slider2:3<1,20,0.5>Ratio (:1)\n" +
+        "slider3:2<0,20,0.5>Ganancia (dB)\n\n" +
+        "@init\n" +
+        "env = 0;\n" +
+        "gain_red = 1;\n\n" +
+        "@slider\n" +
+        "thresh_db = slider1;\n" +
+        "ratio = slider2;\n" +
+        "makeup = 10^(slider3 / 20);\n" +
+        "att = exp(-1 / (0.010 * srate));\n" +
+        "rel = exp(-1 / (0.100 * srate));\n\n" +
+        "@sample\n" +
+        "max_s = max(abs(spl0), abs(spl1));\n" +
+        "env = (max_s > env) ? (att * env + (1 - att) * max_s) : (rel * env + (1 - rel) * max_s);\n" +
+        "env_db = 20 * log10(max(env, 0.00001));\n\n" +
+        "excess = env_db - thresh_db;\n" +
+        "gr_db = (excess > 0 && ratio > 1) ? (excess * (1 - 1 / ratio)) : 0;\n" +
+        "target_gain = 10^(-gr_db / 20);\n" +
+        "gain_red = 0.9 * gain_red + 0.1 * target_gain;\n" +
+        "final_gain = gain_red * makeup;\n" +
+        "spl0 = spl0 * final_gain;\n" +
+        "spl1 = spl1 * final_gain;\n"
+
+    // 3. FAST NOISE GATE
+    readonly property string gateTemplate:
+        "desc: Fast Noise Gate (JSFX)\n" +
+        "slider1:-45<-80,0,1>Umbral (dB)\n" +
+        "slider2:50<5,500,5>Relajación (ms)\n\n" +
+        "@init\n" +
+        "env = 0;\n\n" +
+        "@slider\n" +
+        "thresh = 10^(slider1 / 20);\n" +
+        "rel = exp(-1 / (slider2 * 0.001 * srate));\n\n" +
+        "@sample\n" +
+        "lvl = max(abs(spl0), abs(spl1));\n" +
+        "env = (lvl > env) ? lvl : (env * rel);\n" +
+        "gain = (env > thresh) ? 1.0 : (env / (thresh + 0.00001));\n" +
+        "spl0 = spl0 * gain;\n" +
+        "spl1 = spl1 * gain;\n"
+
+    // 4. ACE DELAY
     readonly property string delayTemplate:
-        "// Simple Stereo Delay\n" +
-        "desc:Stereo Delay Effect\n" +
-        "slider1:200<0,1000,10>Delay (ms)\n" +
-        "slider2:0.5<0,1,0.01>Feedback\n\n" +
-        "@init\n" +
-        "delay_samples = srate * (slider1 / 1000);\n" +
-        "buf_pos = 0;\n" +
-        "buf_len = delay_samples;\n\n" +
-        "@slider\n" +
-        "delay_samples = srate * (slider1 / 1000);\n\n" +
-        "@sample\n" +
-        "dry_L = spl0;\n" +
-        "dry_R = spl1;\n" +
-        "delayed_L = buf_pos[0];\n" +
-        "spl0 = dry_L + delayed_L * slider2;\n" +
-        "buf_pos[0] = dry_L;\n" +
-        "buf_pos += 1;\n" +
-        "if (buf_pos >= buf_len) then buf_pos = 0;\n"
-
-    readonly property string multiTapTemplate:
-        "// Multi-Tap Delay\n" +
-        "desc:Multi-Tap Stereo Delay\n" +
-        "slider1:250<10,1000,10>Tap 1 (ms)\n" +
-        "slider2:500<10,2000,10>Tap 2 (ms)\n" +
-        "slider3:0.4<0,1,0.01>Tap Feedback\n\n" +
+        "desc: ACE Delay (Stereo Tap)\n" +
+        "slider1:250<10,1000,10>Tiempo (ms)\n" +
+        "slider2:30<0,95,1>Feedback (%)\n" +
+        "slider3:25<0,100,1>Mezcla (%)\n\n" +
         "@init\n" +
         "buf_pos = 0;\n" +
-        "max_len = srate * 2;\n\n" +
+        "max_samples = 96000;\n\n" +
         "@slider\n" +
-        "t1 = floor(slider1 * 0.001 * srate);\n" +
-        "t2 = floor(slider2 * 0.001 * srate);\n\n" +
-        "@sample\n" +
-        "p1 = (buf_pos - t1 + max_len) % max_len;\n" +
-        "p2 = (buf_pos - t2 + max_len) % max_len;\n" +
-        "tap1 = p1[0];\n" +
-        "tap2 = p2[0];\n" +
-        "buf_pos[0] = spl0 + (tap1 + tap2) * 0.5 * slider3;\n" +
-        "spl0 = spl0 + tap1 * 0.6;\n" +
-        "spl1 = spl1 + tap2 * 0.6;\n" +
-        "buf_pos = (buf_pos + 1) % max_len;\n"
-
-    readonly property string chorusTemplate:
-        "// Stereo Chorus\n" +
-        "desc:Vintage Stereo Chorus\n" +
-        "slider1:1.5<0.1,5,0.1>Rate (Hz)\n" +
-        "slider2:15<1,40,1>Depth (ms)\n" +
-        "slider3:50<0,100,1>Mix (%)\n\n" +
-        "@init\n" +
-        "lfo_phase = 0;\n" +
-        "buf_pos = 0;\n" +
-        "max_del = srate * 0.1;\n\n" +
-        "@slider\n" +
-        "rate_inc = 2 * 3.14159265 * slider1 / srate;\n" +
-        "depth_samp = slider2 * 0.001 * srate;\n" +
+        "delay_samples = floor(slider1 * 0.001 * srate);\n" +
+        "delay_samples = min(max_samples - 1, max(10, delay_samples));\n" +
+        "fb = slider2 / 100;\n" +
         "wet = slider3 / 100;\n" +
         "dry = 1 - wet;\n\n" +
         "@sample\n" +
-        "mod = sin(lfo_phase) * depth_samp;\n" +
-        "read_p = (buf_pos - floor(mod + depth_samp) + max_del) % max_del;\n" +
-        "del_sig = read_p[0];\n" +
-        "buf_pos[0] = (spl0 + spl1) * 0.5;\n" +
-        "buf_pos = (buf_pos + 1) % max_del;\n" +
-        "lfo_phase += rate_inc;\n" +
-        "spl0 = spl0 * dry + del_sig * wet;\n" +
-        "spl1 = spl1 * dry + del_sig * wet;\n"
+        "read_pos = (buf_pos - delay_samples + max_samples) % max_samples;\n" +
+        "delayed_L = read_pos[0];\n" +
+        "delayed_R = (read_pos + 100000)[0];\n\n" +
+        "buf_pos[0] = spl0 + delayed_L * fb;\n" +
+        "(buf_pos + 100000)[0] = spl1 + delayed_R * fb;\n\n" +
+        "spl0 = spl0 * dry + delayed_L * wet;\n" +
+        "spl1 = spl1 * dry + delayed_R * wet;\n\n" +
+        "buf_pos = (buf_pos + 1) % max_samples;\n"
 
-    readonly property string phaserTemplate:
-        "// Stereo Phaser\n" +
-        "desc:4-Pole Analog Phaser\n" +
-        "slider1:0.5<0.05,4,0.05>LFO Speed (Hz)\n" +
-        "slider2:60<0,95,1>Feedback (%)\n\n" +
-        "@init\n" +
-        "phase = 0;\n" +
-        "a1 = 0; a2 = 0; a3 = 0; a4 = 0;\n\n" +
-        "@slider\n" +
-        "inc = 2 * 3.14159265 * slider1 / srate;\n" +
-        "fb = slider2 / 100;\n\n" +
-        "@sample\n" +
-        "lfo = (sin(phase) + 1) * 0.5;\n" +
-        "phase += inc;\n" +
-        "in = spl0 + a4 * fb;\n" +
-        "a1 = in * (1 - lfo);\n" +
-        "a2 = a1 * (1 - lfo);\n" +
-        "a3 = a2 * (1 - lfo);\n" +
-        "a4 = a3 * (1 - lfo);\n" +
-        "spl0 = spl0 * 0.5 + a4 * 0.5;\n" +
-        "spl1 = spl1 * 0.5 + a4 * 0.5;\n"
-
-    readonly property string distortionTemplate:
-        "// Hard Distortion\n" +
-        "desc:Hard Knee Clipper Distortion\n" +
-        "slider1:12<0,36,0.1>Drive (dB)\n" +
-        "slider2:0<-24,6,0.1>Output Trim (dB)\n\n" +
-        "@init\n" +
-        "in_gain = 1;\n" +
-        "out_gain = 1;\n\n" +
-        "@slider\n" +
-        "in_gain = 10^(slider1 / 20);\n" +
-        "out_gain = 10^(slider2 / 20);\n\n" +
-        "@sample\n" +
-        "x0 = spl0 * in_gain;\n" +
-        "x1 = spl1 * in_gain;\n" +
-        "spl0 = min(1.0, max(-1.0, x0)) * out_gain;\n" +
-        "spl1 = min(1.0, max(-1.0, x1)) * out_gain;\n"
-
-    readonly property string lfoFilterTemplate:
-        "// LFO Auto-Wah Filter\n" +
-        "desc:LFO Modulated Resonant Filter\n" +
-        "slider1:2.0<0.1,10,0.1>Rate (Hz)\n" +
-        "slider2:800<200,4000,10>Center Freq (Hz)\n" +
-        "slider3:2.5<0.5,10,0.1>Resonance (Q)\n\n" +
-        "@init\n" +
-        "lfo_p = 0;\n" +
-        "s1 = 0; s2 = 0;\n\n" +
-        "@slider\n" +
-        "lfo_inc = 2 * 3.14159265 * slider1 / srate;\n\n" +
-        "@sample\n" +
-        "mod_freq = slider2 * (1 + 0.6 * sin(lfo_p));\n" +
-        "lfo_p += lfo_inc;\n" +
-        "w0 = 2 * 3.14159265 * mod_freq / srate;\n" +
-        "alpha = sin(w0) / (2 * slider3);\n" +
-        "b0 = (1 - cos(w0)) * 0.5;\n" +
-        "b1 = 1 - cos(w0);\n" +
-        "b2 = b0;\n" +
-        "a0 = 1 + alpha;\n" +
-        "a1 = -2 * cos(w0);\n" +
-        "a2 = 1 - alpha;\n" +
-        "out0 = (b0/a0)*spl0 + s1;\n" +
-        "s1 = (b1/a0)*spl0 - (a1/a0)*out0 + s2;\n" +
-        "s2 = (b2/a0)*spl0 - (a2/a0)*out0;\n" +
-        "spl0 = out0;\n" +
-        "spl1 = out0;\n"
-
+    // 5. ACE REVERB
     readonly property string reverbTemplate:
-        "// Algorithmic Reverb\n" +
-        "desc:4-Comb Stereo Reverb\n" +
-        "slider1:45<0,100,1>Room Size (%)\n" +
-        "slider2:30<0,100,1>Wet Mix (%)\n\n" +
+        "desc: ACE Reverb (Studio Room)\n" +
+        "slider1:45<0,100,1>Tamaño Sala (%)\n" +
+        "slider2:20<0,100,1>Mezcla Wet (%)\n\n" +
         "@init\n" +
-        "pos1 = 0; pos2 = 0; pos3 = 0;\n" +
-        "len1 = 1557; len2 = 1617; len3 = 1491;\n\n" +
+        "pos1 = 0; pos2 = 0; pos3 = 0; pos4 = 0;\n" +
+        "pos5 = 0; pos6 = 0;\n" +
+        "del1 = 1116; del2 = 1188; del3 = 1277; del4 = 1356;\n" +
+        "ap1 = 556; ap2 = 441;\n\n" +
         "@slider\n" +
-        "feedback = 0.5 + 0.45 * (slider1 / 100);\n" +
+        "room = 0.7 + (slider1 / 100) * 0.28;\n" +
         "wet = slider2 / 100;\n" +
         "dry = 1 - wet;\n\n" +
         "@sample\n" +
-        "sig = (spl0 + spl1) * 0.5;\n" +
+        "in_mono = (spl0 + spl1) * 0.015;\n\n" +
         "out1 = pos1[0];\n" +
-        "pos1[0] = sig + out1 * feedback;\n" +
-        "pos1 = (pos1 + 1) % len1;\n" +
+        "pos1[0] = in_mono + out1 * room;\n" +
+        "pos1 = (pos1 + 1) % del1;\n\n" +
         "out2 = (pos2 + 2000)[0];\n" +
-        "(pos2 + 2000)[0] = sig + out2 * feedback;\n" +
-        "pos2 = (pos2 + 1) % len2;\n" +
-        "rev_sig = (out1 + out2) * 0.5;\n" +
+        "(pos2 + 2000)[0] = in_mono + out2 * room;\n" +
+        "pos2 = (pos2 + 1) % del2;\n\n" +
+        "out3 = (pos3 + 4000)[0];\n" +
+        "(pos3 + 4000)[0] = in_mono + out3 * room;\n" +
+        "pos3 = (pos3 + 1) % del3;\n\n" +
+        "out4 = (pos4 + 6000)[0];\n" +
+        "(pos4 + 6000)[0] = in_mono + out4 * room;\n" +
+        "pos4 = (pos4 + 1) % del4;\n\n" +
+        "comb_sum = out1 + out2 + out3 + out4;\n\n" +
+        "buf_ap1 = (pos5 + 8000)[0];\n" +
+        "ap_out1 = -comb_sum + buf_ap1;\n" +
+        "(pos5 + 8000)[0] = comb_sum + buf_ap1 * 0.5;\n" +
+        "pos5 = (pos5 + 1) % ap1;\n\n" +
+        "buf_ap2 = (pos6 + 10000)[0];\n" +
+        "ap_out2 = -ap_out1 + buf_ap2;\n" +
+        "(pos6 + 10000)[0] = ap_out1 + buf_ap2 * 0.5;\n" +
+        "pos6 = (pos6 + 1) % ap2;\n\n" +
+        "rev_sig = ap_out2 * 2.0;\n\n" +
         "spl0 = spl0 * dry + rev_sig * wet;\n" +
         "spl1 = spl1 * dry + rev_sig * wet;\n"
 
-    readonly property string utilsTemplate:
-        "// Utility Functions Header\n" +
-        "desc:NOVA DSP Math Utilities (Header)\n\n" +
-        "function db2gain(db) (\n" +
-        "    10 ^ (db / 20);\n" +
-        ");\n\n" +
-        "function gain2db(gain) (\n" +
-        "    gain <= 0.00001 ? -100 : 20 * log10(gain);\n" +
-        ");\n\n" +
-        "function clip(val, min_v, max_v) (\n" +
-        "    val < min_v ? min_v : (val > max_v ? max_v : val);\n" +
-        ");\n"
+    // 6. ANALOG TUBE SATURATOR
+    readonly property string tubeTemplate:
+        "desc: Analog Tube Saturator (JSFX)\n" +
+        "slider1:6<0,24,0.1>Drive (dB)\n" +
+        "slider2:50<0,100,1>Calidez (%)\n" +
+        "slider3:0<-24,12,0.1>Salida (dB)\n\n" +
+        "@init\n" +
+        "gain = 1;\n" +
+        "warmth = 0.5;\n" +
+        "out_gain = 1;\n\n" +
+        "@slider\n" +
+        "gain = 10^(slider1 / 20);\n" +
+        "warmth = slider2 / 100;\n" +
+        "out_gain = 10^(slider3 / 20);\n\n" +
+        "@sample\n" +
+        "x0 = spl0 * gain;\n" +
+        "x1 = spl1 * gain;\n" +
+        "spl0 = (tanh(x0) + warmth * (x0 * x0 * 0.15)) * out_gain;\n" +
+        "spl1 = (tanh(x1) + warmth * (x1 * x1 * 0.15)) * out_gain;\n"
+
+    // 7. STEREO WIDENER MID/SIDE
+    readonly property string widenerTemplate:
+        "desc: Stereo Widener Mid/Side (JSFX)\n" +
+        "slider1:130<0,200,1>Ancho Estéreo (%)\n" +
+        "slider2:0<-12,12,0.1>Nivel Mid (dB)\n\n" +
+        "@init\n" +
+        "width = 1.3;\n" +
+        "mid_gain = 1.0;\n\n" +
+        "@slider\n" +
+        "width = slider1 / 100;\n" +
+        "mid_gain = 10^(slider2 / 20);\n\n" +
+        "@sample\n" +
+        "mid = (spl0 + spl1) * 0.5 * mid_gain;\n" +
+        "side = (spl0 - spl1) * 0.5 * width;\n" +
+        "spl0 = mid + side;\n" +
+        "spl1 = mid - side;\n"
+
+    // 8. VOCAL AIR EXCITER
+    readonly property string vocalAirTemplate:
+        "desc: Vocal Air Exciter (JSFX)\n" +
+        "slider1:35<0,100,1>Presencia Aérea (%)\n" +
+        "slider2:10000<6000,16000,100>Corte (Hz)\n\n" +
+        "@init\n" +
+        "hpL = 0;\n" +
+        "hpR = 0;\n\n" +
+        "@slider\n" +
+        "mix = slider1 / 100;\n" +
+        "alpha = 0.5;\n\n" +
+        "@sample\n" +
+        "highL = spl0 - hpL;\n" +
+        "highR = spl1 - hpR;\n" +
+        "hpL = hpL + 0.3 * highL;\n" +
+        "hpR = hpR + 0.3 * highR;\n" +
+        "spl0 = spl0 + tanh(highL * 2.5) * mix * 0.4;\n" +
+        "spl1 = spl1 + tanh(highR * 2.5) * mix * 0.4;\n"
 }

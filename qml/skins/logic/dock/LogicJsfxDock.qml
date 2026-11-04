@@ -20,7 +20,7 @@ Rectangle {
 
     property int trackIndex: -1
     property int pluginIndex: -1
-    property string pluginName: "simple_delay.jsfx"
+    property string pluginName: "ace_eq.jsfx"
     property bool isNewPlugin: false
     property bool isModified: false
 
@@ -30,7 +30,7 @@ Rectangle {
     // Estado del explorador lateral izquierdo
     property bool showSidebar: (Qt.platform.os !== "android")
     property int activeActivityTab: 0 // 0: Explorer, 1: Search, 2: Git, 3: Run, 4: Extensions
-    property string selectedFile: "simple_delay.jsfx"
+    property string selectedFile: "ace_eq.jsfx"
 
     property bool searchVisible: false
     property string activeView: "code" // "code" o "ui"
@@ -350,10 +350,10 @@ Rectangle {
             if (src && src.length > 0) {
                 editorArea.loadContent(src)
             } else {
-                editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
+                editorArea.loadContent(templates.getTemplate(root.pluginName))
             }
         } else {
-            editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
+            editorArea.loadContent(templates.getTemplate(root.pluginName))
         }
 
         root.isModified = false
@@ -366,10 +366,10 @@ Rectangle {
         fileTree.cancelRename()
         root.trackIndex = trkIdx
         root.pluginIndex = -1
-        root.pluginName = "simple_delay.jsfx"
-        root.selectedFile = "simple_delay.jsfx"
+        root.pluginName = "ace_eq.jsfx"
+        root.selectedFile = "ace_eq.jsfx"
         root.isNewPlugin = true
-        editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
+        editorArea.loadContent(templates.getTemplate("ace_eq.jsfx"))
         root.isModified = false
         root.statusMessage = "Compiled successfully"
         root.hasError = false
@@ -383,7 +383,7 @@ Rectangle {
 
     Component.onCompleted: {
         if (editorArea.text.length === 0) {
-            editorArea.text = templates.getTemplate("simple_delay.jsfx")
+            editorArea.text = templates.getTemplate("ace_eq.jsfx")
         }
     }
 }

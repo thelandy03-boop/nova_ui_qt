@@ -306,7 +306,7 @@ Rectangle {
                                 return "#38BDF8"
                             }
                             enabledFx: !modelData.bypassed && !root.masterBypass
-                            isJsfx: (modelData.category === "JSFX") || (modelData.uniqueId && modelData.uniqueId.indexOf("jsfx:") === 0)
+                            isJsfx: true
 
                             onEditCodeRequested: {
                                 root.editJsfxRequested(root.trackIndex, modelData.index, modelData.name)

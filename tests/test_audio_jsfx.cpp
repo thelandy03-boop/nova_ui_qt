@@ -105,8 +105,8 @@ int main()
     {
         auto& mgr = NovaJsfxManager::instance();
         auto plugins = mgr.availableJsfxPlugins();
-        CHECK_NAMED("jsfx_builtin_plugins_count", plugins.size() >= 4,
-                    "debe tener al menos 4 plugins JSFX analógicos integrados");
+        CHECK_NAMED("jsfx_builtin_plugins_count", plugins.size() >= 8,
+                    "debe tener los 8 plugins de estudio reales integrados");
 
         auto saturator = mgr.createEffect(QStringLiteral("jsfx:builtin:tube_saturation"));
         CHECK_NAMED("jsfx_create_tube_saturator", saturator != nullptr,
@@ -117,6 +117,39 @@ int main()
             saturator->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
             CHECK_NAMED("jsfx_tube_saturator_runs", buffer[0] > 0.0f,
                         "el saturador de tubos debe procesar audio sin colapsar");
+        }
+
+        auto aceEq = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_eq"));
+        CHECK_NAMED("jsfx_create_ace_eq", aceEq != nullptr, "debe instanciar ACE EQ como efecto JSFX real");
+        if (aceEq) {
+            CHECK_NAMED("jsfx_ace_eq_sliders", aceEq->sliders().size() == 3, "ACE EQ debe exponer 3 bandas de sliders");
+            std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
+            aceEq->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
+            CHECK_NAMED("jsfx_ace_eq_runs", !std::isnan(buffer[0]), "ACE EQ debe procesar audio sin NaN");
+        }
+
+        auto aceComp = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_compressor"));
+        CHECK_NAMED("jsfx_create_ace_comp", aceComp != nullptr, "debe instanciar ACE Compressor como efecto JSFX real");
+        if (aceComp) {
+            std::vector<float> buffer(kNumFrames * kChannels, 0.8f);
+            aceComp->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
+            CHECK_NAMED("jsfx_ace_comp_runs", !std::isnan(buffer[0]), "ACE Compressor debe procesar audio sin NaN");
+        }
+
+        auto aceDelay = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_delay"));
+        CHECK_NAMED("jsfx_create_ace_delay", aceDelay != nullptr, "debe instanciar ACE Delay como efecto JSFX real");
+        if (aceDelay) {
+            std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
+            aceDelay->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
+            CHECK_NAMED("jsfx_ace_delay_runs", !std::isnan(buffer[0]), "ACE Delay debe procesar audio sin NaN");
+        }
+
+        auto aceReverb = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_reverb"));
+        CHECK_NAMED("jsfx_create_ace_reverb", aceReverb != nullptr, "debe instanciar ACE Reverb como efecto JSFX real");
+        if (aceReverb) {
+            std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
+            aceReverb->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
+            CHECK_NAMED("jsfx_ace_reverb_runs", !std::isnan(buffer[0]), "ACE Reverb debe procesar audio sin NaN");
         }
     }
 

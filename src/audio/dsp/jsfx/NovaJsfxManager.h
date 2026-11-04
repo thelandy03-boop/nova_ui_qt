@@ -29,6 +29,9 @@ public:
     // Crea una instancia de NovaJsfxEffect a partir de un id o ruta
     std::shared_ptr<NovaJsfxEffect> createEffect(const QString& idOrPath);
 
+    // Obtiene el contenido del script por ID o por nombre del plugin
+    QString getScriptContent(const QString& idOrName) const;
+
     // Registra un nuevo script JSFX personalizado cargado por el usuario
     bool registerUserScript(const QString& filePath, QString* outError = nullptr);
     bool registerUserScriptContent(const QString& id, const QString& content, QString* outError = nullptr);

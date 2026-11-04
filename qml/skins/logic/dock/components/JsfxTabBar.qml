@@ -139,14 +139,14 @@ Rectangle {
                 id: templateMenu
                 y: parent.height + 4
 
-                MenuItem { text: "simple_delay.jsfx"; onTriggered: root.templateSelected("simple_delay.jsfx") }
-                MenuItem { text: "multi_tap.jsfx";    onTriggered: root.templateSelected("multi_tap.jsfx") }
-                MenuItem { text: "chorus.jsfx";       onTriggered: root.templateSelected("chorus.jsfx") }
-                MenuItem { text: "distortion.jsfx";   onTriggered: root.templateSelected("distortion.jsfx") }
-                MenuItem { text: "lfo_filter.jsfx";   onTriggered: root.templateSelected("lfo_filter.jsfx") }
-                MenuItem { text: "reverb.jsfx";       onTriggered: root.templateSelected("reverb.jsfx") }
-                MenuItem { text: "phaser_stereo.jsfx";onTriggered: root.templateSelected("phaser_stereo.jsfx") }
-                MenuItem { text: "utils.jsh";         onTriggered: root.templateSelected("utils.jsh") }
+                MenuItem { text: "ace_eq.jsfx (ACE EQ)";                   onTriggered: root.templateSelected("ace_eq.jsfx") }
+                MenuItem { text: "ace_compressor.jsfx (ACE Compressor)";   onTriggered: root.templateSelected("ace_compressor.jsfx") }
+                MenuItem { text: "noise_gate.jsfx (Fast Noise Gate)";      onTriggered: root.templateSelected("noise_gate.jsfx") }
+                MenuItem { text: "ace_delay.jsfx (ACE Delay)";             onTriggered: root.templateSelected("ace_delay.jsfx") }
+                MenuItem { text: "ace_reverb.jsfx (ACE Reverb)";           onTriggered: root.templateSelected("ace_reverb.jsfx") }
+                MenuItem { text: "tube_saturation.jsfx (Tube Saturator)";  onTriggered: root.templateSelected("tube_saturation.jsfx") }
+                MenuItem { text: "stereo_widener.jsfx (Stereo Widener)";   onTriggered: root.templateSelected("stereo_widener.jsfx") }
+                MenuItem { text: "vocal_air.jsfx (Vocal Air Exciter)";     onTriggered: root.templateSelected("vocal_air.jsfx") }
             }
         }
 

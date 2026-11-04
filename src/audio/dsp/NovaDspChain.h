@@ -16,6 +16,7 @@ public:
     ~NovaDspChain();
 
     void addEffect(std::shared_ptr<NovaDspEffect> effect);
+    void replaceEffect(int index, std::shared_ptr<NovaDspEffect> effect);
     void removeEffect(int index);
     void clear();
     int effectCount() const;

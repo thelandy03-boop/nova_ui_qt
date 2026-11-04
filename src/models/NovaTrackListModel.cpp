@@ -684,7 +684,23 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
     stub.id = pluginId;
     std::shared_ptr<NovaDspEffect> effect;
 
-    if (pluginId.contains(QStringLiteral("a-eq"))) {
+    // 1. Intentar cargar mediante NovaJsfxManager (soporta ACE EQ, ACE Comp, ACE Delay, ACE Reverb y plugins JSFX)
+    auto jsfx = NovaJsfxManager::instance().createEffect(pluginId);
+    if (jsfx) {
+        stub.name = jsfx->name();
+        stub.category = jsfx->category();
+        for (const auto& sl : jsfx->sliders()) {
+            QVariantMap pmap;
+            pmap[QStringLiteral("index")] = sl.index;
+            pmap[QStringLiteral("name")] = sl.name;
+            pmap[QStringLiteral("value")] = sl.defaultValue;
+            pmap[QStringLiteral("min")] = sl.minValue;
+            pmap[QStringLiteral("max")] = sl.maxValue;
+            pmap[QStringLiteral("unit")] = sl.unit;
+            stub.parameters.append(pmap);
+        }
+        effect = jsfx;
+    } else if (pluginId.contains(QStringLiteral("a-eq"))) {
         stub.name = QStringLiteral("ACE EQ");
         stub.category = QStringLiteral("EQ");
         stub.parameters = {
@@ -719,26 +735,6 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Mezcla Wet")}, {QStringLiteral("value"), 20.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
         };
         effect = std::make_shared<NovaReverb>();
-    } else if (pluginId.startsWith(QStringLiteral("jsfx:")) || pluginId.endsWith(QStringLiteral(".jsfx")) || pluginId.endsWith(QStringLiteral(".txt"))) {
-        auto jsfx = NovaJsfxManager::instance().createEffect(pluginId);
-        if (jsfx) {
-            stub.name = jsfx->name();
-            stub.category = jsfx->category();
-            for (const auto& sl : jsfx->sliders()) {
-                QVariantMap pmap;
-                pmap[QStringLiteral("index")] = sl.index;
-                pmap[QStringLiteral("name")] = sl.name;
-                pmap[QStringLiteral("value")] = sl.defaultValue;
-                pmap[QStringLiteral("min")] = sl.minValue;
-                pmap[QStringLiteral("max")] = sl.maxValue;
-                pmap[QStringLiteral("unit")] = sl.unit;
-                stub.parameters.append(pmap);
-            }
-            effect = jsfx;
-        } else {
-            stub.name = pluginId;
-            stub.category = QStringLiteral("JSFX");
-        }
     } else {
         stub.name = pluginId;
         stub.category = QStringLiteral("EFECTO");
@@ -967,8 +963,7 @@ bool NovaTrackListModel::isJsfxPlugin(int trackRow, int pluginIndex) const
 {
     if (d_ptr->stubPlugins.contains(trackRow) &&
         pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
-        const auto &p = d_ptr->stubPlugins[trackRow][pluginIndex];
-        return p.id.startsWith(QStringLiteral("jsfx:")) || p.category == QStringLiteral("JSFX");
+        return true; // Todos los plugins reales de NOVA Studio disponen de código editable
     }
     return false;
 }
@@ -984,6 +979,12 @@ QString NovaTrackListModel::getPluginScript(int trackRow, int pluginIndex) const
                 return jsfx->scriptSource();
             }
         }
+        // Si no es un NovaJsfxEffect directo, obtener el script oficial de NovaJsfxManager
+        QString script = NovaJsfxManager::instance().getScriptContent(p.id);
+        if (script.isEmpty()) {
+            script = NovaJsfxManager::instance().getScriptContent(p.name);
+        }
+        return script;
     }
     return QString();
 }
@@ -996,18 +997,24 @@ QString NovaTrackListModel::updatePluginScript(int trackRow, int pluginIndex, co
     }
 
     auto &stub = d_ptr->stubPlugins[trackRow][pluginIndex];
-    if (!stub.dspEffect) {
-        return QStringLiteral("El plugin no tiene procesador DSP activo");
-    }
-
     auto jsfx = std::dynamic_pointer_cast<NovaJsfxEffect>(stub.dspEffect);
-    if (!jsfx) {
-        return QStringLiteral("El plugin seleccionado no es un script JSFX");
-    }
 
-    QString err;
-    if (!jsfx->recompile(sourceCode, &err)) {
-        return err.isEmpty() ? QStringLiteral("Error de compilación desconocido") : err;
+    if (jsfx) {
+        QString err;
+        if (!jsfx->recompile(sourceCode, &err)) {
+            return err.isEmpty() ? QStringLiteral("Error de compilación desconocido") : err;
+        }
+    } else {
+        auto newJsfx = std::make_shared<NovaJsfxEffect>();
+        QString err;
+        if (!newJsfx->loadScript(sourceCode, &err)) {
+            return err.isEmpty() ? QStringLiteral("Error de compilación desconocido") : err;
+        }
+        stub.dspEffect = newJsfx;
+        if (d_ptr->trackDspChains.contains(trackRow)) {
+            d_ptr->trackDspChains[trackRow]->replaceEffect(pluginIndex, newJsfx);
+        }
+        jsfx = newJsfx;
     }
 
     // Actualizar nombre y sliders en los metadatos de la UI

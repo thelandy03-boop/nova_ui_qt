@@ -10,10 +10,10 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
-    property string selectedFile: "simple_delay.jsfx"
+    property string selectedFile: "ace_eq.jsfx"
     property int renamingIndex: -1
     property int renamingFolderIndex: -1
-    property string activeFolderId: "effects"
+    property string activeFolderId: "eq"
 
     signal fileSelected(string fileName)
     signal fileRenamed(string oldName, string newName)
@@ -24,25 +24,26 @@ Rectangle {
     border.color: "#141518"
     border.width: 1
 
-    // Modelo de carpetas
+    // Modelo de carpetas categorizadas por función DSP real
     ListModel {
         id: foldersModel
-        ListElement { folderId: "effects"; name: "jsfx_effects"; collapsed: false }
-        ListElement { folderId: "mod";     name: "modulation";   collapsed: false }
-        ListElement { folderId: "utils";   name: "utilities";    collapsed: false }
+        ListElement { folderId: "eq";    name: "ecualizacion";       collapsed: false }
+        ListElement { folderId: "dyn";   name: "dinamica";           collapsed: false }
+        ListElement { folderId: "space"; name: "tiempo_y_espacio";   collapsed: false }
+        ListElement { folderId: "color"; name: "color_y_saturacion"; collapsed: false }
     }
 
-    // Modelo de archivos
+    // Modelo de plugins reales del motor
     ListModel {
         id: filesModel
-        ListElement { name: "simple_delay.jsfx";  baseName: "simple_delay";  ext: ".jsfx"; folderId: "effects" }
-        ListElement { name: "multi_tap.jsfx";     baseName: "multi_tap";     ext: ".jsfx"; folderId: "effects" }
-        ListElement { name: "reverb.jsfx";        baseName: "reverb";        ext: ".jsfx"; folderId: "effects" }
-        ListElement { name: "distortion.jsfx";    baseName: "distortion";    ext: ".jsfx"; folderId: "effects" }
-        ListElement { name: "chorus.jsfx";        baseName: "chorus";        ext: ".jsfx"; folderId: "mod" }
-        ListElement { name: "phaser_stereo.jsfx"; baseName: "phaser_stereo"; ext: ".jsfx"; folderId: "mod" }
-        ListElement { name: "lfo_filter.jsfx";     baseName: "lfo_filter";     ext: ".jsfx"; folderId: "mod" }
-        ListElement { name: "utils.jsh";          baseName: "utils";          ext: ".jsh";  folderId: "utils" }
+        ListElement { name: "ace_eq.jsfx";          baseName: "ace_eq";          ext: ".jsfx"; folderId: "eq" }
+        ListElement { name: "ace_compressor.jsfx";  baseName: "ace_compressor";  ext: ".jsfx"; folderId: "dyn" }
+        ListElement { name: "noise_gate.jsfx";      baseName: "noise_gate";      ext: ".jsfx"; folderId: "dyn" }
+        ListElement { name: "ace_delay.jsfx";       baseName: "ace_delay";       ext: ".jsfx"; folderId: "space" }
+        ListElement { name: "ace_reverb.jsfx";      baseName: "ace_reverb";      ext: ".jsfx"; folderId: "space" }
+        ListElement { name: "tube_saturation.jsfx"; baseName: "tube_saturation"; ext: ".jsfx"; folderId: "color" }
+        ListElement { name: "stereo_widener.jsfx";  baseName: "stereo_widener";  ext: ".jsfx"; folderId: "color" }
+        ListElement { name: "vocal_air.jsfx";       baseName: "vocal_air";       ext: ".jsfx"; folderId: "color" }
     }
 
     // Cuenta cuántos archivos tiene una carpeta
