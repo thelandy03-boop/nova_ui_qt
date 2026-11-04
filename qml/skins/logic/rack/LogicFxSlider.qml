@@ -83,6 +83,8 @@ Item {
                 id: dragArea
                 anchors.fill: parent
                 anchors.margins: -14
+                preventStealing: true
+                hoverEnabled: true
                 cursorShape: Qt.SizeVerCursor
 
                 property real lastY: 0
@@ -103,6 +105,23 @@ Item {
                         root.value = newVal
                         root.valueChangedByUser(newVal)
                     }
+                }
+
+                onWheel: (wheel) => {
+                    var delta = (wheel.angleDelta.y > 0) ? 0.02 : -0.02
+                    var newVal = Math.max(0.0, Math.min(1.0, root.value + delta))
+                    if (newVal !== root.value) {
+                        root.value = newVal
+                        root.valueChangedByUser(newVal)
+                    }
+                }
+
+                onDoubleClicked: {
+                    if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                        AudioEngine.hapticFeedback()
+                    }
+                    root.value = 0.5
+                    root.valueChangedByUser(0.5)
                 }
             }
         }

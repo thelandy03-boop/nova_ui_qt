@@ -16,7 +16,7 @@ Rectangle {
 
     default property alias content: contentSlot.data
 
-    implicitWidth: 190
+    implicitWidth: Math.max(190, contentSlot.childrenRect.width + 24)
     implicitHeight: 165
     radius: 10
     color: "#161820"
