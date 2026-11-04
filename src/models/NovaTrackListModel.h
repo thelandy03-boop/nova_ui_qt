@@ -70,6 +70,7 @@ public:
     Q_INVOKABLE QString getPluginScript(int trackRow, int pluginIndex) const;
     Q_INVOKABLE QString updatePluginScript(int trackRow, int pluginIndex, const QString &sourceCode);
     Q_INVOKABLE bool createCustomJsfxPlugin(int trackRow, const QString &name, const QString &sourceCode);
+    Q_INVOKABLE QString compileJsfxScript(const QString &sourceCode);
 
     /** Devuelve la cadena DSP activa para una pista dada. */
     class NovaDspChain* dspChainForTrack(int trackRow) const;

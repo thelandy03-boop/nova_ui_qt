@@ -182,6 +182,7 @@ Rectangle {
 
         // 4. Barra de estado y consola
         JsfxStatusBar {
+            id: statusBar
             statusMessage: root.statusMessage
             hasError: root.hasError
         }
@@ -192,36 +193,45 @@ Rectangle {
     // =========================================================================
 
     function compileAndApply() {
+        // Guardar cambios en el búfer de memoria del archivo actual
+        root.customFileScripts[root.selectedFile] = editorArea.text
+
         if (typeof AudioEngine === "undefined" || !AudioEngine.tracks) {
             root.statusMessage = "Error: El motor de audio no está activo"
             root.hasError = true
+            statusBar.setLog(true, root.statusMessage)
             return
         }
 
-        if (root.isNewPlugin) {
-            var ok = AudioEngine.tracks.createCustomJsfxPlugin(root.trackIndex, root.pluginName.replace(".jsfx", ""), editorArea.text)
-            if (ok) {
-                root.statusMessage = "Compiled successfully"
-                root.hasError = false
-                root.isModified = false
-                root.isNewPlugin = false
-                root.scriptApplied()
-            } else {
-                root.statusMessage = "Compilation failed: Syntax error in script sections"
-                root.hasError = true
-            }
-        } else {
-            var err = AudioEngine.tracks.updatePluginScript(root.trackIndex, root.pluginIndex, editorArea.text)
-            if (!err || err.length === 0) {
-                root.statusMessage = "Compiled successfully"
-                root.hasError = false
-                root.isModified = false
-                root.scriptApplied()
-            } else {
-                root.statusMessage = err
-                root.hasError = true
-            }
+        // 1. Compilación y validación de sintaxis en la VM JSFX
+        var compileErr = AudioEngine.tracks.compileJsfxScript(editorArea.text)
+        if (compileErr && compileErr.length > 0) {
+            root.statusMessage = compileErr
+            root.hasError = true
+            statusBar.setLog(true, compileErr)
+            return
         }
+
+        // 2. Si está asignado a un plugin existente en la pista, actualizarlo en vivo
+        if (root.pluginIndex >= 0) {
+            var updateErr = AudioEngine.tracks.updatePluginScript(root.trackIndex, root.pluginIndex, editorArea.text)
+            if (updateErr && updateErr.length > 0) {
+                root.statusMessage = updateErr
+                root.hasError = true
+                statusBar.setLog(true, updateErr)
+                return
+            }
+        } else if (root.isNewPlugin && root.trackIndex >= 0) {
+            AudioEngine.tracks.createCustomJsfxPlugin(root.trackIndex, root.pluginName.replace(".jsfx", ""), editorArea.text)
+            root.isNewPlugin = false
+        }
+
+        // 3. Confirmación de compilación exitosa con feedback visual inmediato
+        root.hasError = false
+        root.isModified = false
+        root.statusMessage = "Compilación exitosa: " + root.selectedFile
+        statusBar.setLog(false, root.statusMessage)
+        root.scriptApplied()
     }
 
     // Caché en memoria para scripts editados y renombrados

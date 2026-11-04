@@ -1073,3 +1073,13 @@ bool NovaTrackListModel::createCustomJsfxPlugin(int trackRow, const QString &nam
     Q_EMIT trackPluginsChanged(trackRow);
     return true;
 }
+
+QString NovaTrackListModel::compileJsfxScript(const QString &sourceCode)
+{
+    NovaJsfxEffect effect;
+    QString err;
+    if (!effect.loadScript(sourceCode, &err)) {
+        return err.isEmpty() ? QStringLiteral("Error de sintaxis en script JSFX") : err;
+    }
+    return QString(); // Compilación exitosa sin errores
+}

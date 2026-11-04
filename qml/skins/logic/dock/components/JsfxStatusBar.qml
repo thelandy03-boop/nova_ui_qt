@@ -28,6 +28,19 @@ Rectangle {
         currentTimeString = pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds())
     }
 
+    function setLog(isErr, msg) {
+        updateTime()
+        hasError = isErr
+        statusMessage = msg
+        pulseAnim.restart()
+    }
+
+    SequentialAnimation {
+        id: pulseAnim
+        NumberAnimation { target: root; property: "opacity"; to: 0.6; duration: 60 }
+        NumberAnimation { target: root; property: "opacity"; to: 1.0; duration: 120 }
+    }
+
     Component.onCompleted: {
         updateTime()
     }
