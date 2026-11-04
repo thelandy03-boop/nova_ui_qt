@@ -14,6 +14,7 @@ Rectangle {
     property bool isModified: false
     property bool searchActive: false
     property bool sidebarOpen: true
+    property string activeView: "code" // "code" o "ui"
 
     signal compileClicked()
     signal saveClicked()
@@ -24,6 +25,7 @@ Rectangle {
     signal toggleSidebarClicked()
     signal formatClicked()
     signal revertClicked()
+    signal viewModeChanged(string mode)
 
     Layout.fillWidth: true
     Layout.preferredHeight: (Qt.platform.os === "android") ? 38 : 34
@@ -147,6 +149,90 @@ Rectangle {
         }
 
         Item { Layout.fillWidth: true }
+
+        // Selector segmentado de vista: [ 🎛️ Controles ] | [ </> Código ]
+        Rectangle {
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
+            Layout.preferredWidth: viewModeRow.implicitWidth + 4
+            radius: 4
+            color: "#181A22"
+            border.color: "#2C303E"
+            border.width: 1
+
+            Row {
+                id: viewModeRow
+                anchors.centerIn: parent
+                spacing: 2
+
+                // Pestaña UI / Controles
+                Rectangle {
+                    width: uiModeText.implicitWidth + 16
+                    height: (Qt.platform.os === "android") ? 24 : 20
+                    radius: 3
+                    color: root.activeView === "ui" ? "#2563EB" : (uiMouse.containsMouse ? "#262933" : "transparent")
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text { text: "🎛️"; font.pixelSize: 10 }
+                        Text {
+                            id: uiModeText
+                            text: "Controles"
+                            color: root.activeView === "ui" ? "#FFFFFF" : "#94A3B8"
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "Segoe UI, Inter, Sans-serif"
+                        }
+                    }
+
+                    MouseArea {
+                        id: uiMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.viewModeChanged("ui")
+                    }
+                }
+
+                // Pestaña Código </>
+                Rectangle {
+                    width: codeModeText.implicitWidth + 16
+                    height: (Qt.platform.os === "android") ? 24 : 20
+                    radius: 3
+                    color: root.activeView === "code" ? "#2563EB" : (codeMouse.containsMouse ? "#262933" : "transparent")
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text {
+                            text: "</>"
+                            color: root.activeView === "code" ? "#FFFFFF" : "#38BDF8"
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "Monospace"
+                        }
+                        Text {
+                            id: codeModeText
+                            text: "Código"
+                            color: root.activeView === "code" ? "#FFFFFF" : "#94A3B8"
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "Segoe UI, Inter, Sans-serif"
+                        }
+                    }
+
+                    MouseArea {
+                        id: codeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.viewModeChanged("code")
+                    }
+                }
+            }
+        }
+
+        Item { width: 6 }
 
         // Botón ▶ Compile
         Rectangle {

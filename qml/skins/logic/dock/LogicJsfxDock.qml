@@ -33,6 +33,7 @@ Rectangle {
     property string selectedFile: "simple_delay.jsfx"
 
     property bool searchVisible: false
+    property string activeView: "code" // "code" o "ui"
 
     signal closeRequested()
     signal scriptApplied()
@@ -94,6 +95,7 @@ Rectangle {
             isModified: root.isModified
             searchActive: root.searchVisible
             sidebarOpen: root.showSidebar
+            activeView: root.activeView
 
             onCompileClicked: root.compileAndApply()
             onSaveClicked: root.saveAndInsert()
@@ -107,6 +109,7 @@ Rectangle {
             onToggleSidebarClicked: root.showSidebar = !root.showSidebar
             onFormatClicked: root.formatScript()
             onRevertClicked: root.loadFileByName(root.selectedFile)
+            onViewModeChanged: (mode) => root.activeView = mode
         }
 
         // 2. Barra de búsqueda desplegable
@@ -121,7 +124,7 @@ Rectangle {
             onCloseClicked: root.searchVisible = false
         }
 
-        // 3. Cuerpo principal: Activity Bar + File Tree + Editor + Minimap
+        // 3. Cuerpo principal: Activity Bar + File Tree + Editor/UI
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -129,7 +132,7 @@ Rectangle {
 
             // 3.1 Activity Bar (VS Code)
             JsfxActivityBar {
-                activeTab: root.activeActivityTab
+                activeTab: (root.activeView === "ui") ? 3 : root.activeActivityTab
                 sidebarOpen: root.showSidebar
                 onTabClicked: (idx) => {
                     if (idx === 1) {
@@ -137,6 +140,9 @@ Rectangle {
                         root.showSidebar = true
                         root.searchVisible = true
                         searchBar.forceFocus()
+                    } else if (idx === 3) {
+                        // Conmutar entre vista de Controles (Run/DSP) y Código
+                        root.activeView = (root.activeView === "ui") ? "code" : "ui"
                     } else if (root.activeActivityTab === idx && root.showSidebar) {
                         root.showSidebar = false
                     } else {
@@ -160,23 +166,52 @@ Rectangle {
                 onFileDeleted: (name) => root.handleFileDeleted(name)
             }
 
-            // 3.3 Editor de código con Gutter alineado
-            JsfxEditorArea {
-                id: editorArea
+            // 3.3 Zona central de contenido: Editor de código o Vista de Controles UI
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                onTextModified: {
-                    fileTree.cancelRename()
-                    root.isModified = true
-                    root.customFileScripts[root.selectedFile] = editorArea.text
-                }
-            }
+                // Modo Código: Editor con Gutter alineado + Minimapa
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 0
+                    visible: root.activeView === "code"
 
-            // 3.4 Minimapa lateral estilo VS Code
-            JsfxMinimap {
-                sourceText: editorArea.text
-                lineCount: editorArea.lineCount
+                    JsfxEditorArea {
+                        id: editorArea
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        onTextModified: {
+                            fileTree.cancelRename()
+                            root.isModified = true
+                            root.customFileScripts[root.selectedFile] = editorArea.text
+                        }
+                    }
+
+                    JsfxMinimap {
+                        sourceText: editorArea.text
+                        lineCount: editorArea.lineCount
+                    }
+                }
+
+                // Modo UI: Controles y Sliders en tiempo real
+                JsfxControlsView {
+                    id: controlsView
+                    anchors.fill: parent
+                    visible: root.activeView === "ui"
+                    trackIndex: root.trackIndex
+                    pluginIndex: root.pluginIndex
+                    scriptSource: editorArea.text
+
+                    onEditCodeRequested: {
+                        root.activeView = "code"
+                    }
+                    onInsertExampleSliderRequested: {
+                        root.insertExampleSliders()
+                        root.activeView = "code"
+                    }
+                }
             }
         }
 
@@ -235,6 +270,16 @@ Rectangle {
         root.statusMessage = "Compilación exitosa: " + root.selectedFile
         statusBar.setLog(false, root.statusMessage)
         root.scriptApplied()
+        controlsView.refreshSliders()
+        root.activeView = "ui"
+    }
+
+    function insertExampleSliders() {
+        var example = "slider1:250<10,2000,10>Delay Time (ms)\nslider2:0.4<0,0.95,0.01>Feedback\nslider3:0.5<0,1,0.01>Dry/Wet Mix\n\n"
+        editorArea.text = example + editorArea.text
+        root.isModified = true
+        root.customFileScripts[root.selectedFile] = editorArea.text
+        controlsView.refreshSliders()
     }
 
     // Caché en memoria para scripts editados y renombrados
@@ -285,6 +330,7 @@ Rectangle {
         root.isModified = false
         root.statusMessage = "Compiled successfully"
         root.hasError = false
+        controlsView.refreshSliders()
     }
 
     function openForPlugin(trkIdx, plgIdx, plgNm) {
@@ -310,6 +356,7 @@ Rectangle {
         root.isModified = false
         root.statusMessage = "Compiled successfully"
         root.hasError = false
+        controlsView.refreshSliders()
     }
 
     function openNewScript(trkIdx) {
@@ -324,6 +371,7 @@ Rectangle {
         root.statusMessage = "Compiled successfully"
         root.hasError = false
         editorArea.updateCursorPosition()
+        controlsView.refreshSliders()
     }
 
     function formatScript() {

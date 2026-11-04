@@ -1083,3 +1083,32 @@ QString NovaTrackListModel::compileJsfxScript(const QString &sourceCode)
     }
     return QString(); // Compilación exitosa sin errores
 }
+
+QVariantList NovaTrackListModel::parseJsfxSliders(const QString &sourceCode) const
+{
+    NovaJsfxEffect effect;
+    QString err;
+    effect.loadScript(sourceCode, &err);
+    QVariantList list;
+    for (const auto &sl : effect.sliders()) {
+        QVariantMap map;
+        map[QStringLiteral("index")] = sl.index;
+        map[QStringLiteral("sliderNum")] = sl.sliderNum;
+        map[QStringLiteral("name")] = sl.name;
+        map[QStringLiteral("value")] = sl.defaultValue;
+        map[QStringLiteral("min")] = sl.minValue;
+        map[QStringLiteral("max")] = sl.maxValue;
+        map[QStringLiteral("step")] = sl.stepValue;
+        map[QStringLiteral("unit")] = sl.unit;
+        list.append(map);
+    }
+    return list;
+}
+
+QString NovaTrackListModel::getJsfxDescription(const QString &sourceCode) const
+{
+    NovaJsfxEffect effect;
+    QString err;
+    effect.loadScript(sourceCode, &err);
+    return effect.name();
+}
