@@ -156,6 +156,8 @@ Rectangle {
                 selectedFile: root.selectedFile
                 onFileSelected: (name) => root.loadFileByName(name)
                 onFileRenamed: (oldName, newName) => root.handleFileRenamed(oldName, newName)
+                onFileCreated: (name) => root.handleFileCreated(name)
+                onFileDeleted: (name) => root.handleFileDeleted(name)
             }
 
             // 3.3 Editor de código con Gutter alineado
@@ -241,6 +243,20 @@ Rectangle {
         root.statusMessage = "Archivo renombrado a " + newName
     }
 
+    function handleFileCreated(name) {
+        var baseContent = "// " + name + "\n// Script JSFX nuevo\n\ndesc: " + name.replace(".jsfx", "") + "\n\n@init\n// Inicializacion de variables\n\n@sample\nspl0 = spl0;\nspl1 = spl1;\n"
+        root.customFileScripts[name] = baseContent
+        root.loadFileByName(name)
+        root.statusMessage = "Nuevo archivo creado: " + name
+    }
+
+    function handleFileDeleted(name) {
+        if (root.customFileScripts && root.customFileScripts[name]) {
+            delete root.customFileScripts[name]
+        }
+        root.statusMessage = "Archivo eliminado: " + name
+    }
+
     function saveAndInsert() {
         root.compileAndApply()
     }
@@ -249,15 +265,13 @@ Rectangle {
         fileTree.cancelRename()
         root.selectedFile = fname
         root.pluginName = fname
+        var content = (root.customFileScripts && root.customFileScripts[fname])
+                      ? root.customFileScripts[fname]
+                      : templates.getTemplate(fname)
+        editorArea.loadContent(content)
         root.isModified = false
-        if (root.customFileScripts && root.customFileScripts[fname]) {
-            editorArea.text = root.customFileScripts[fname]
-        } else {
-            editorArea.text = templates.getTemplate(fname)
-        }
         root.statusMessage = "Compiled successfully"
         root.hasError = false
-        editorArea.updateCursorPosition()
     }
 
     function openForPlugin(trkIdx, plgIdx, plgNm) {
@@ -272,17 +286,17 @@ Rectangle {
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks) {
             var src = AudioEngine.tracks.getPluginScript(trkIdx, plgIdx)
             if (src && src.length > 0) {
-                editorArea.text = src
+                editorArea.loadContent(src)
             } else {
-                editorArea.text = templates.getTemplate("simple_delay.jsfx")
+                editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
             }
         } else {
-            editorArea.text = templates.getTemplate("simple_delay.jsfx")
+            editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
         }
 
+        root.isModified = false
         root.statusMessage = "Compiled successfully"
         root.hasError = false
-        editorArea.updateCursorPosition()
     }
 
     function openNewScript(trkIdx) {
@@ -292,8 +306,8 @@ Rectangle {
         root.pluginName = "simple_delay.jsfx"
         root.selectedFile = "simple_delay.jsfx"
         root.isNewPlugin = true
+        editorArea.loadContent(templates.getTemplate("simple_delay.jsfx"))
         root.isModified = false
-        editorArea.text = templates.getTemplate("simple_delay.jsfx")
         root.statusMessage = "Compiled successfully"
         root.hasError = false
         editorArea.updateCursorPosition()

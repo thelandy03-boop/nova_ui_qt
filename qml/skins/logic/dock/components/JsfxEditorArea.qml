@@ -17,9 +17,17 @@ Item {
     property int currentLine: 1
     property int currentCol: 1
     property string currentSection: "@init"
+    property bool isInternalLoading: false
 
     signal textModified()
     signal cursorMoved()
+
+    function loadContent(newText) {
+        root.isInternalLoading = true
+        codeTextEdit.text = newText
+        root.isInternalLoading = false
+        updateCursorPosition()
+    }
 
     function searchInCode(term) {
         if (!term || term.length === 0) return
@@ -227,7 +235,9 @@ Item {
                     }
 
                     onTextChanged: {
-                        root.textModified()
+                        if (!root.isInternalLoading) {
+                            root.textModified()
+                        }
                         root.updateCursorPosition()
                     }
 
