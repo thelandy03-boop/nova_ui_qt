@@ -143,6 +143,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/views/NovaWaveformItem.cpp
     src/views/NovaWaveformRenderer.cpp
     src/views/NovaWaveformRenderer.h
+    src/views/NovaJsfxHighlighter.h
+    src/views/NovaJsfxHighlighter.cpp
     src/core/NovaSimdPeaks.cpp
     src/audio/NovaDecodedAudio.h
     src/audio/NovaAudioDecoder.h

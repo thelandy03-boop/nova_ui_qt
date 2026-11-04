@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import NovaStudio 1.0
 
 /**
  * Área de edición principal de código EEL2 / JSFX.
@@ -233,6 +234,11 @@ Item {
                     Component.onCompleted: {
                         root.updateCursorPosition()
                     }
+                }
+
+                // Resaltador de sintaxis EEL2 / JSFX nativo en tiempo real
+                JsfxHighlighter {
+                    textDocument: codeTextEdit.textDocument
                 }
             }
         }

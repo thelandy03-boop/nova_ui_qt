@@ -15,6 +15,7 @@
 
 #include "src/NovaAudioEngine.h"
 #include "src/views/NovaWaveformItem.h"
+#include "src/views/NovaJsfxHighlighter.h"
 #include "src/core/NovaUpdateChecker.h"
 
 #if defined(Q_OS_ANDROID)
@@ -48,6 +49,8 @@ int main(int argc, char *argv[])
 
     // 🎨 Registrar tipo nativo de formas de onda
     qmlRegisterType<NovaWaveformItem>("NovaStudio", 1, 0, "NovaWaveformItem");
+    // 🎨 Registrar resaltador de sintaxis JSFX / EEL2 en tiempo real
+    qmlRegisterType<NovaJsfxHighlighter>("NovaStudio", 1, 0, "JsfxHighlighter");
 
 #if defined(Q_OS_ANDROID)
     // 🎧 El controlador del spike: motor de audio y forma de onda real.
