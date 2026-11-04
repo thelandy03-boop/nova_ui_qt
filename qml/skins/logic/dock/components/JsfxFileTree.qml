@@ -228,7 +228,7 @@ Rectangle {
                         // Nombre completo natural con extensión ("simple_delay.jsfx")
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 26 - 6 - 12 - 6 - 22
+                            width: (Qt.platform.os === "android") ? (parent.width - 26 - 6 - 12 - 6 - 28) : (parent.width - 26 - 6 - 12 - 6 - 8)
                             text: model.name
                             color: root.selectedFile === model.name ? "#FFFFFF" : "#CCCCCC"
                             font.pixelSize: 11
@@ -236,11 +236,12 @@ Rectangle {
                             elide: Text.ElideRight
                         }
 
-                        // Botón de lápiz para renombrar (visible en hover o selección)
+                        // Botón de lápiz para renombrar (exclusivo para Android con interfaz táctil)
                         Rectangle {
-                            width: 16; height: 16
+                            width: (Qt.platform.os === "android") ? 20 : 0
+                            height: (Qt.platform.os === "android") ? 20 : 0
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: fileMouse.containsMouse || root.selectedFile === model.name
+                            visible: (Qt.platform.os === "android")
                             color: renameBtnMouse.containsMouse ? "#3A3F4D" : "transparent"
                             radius: 2
 
@@ -304,7 +305,7 @@ Rectangle {
                         // Caja de entrada con extensión bloqueada
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: Math.max(80, fileDelegate.width - 20 - 12 - 4 - 38)
+                            width: (Qt.platform.os === "android") ? Math.max(80, fileDelegate.width - 20 - 12 - 4 - 44) : Math.max(80, fileDelegate.width - 20 - 12 - 4 - 8)
                             height: 19
                             color: "#121418"
                             border.color: "#007ACC"
@@ -372,17 +373,19 @@ Rectangle {
                             }
                         }
 
-                        // Botón confirmar renombrado (✓)
+                        // Botón confirmar renombrado (✓) - exclusivo para Android
                         Rectangle {
-                            width: 15; height: 15
+                            width: (Qt.platform.os === "android") ? 18 : 0
+                            height: (Qt.platform.os === "android") ? 18 : 0
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: (Qt.platform.os === "android")
                             color: okMouse.containsMouse ? "#2A5B36" : "#1B3B23"
                             radius: 2
                             Text {
                                 anchors.centerIn: parent
                                 text: "✓"
                                 color: "#89D185"
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.bold: true
                             }
                             MouseArea {
@@ -394,17 +397,19 @@ Rectangle {
                             }
                         }
 
-                        // Botón cancelar renombrado (✕)
+                        // Botón cancelar renombrado (✕) - exclusivo para Android
                         Rectangle {
-                            width: 15; height: 15
+                            width: (Qt.platform.os === "android") ? 18 : 0
+                            height: (Qt.platform.os === "android") ? 18 : 0
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: (Qt.platform.os === "android")
                             color: cancelMouse.containsMouse ? "#5A1D1D" : "#3B1818"
                             radius: 2
                             Text {
                                 anchors.centerIn: parent
                                 text: "✕"
                                 color: "#F14C4C"
-                                font.pixelSize: 9
+                                font.pixelSize: 10
                             }
                             MouseArea {
                                 id: cancelMouse
