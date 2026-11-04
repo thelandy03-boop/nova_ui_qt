@@ -19,6 +19,7 @@ Rectangle {
 
     signal editCodeRequested()
     signal parameterChanged(int paramIndex, real value)
+    signal insertExampleSliderRequested()
 
     color: "#14151B"
 
