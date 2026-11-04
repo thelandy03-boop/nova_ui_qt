@@ -122,7 +122,7 @@ int main()
         auto aceEq = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_eq"));
         CHECK_NAMED("jsfx_create_ace_eq", aceEq != nullptr, "debe instanciar ACE EQ como efecto JSFX real");
         if (aceEq) {
-            CHECK_NAMED("jsfx_ace_eq_sliders", aceEq->sliders().size() == 3, "ACE EQ debe exponer 3 bandas de sliders");
+            CHECK_NAMED("jsfx_ace_eq_sliders", aceEq->sliders().size() == 12, "ACE EQ debe exponer 4 bandas paramétricas completas (12 sliders)");
             std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
             aceEq->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
             CHECK_NAMED("jsfx_ace_eq_runs", !std::isnan(buffer[0]), "ACE EQ debe procesar audio sin NaN");
