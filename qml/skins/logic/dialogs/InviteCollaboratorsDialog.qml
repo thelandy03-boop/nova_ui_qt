@@ -412,13 +412,13 @@ Item {
                                         Layout.fillWidth: true
                                         spacing: 2
                                         Text {
-                                            text: "Autor: " + root.inspectedPatch.author + "  |  BPM: " + root.inspectedPatch.bpm + "  |  Pistas: " + root.inspectedPatch.trackCount + "  |  Clips: " + root.inspectedPatch.clipCount
+                                            text: root.inspectedPatch ? ("Autor: " + (root.inspectedPatch.author || "Anónimo") + "  |  BPM: " + (root.inspectedPatch.bpm || 120) + "  |  Pistas: " + (root.inspectedPatch.trackCount || 0) + "  |  Clips: " + (root.inspectedPatch.clipCount || 0)) : ""
                                             color: "#00FF88"
                                             font.pixelSize: 11
                                             font.bold: true
                                         }
                                         Text {
-                                            text: "Notas: " + (root.inspectedPatch.notes ? root.inspectedPatch.notes : "Sin notas adicionales")
+                                            text: root.inspectedPatch ? ("Notas: " + (root.inspectedPatch.notes ? root.inspectedPatch.notes : "Sin notas adicionales")) : ""
                                             color: "#C0C6D4"
                                             font.pixelSize: 10
                                             elide: Text.ElideRight

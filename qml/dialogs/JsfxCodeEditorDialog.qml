@@ -20,7 +20,7 @@ Rectangle {
     property int currentLine: 1
     property int currentCol: 1
 
-    // Vistas de la barra de actividades (0: Explorer, 1: Sliders en vivo, 2: Referencia EEL2, 3: Salida/Logs)
+    // Vistas de la barra de actividades (0: Explorer, 1: Sliders en vivo, 2: Referencia EEL2)
     property int activeSidebarTab: 0
     property bool sidebarVisible: true
 
@@ -29,6 +29,12 @@ Rectangle {
     property bool bottomPanelVisible: true
     property string lastCompilationLog: "Listo para compilar. Presiona Ctrl+S o F5."
     property string compilationError: ""
+
+    // Búsqueda flotante (Ctrl+F)
+    property bool searchBarVisible: false
+    property string searchTerm: ""
+    property int searchMatchesCount: 0
+    property int currentMatchIndex: 0
 
     // Sliders parseados dinámicamente
     property var parsedSliders: []
@@ -64,8 +70,23 @@ Rectangle {
         onActivated: root.bottomPanelVisible = !root.bottomPanelVisible
     }
     Shortcut {
+        sequence: "Ctrl+F"
+        onActivated: {
+            root.searchBarVisible = true
+            searchField.forceActiveFocus()
+            searchField.selectAll()
+        }
+    }
+    Shortcut {
         sequence: "Escape"
-        onActivated: root.closeDialog()
+        onActivated: {
+            if (root.searchBarVisible) {
+                root.searchBarVisible = false
+                codeEditor.forceActiveFocus()
+            } else {
+                root.closeDialog()
+            }
+        }
     }
 
     // =========================================================================
@@ -74,8 +95,8 @@ Rectangle {
     Rectangle {
         id: vsCodeWindow
         anchors.centerIn: parent
-        width: Math.min(parent.width - 24, 1120)
-        height: Math.min(parent.height - 24, 760)
+        width: Math.min(parent.width - 24, 1140)
+        height: Math.min(parent.height - 24, 780)
         radius: 6
         color: "#1E1E1E" // Color de fondo característico de VS Code Dark+
         border.color: "#333333"
@@ -102,26 +123,56 @@ Rectangle {
                     anchors.rightMargin: 10
                     spacing: 8
 
-                    // Icono de la aplicación estilo VS Code
+                    // Icono de archivo VS Code estilizado
                     Rectangle {
                         Layout.preferredWidth: 20
                         Layout.preferredHeight: 20
-                        radius: 4
+                        radius: 3
                         color: "#007ACC"
 
                         Text {
                             anchors.centerIn: parent
-                            text: "⚡"
-                            font.pixelSize: 11
+                            text: "</>"
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.family: "Monospace"
                             color: "#FFFFFF"
                         }
                     }
 
-                    Text {
-                        text: "NOVA Studio — Editor JSFX (EEL2)"
-                        color: "#CCCCCC"
-                        font.pixelSize: 12
-                        font.family: "Segoe UI, Inter, Sans-serif"
+                    // Menú superior estilo VS Code
+                    Row {
+                        spacing: 2
+                        Repeater {
+                            model: ["Archivo", "Editar", "Ver", "Ejecutar", "Terminal"]
+                            delegate: Rectangle {
+                                width: menuTxt.implicitWidth + 14
+                                height: 24
+                                radius: 3
+                                color: menuArea.containsMouse ? "#3E3E40" : "transparent"
+
+                                Text {
+                                    id: menuTxt
+                                    anchors.centerIn: parent
+                                    text: modelData
+                                    color: "#CCCCCC"
+                                    font.pixelSize: 11
+                                    font.family: "Segoe UI, Inter, Sans-serif"
+                                }
+
+                                MouseArea {
+                                    id: menuArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (modelData === "Ejecutar") root.compileAndApply()
+                                        else if (modelData === "Ver") root.sidebarVisible = !root.sidebarVisible
+                                        else if (modelData === "Terminal") root.bottomPanelVisible = !root.bottomPanelVisible
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Item { Layout.fillWidth: true }
@@ -141,23 +192,40 @@ Rectangle {
                             text: (root.isNewPlugin ? "nuevo_script.jsfx" : (root.pluginName.toLowerCase().replace(/ /g, "_") + ".jsfx")) + (root.isModified ? " ●" : "")
                             color: root.isModified ? "#E2C08D" : "#CCCCCC"
                             font.pixelSize: 11
-                            font.family: "monospace"
+                            font.family: "Monospace, Consolas"
                         }
                     }
 
                     Item { Layout.fillWidth: true }
 
-                    // Botones de acción rápida en cabecera
+                    // Botón de Compilar estilo VS Code
                     Rectangle {
                         Layout.preferredHeight: 24
-                        Layout.preferredWidth: compileHeadBtnText.implicitWidth + 20
+                        Layout.preferredWidth: compileHeadBtnText.implicitWidth + 26
                         radius: 3
                         color: headCompileArea.containsMouse ? "#0098FF" : "#007ACC"
 
                         Row {
                             anchors.centerIn: parent
-                            spacing: 5
-                            Text { text: "▶"; color: "#FFFFFF"; font.pixelSize: 10 }
+                            spacing: 6
+
+                            // Triángulo play vectorial
+                            Canvas {
+                                width: 9; height: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.clearRect(0, 0, width, height)
+                                    ctx.fillStyle = "#FFFFFF"
+                                    ctx.beginPath()
+                                    ctx.moveTo(0, 0)
+                                    ctx.lineTo(width, height / 2)
+                                    ctx.lineTo(0, height)
+                                    ctx.closePath()
+                                    ctx.fill()
+                                }
+                            }
+
                             Text {
                                 id: compileHeadBtnText
                                 text: "Compilar (Ctrl+S)"
@@ -178,7 +246,7 @@ Rectangle {
 
                     // Botón Cerrar ventana
                     Rectangle {
-                        Layout.preferredWidth: 24
+                        Layout.preferredWidth: 26
                         Layout.preferredHeight: 24
                         radius: 3
                         color: closeHeadArea.containsMouse ? "#E81123" : "transparent"
@@ -219,17 +287,16 @@ Rectangle {
 
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 4
-                        anchors.topMargin: 4
+                        spacing: 2
+                        anchors.topMargin: 6
                         anchors.bottomMargin: 8
 
-                        // Botón 1: Explorador de Archivos / Plantillas
+                        // ── BOTÓN 1: EXPLORADOR DE ARCHIVOS Y PLANTILLAS ──
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
                             color: root.activeSidebarTab === 0 && root.sidebarVisible ? "#252526" : "transparent"
 
-                            // Indicador de pestaña activa (línea blanca izquierda)
                             Rectangle {
                                 anchors.left: parent.left
                                 anchors.top: parent.top
@@ -239,11 +306,26 @@ Rectangle {
                                 visible: root.activeSidebarTab === 0 && root.sidebarVisible
                             }
 
-                            Text {
+                            // Icono vectorial de Explorer (dos hojas superpuestas)
+                            Item {
+                                width: 20; height: 20
                                 anchors.centerIn: parent
-                                text: "📁"
-                                font.pixelSize: 18
-                                opacity: (root.activeSidebarTab === 0 && root.sidebarVisible) ? 1.0 : 0.6
+                                opacity: (root.activeSidebarTab === 0 && root.sidebarVisible) ? 1.0 : 0.65
+
+                                Rectangle {
+                                    x: 1; y: 4; width: 13; height: 15
+                                    color: "transparent"
+                                    border.color: "#FFFFFF"
+                                    border.width: 1.4
+                                    radius: 1
+                                }
+                                Rectangle {
+                                    x: 5; y: 1; width: 13; height: 15
+                                    color: "#333333"
+                                    border.color: "#FFFFFF"
+                                    border.width: 1.4
+                                    radius: 1
+                                }
                             }
 
                             MouseArea {
@@ -260,7 +342,7 @@ Rectangle {
                             }
                         }
 
-                        // Botón 2: Sliders y Parámetros en Vivo
+                        // ── BOTÓN 2: SLIDERS Y PARÁMETROS EN VIVO ──
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
@@ -275,11 +357,23 @@ Rectangle {
                                 visible: root.activeSidebarTab === 1 && root.sidebarVisible
                             }
 
-                            Text {
+                            // Icono vectorial de ecualizador / potenciómetros
+                            Item {
+                                width: 20; height: 20
                                 anchors.centerIn: parent
-                                text: "🎛️"
-                                font.pixelSize: 18
-                                opacity: (root.activeSidebarTab === 1 && root.sidebarVisible) ? 1.0 : 0.6
+                                opacity: (root.activeSidebarTab === 1 && root.sidebarVisible) ? 1.0 : 0.65
+
+                                // Pista 1
+                                Rectangle { x: 2; y: 4; width: 16; height: 1.5; color: "#FFFFFF" }
+                                Rectangle { x: 5; y: 2; width: 4; height: 5.5; color: "#FFFFFF"; radius: 1 }
+
+                                // Pista 2
+                                Rectangle { x: 2; y: 10; width: 16; height: 1.5; color: "#FFFFFF" }
+                                Rectangle { x: 11; y: 8; width: 4; height: 5.5; color: "#FFFFFF"; radius: 1 }
+
+                                // Pista 3
+                                Rectangle { x: 2; y: 16; width: 16; height: 1.5; color: "#FFFFFF" }
+                                Rectangle { x: 7; y: 14; width: 4; height: 5.5; color: "#FFFFFF"; radius: 1 }
                             }
 
                             MouseArea {
@@ -297,7 +391,7 @@ Rectangle {
                             }
                         }
 
-                        // Botón 3: Referencia EEL2 y Snippets
+                        // ── BOTÓN 3: REFERENCIA Y SNIPPETS EEL2 ──
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 48
@@ -312,11 +406,15 @@ Rectangle {
                                 visible: root.activeSidebarTab === 2 && root.sidebarVisible
                             }
 
+                            // Icono vectorial de Snippets / Llaves de código { }
                             Text {
                                 anchors.centerIn: parent
-                                text: "📖"
-                                font.pixelSize: 18
-                                opacity: (root.activeSidebarTab === 2 && root.sidebarVisible) ? 1.0 : 0.6
+                                text: "{ }"
+                                font.pixelSize: 15
+                                font.bold: true
+                                font.family: "Monospace, Consolas"
+                                color: "#FFFFFF"
+                                opacity: (root.activeSidebarTab === 2 && root.sidebarVisible) ? 1.0 : 0.65
                             }
 
                             MouseArea {
@@ -333,19 +431,61 @@ Rectangle {
                             }
                         }
 
-                        Item { Layout.fillHeight: true }
-
-                        // Botón Toggle Consola / Panel inferior
+                        // ── BOTÓN 4: BÚSQUEDA RÁPIDA ──
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 40
+                            Layout.preferredHeight: 48
                             color: "transparent"
 
-                            Text {
+                            // Icono vectorial de Lupa
+                            Item {
+                                width: 18; height: 18
                                 anchors.centerIn: parent
-                                text: "📋"
-                                font.pixelSize: 16
-                                opacity: root.bottomPanelVisible ? 1.0 : 0.5
+                                opacity: root.searchBarVisible ? 1.0 : 0.6
+
+                                Rectangle {
+                                    x: 2; y: 2; width: 10; height: 10
+                                    radius: 5
+                                    color: "transparent"
+                                    border.color: "#FFFFFF"
+                                    border.width: 1.5
+                                }
+                                Rectangle {
+                                    x: 10; y: 10; width: 6; height: 2
+                                    color: "#FFFFFF"
+                                    rotation: 45
+                                    transformOrigin: Item.TopLeft
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.searchBarVisible = !root.searchBarVisible
+                                    if (root.searchBarVisible) {
+                                        searchField.forceActiveFocus()
+                                        searchField.selectAll()
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        // ── BOTÓN TOGGLE TERMINAL / SALIDA ──
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 42
+                            color: "transparent"
+
+                            // Icono vectorial de Terminal >_
+                            Row {
+                                spacing: 2
+                                anchors.centerIn: parent
+                                opacity: root.bottomPanelVisible ? 1.0 : 0.55
+                                Text { text: ">"; font.pixelSize: 12; font.bold: true; color: "#FFFFFF" }
+                                Rectangle { width: 5; height: 1.5; color: "#FFFFFF"; anchors.bottom: parent.bottom; anchors.bottomMargin: 3 }
                             }
 
                             MouseArea {
@@ -360,7 +500,7 @@ Rectangle {
                 // 2.2 SIDEBAR COLAPSABLE (VS Code Sidebar)
                 Rectangle {
                     id: sideBar
-                    Layout.preferredWidth: root.sidebarVisible ? 220 : 0
+                    Layout.preferredWidth: root.sidebarVisible ? 230 : 0
                     Layout.fillHeight: true
                     visible: root.sidebarVisible
                     clip: true
@@ -457,7 +597,14 @@ Rectangle {
                                             anchors.leftMargin: 8
                                             spacing: 6
 
-                                            Text { text: "📄"; font.pixelSize: 12 }
+                                            Text {
+                                                text: "JS"
+                                                color: "#E5C07B"
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                font.family: "Monospace"
+                                            }
+
                                             Text {
                                                 text: (root.isNewPlugin ? "nuevo_script.jsfx" : root.pluginName) + (root.isModified ? " *" : "")
                                                 color: "#E0E0E0"
@@ -501,11 +648,22 @@ Rectangle {
                                                 anchors.leftMargin: 8
                                                 spacing: 2
 
-                                                Text {
-                                                    text: "⚡ " + modelData.name
-                                                    color: tplMouse.containsMouse ? "#FFFFFF" : "#CCCCCC"
-                                                    font.pixelSize: 11
+                                                Row {
+                                                    spacing: 6
+                                                    Text {
+                                                        text: "</>"
+                                                        color: "#38BDF8"
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        font.family: "Monospace"
+                                                    }
+                                                    Text {
+                                                        text: modelData.name
+                                                        color: tplMouse.containsMouse ? "#FFFFFF" : "#CCCCCC"
+                                                        font.pixelSize: 11
+                                                    }
                                                 }
+
                                                 Text {
                                                     text: modelData.desc
                                                     color: "#7F7F7F"
@@ -566,7 +724,7 @@ Rectangle {
                                                     text: Number(sliderCtrl.value).toFixed(1)
                                                     color: "#007ACC"
                                                     font.pixelSize: 11
-                                                    font.family: "monospace"
+                                                    font.family: "Monospace"
                                                 }
                                             }
 
@@ -579,7 +737,6 @@ Rectangle {
                                                 value: modelData.value
 
                                                 onMoved: {
-                                                    // Actualizar valor en el motor de audio si el plugin existe
                                                     if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && root.pluginIndex >= 0) {
                                                         AudioEngine.tracks.setPluginParameter(root.trackIndex, root.pluginIndex, modelData.index, sliderCtrl.value)
                                                     }
@@ -717,7 +874,7 @@ Rectangle {
                                         anchors.rightMargin: 8
                                         spacing: 6
 
-                                        Text { text: "JS"; color: "#E5C07B"; font.pixelSize: 11; font.bold: true }
+                                        Text { text: "JS"; color: "#E5C07B"; font.pixelSize: 11; font.bold: true; font.family: "Monospace" }
 
                                         Text {
                                             id: tabLabel
@@ -798,83 +955,203 @@ Rectangle {
                             }
                         }
 
-                        // ── ÁREA DE CÓDIGO MONOESPACIADA CON GUTTER ──────────────────
+                        // ── ÁREA DE CÓDIGO MONOESPACIADA CON GUTTER Y MINIMAP ────────
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             color: "#1E1E1E"
 
-                            ScrollView {
-                                id: editorScrollView
+                            RowLayout {
                                 anchors.fill: parent
-                                clip: true
+                                spacing: 0
 
-                                Row {
-                                    width: Math.max(editorScrollView.width, codeEditor.contentWidth + 70)
-                                    spacing: 0
+                                // ScrollView principal con Gutter y Editor
+                                ScrollView {
+                                    id: editorScrollView
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
 
-                                    // GUTTER: NÚMEROS DE LÍNEA ESTILO VS CODE
-                                    Rectangle {
-                                        id: lineGutter
-                                        width: 48
-                                        height: Math.max(codeEditor.height, editorScrollView.height)
-                                        color: "#1E1E1E"
+                                    Row {
+                                        width: Math.max(editorScrollView.width, codeEditor.contentWidth + 70)
+                                        spacing: 0
 
-                                        Column {
-                                            anchors.fill: parent
-                                            anchors.topMargin: 6
+                                        // GUTTER: NÚMEROS DE LÍNEA ESTILO VS CODE
+                                        Rectangle {
+                                            id: lineGutter
+                                            width: 48
+                                            height: Math.max(codeEditor.height, editorScrollView.height)
+                                            color: "#1E1E1E"
 
-                                            Repeater {
-                                                model: Math.max(1, codeEditor.lineCount)
-                                                delegate: Text {
-                                                    width: 40
-                                                    text: (index + 1).toString()
-                                                    color: (index + 1 === root.currentLine) ? "#C6C6C6" : "#858585"
-                                                    font.family: "Monospace, Consolas, Courier New"
-                                                    font.pixelSize: 12
-                                                    horizontalAlignment: Text.AlignRight
+                                            Column {
+                                                anchors.fill: parent
+                                                anchors.topMargin: 6
+
+                                                Repeater {
+                                                    model: Math.max(1, codeEditor.lineCount)
+                                                    delegate: Text {
+                                                        width: 40
+                                                        text: (index + 1).toString()
+                                                        color: (index + 1 === root.currentLine) ? "#C6C6C6" : "#858585"
+                                                        font.family: "Monospace, Consolas, Courier New"
+                                                        font.pixelSize: 12
+                                                        horizontalAlignment: Text.AlignRight
+                                                    }
                                                 }
+                                            }
+
+                                            // Línea divisoria del gutter
+                                            Rectangle {
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.bottom: parent.bottom
+                                                width: 1
+                                                color: "#2B2B2B"
                                             }
                                         }
 
-                                        // Línea divisoria del gutter
-                                        Rectangle {
-                                            anchors.right: parent.right
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            width: 1
-                                            color: "#2B2B2B"
+                                        // ÁREA DE EDICIÓN DE TEXTO
+                                        TextEdit {
+                                            id: codeEditor
+                                            width: Math.max(editorScrollView.width - 50, contentWidth + 80)
+                                            height: Math.max(contentHeight + 40, editorScrollView.height)
+                                            color: "#D4D4D4"
+                                            selectionColor: "#264F78"
+                                            selectedTextColor: "#FFFFFF"
+                                            font.family: "Monospace, Consolas, 'Courier New'"
+                                            font.pixelSize: 12
+                                            leftPadding: 12
+                                            topPadding: 6
+                                            wrapMode: TextEdit.NoWrap
+                                            tabStopDistance: 32
+                                            cursorVisible: true
+
+                                            onCursorPositionChanged: {
+                                                root.updateCursorPosition()
+                                            }
+
+                                            onTextChanged: {
+                                                root.isModified = true
+                                                root.updateCursorPosition()
+                                            }
+
+                                            Component.onCompleted: {
+                                                if (text.length === 0) root.loadTemplateTube()
+                                                root.updateCursorPosition()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // MINIMAPA LATERAL ESTILO VS CODE
+                                Rectangle {
+                                    Layout.preferredWidth: 54
+                                    Layout.fillHeight: true
+                                    color: "#1E1E1E"
+                                    border.color: "#252526"
+                                    border.width: 1
+                                    clip: true
+
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.topMargin: 4
+                                        anchors.leftMargin: 6
+                                        anchors.rightMargin: 6
+                                        spacing: 2
+                                        opacity: 0.35
+
+                                        Repeater {
+                                            model: Math.min(65, codeEditor.lineCount)
+                                            delegate: Rectangle {
+                                                width: Math.min(42, Math.max(12, (index * 7) % 38 + 10))
+                                                height: 2
+                                                radius: 1
+                                                color: (index % 4 === 0) ? "#38BDF8" : ((index % 7 === 0) ? "#E5C07B" : "#A0A0A0")
+                                            }
                                         }
                                     }
 
-                                    // ÁREA DE EDICIÓN DE TEXTO
-                                    TextEdit {
-                                        id: codeEditor
-                                        width: Math.max(editorScrollView.width - 50, contentWidth + 80)
-                                        height: Math.max(contentHeight + 40, editorScrollView.height)
-                                        color: "#D4D4D4"
-                                        selectionColor: "#264F78"
-                                        selectedTextColor: "#FFFFFF"
-                                        font.family: "Monospace, Consolas, 'Courier New'"
-                                        font.pixelSize: 12
-                                        leftPadding: 12
-                                        topPadding: 6
-                                        wrapMode: TextEdit.NoWrap
-                                        tabStopDistance: 32
-                                        cursorVisible: true
+                                    // Indicador de viewport en el minimapa
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        y: Math.min(parent.height - 30, Math.max(0, (root.currentLine / Math.max(1, codeEditor.lineCount)) * parent.height))
+                                        height: 32
+                                        color: "#33FFFFFF"
+                                        border.color: "#55FFFFFF"
+                                        border.width: 1
+                                        radius: 2
+                                    }
+                                }
+                            }
 
-                                        onCursorPositionChanged: {
-                                            root.updateCursorPosition()
+                            // ── BARRA FLOTANTE DE BÚSQUEDA (Ctrl+F) ───────────────
+                            Rectangle {
+                                id: searchFloatBox
+                                visible: root.searchBarVisible
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.margins: 10
+                                width: 280
+                                height: 38
+                                radius: 4
+                                color: "#252526"
+                                border.color: "#454545"
+                                border.width: 1
+                                z: 50
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    spacing: 6
+
+                                    TextField {
+                                        id: searchField
+                                        Layout.fillWidth: true
+                                        placeholderText: "Buscar en el script..."
+                                        color: "#FFFFFF"
+                                        font.pixelSize: 11
+                                        background: Rectangle {
+                                            color: "#3C3C3C"
+                                            radius: 3
+                                            border.color: searchField.activeFocus ? "#007ACC" : "#3C3C3C"
                                         }
 
                                         onTextChanged: {
-                                            root.isModified = true
-                                            root.updateCursorPosition()
+                                            root.findInEditor(text)
                                         }
+                                    }
 
-                                        Component.onCompleted: {
-                                            if (text.length === 0) root.loadTemplateTube()
-                                            root.updateCursorPosition()
+                                    // Botón anterior
+                                    Rectangle {
+                                        width: 22; height: 22; radius: 3
+                                        color: prevArea.containsMouse ? "#454545" : "transparent"
+                                        Text { anchors.centerIn: parent; text: "↑"; color: "#CCCCCC"; font.pixelSize: 12 }
+                                        MouseArea {
+                                            id: prevArea; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.findPrev()
+                                        }
+                                    }
+
+                                    // Botón siguiente
+                                    Rectangle {
+                                        width: 22; height: 22; radius: 3
+                                        color: nextArea.containsMouse ? "#454545" : "transparent"
+                                        Text { anchors.centerIn: parent; text: "↓"; color: "#CCCCCC"; font.pixelSize: 12 }
+                                        MouseArea {
+                                            id: nextArea; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.findNext()
+                                        }
+                                    }
+
+                                    // Botón cerrar búsqueda
+                                    Rectangle {
+                                        width: 22; height: 22; radius: 3
+                                        color: closeSearchArea.containsMouse ? "#454545" : "transparent"
+                                        Text { anchors.centerIn: parent; text: "✕"; color: "#CCCCCC"; font.pixelSize: 11 }
+                                        MouseArea {
+                                            id: closeSearchArea; anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.searchBarVisible = false
                                         }
                                     }
                                 }
@@ -907,29 +1184,36 @@ Rectangle {
                                         anchors.leftMargin: 12
                                         spacing: 16
 
-                                        // Pestaña PROBLEMAS
-                                        Row {
-                                            spacing: 6
-                                            Text {
-                                                text: "PROBLEMAS"
-                                                color: root.activeBottomTab === 0 ? "#FFFFFF" : "#858585"
-                                                font.pixelSize: 11
-                                                font.bold: root.activeBottomTab === 0
-                                            }
+                                        // Pestaña PROBLEMAS (envuelto en Item para no romper layout)
+                                        Item {
+                                            Layout.preferredWidth: tabProbRow.implicitWidth
+                                            Layout.preferredHeight: 24
 
-                                            Rectangle {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: 16
-                                                height: 16
-                                                radius: 8
-                                                color: root.compilationError.length > 0 ? "#F14C4C" : "#3C3C3C"
+                                            RowLayout {
+                                                id: tabProbRow
+                                                anchors.fill: parent
+                                                spacing: 6
 
                                                 Text {
-                                                    anchors.centerIn: parent
-                                                    text: root.compilationError.length > 0 ? "1" : "0"
-                                                    color: "#FFFFFF"
-                                                    font.pixelSize: 9
-                                                    font.bold: true
+                                                    text: "PROBLEMAS"
+                                                    color: root.activeBottomTab === 0 ? "#FFFFFF" : "#858585"
+                                                    font.pixelSize: 11
+                                                    font.bold: root.activeBottomTab === 0
+                                                }
+
+                                                Rectangle {
+                                                    width: 16
+                                                    height: 16
+                                                    radius: 8
+                                                    color: root.compilationError.length > 0 ? "#F14C4C" : "#3C3C3C"
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: root.compilationError.length > 0 ? "1" : "0"
+                                                        color: "#FFFFFF"
+                                                        font.pixelSize: 9
+                                                        font.bold: true
+                                                    }
                                                 }
                                             }
 
@@ -941,11 +1225,18 @@ Rectangle {
                                         }
 
                                         // Pestaña SALIDA
-                                        Text {
-                                            text: "SALIDA"
-                                            color: root.activeBottomTab === 1 ? "#FFFFFF" : "#858585"
-                                            font.pixelSize: 11
-                                            font.bold: root.activeBottomTab === 1
+                                        Item {
+                                            Layout.preferredWidth: tabOutText.implicitWidth
+                                            Layout.preferredHeight: 24
+
+                                            Text {
+                                                id: tabOutText
+                                                anchors.centerIn: parent
+                                                text: "SALIDA"
+                                                color: root.activeBottomTab === 1 ? "#FFFFFF" : "#858585"
+                                                font.pixelSize: 11
+                                                font.bold: root.activeBottomTab === 1
+                                            }
 
                                             MouseArea {
                                                 anchors.fill: parent
@@ -957,12 +1248,19 @@ Rectangle {
                                         Item { Layout.fillWidth: true }
 
                                         // Botón cerrar panel inferior
-                                        Text {
-                                            text: "✕"
-                                            color: "#858585"
-                                            font.pixelSize: 11
+                                        Rectangle {
+                                            width: 20; height: 20; radius: 3
+                                            color: closeBtmArea.containsMouse ? "#3E3E40" : "transparent"
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "✕"
+                                                color: "#858585"
+                                                font.pixelSize: 11
+                                            }
 
                                             MouseArea {
+                                                id: closeBtmArea
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: root.bottomPanelVisible = false
@@ -992,15 +1290,23 @@ Rectangle {
                                             RowLayout {
                                                 visible: root.activeBottomTab === 0
                                                 spacing: 8
-                                                Text {
-                                                    text: root.compilationError.length > 0 ? "⊗" : "✓"
+
+                                                Rectangle {
+                                                    width: 14; height: 14; radius: 7
                                                     color: root.compilationError.length > 0 ? "#F14C4C" : "#73C991"
-                                                    font.pixelSize: 14
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: root.compilationError.length > 0 ? "✕" : "✓"
+                                                        color: "#FFFFFF"
+                                                        font.pixelSize: 8
+                                                        font.bold: true
+                                                    }
                                                 }
+
                                                 Text {
                                                     text: root.compilationError.length > 0 ? root.compilationError : "No se han detectado problemas de compilación en el código."
                                                     color: root.compilationError.length > 0 ? "#F14C4C" : "#CCCCCC"
-                                                    font.family: "Monospace"
+                                                    font.family: "Monospace, Consolas"
                                                     font.pixelSize: 11
                                                     Layout.fillWidth: true
                                                     wrapMode: Text.WordWrap
@@ -1012,7 +1318,7 @@ Rectangle {
                                                 visible: root.activeBottomTab === 1
                                                 text: root.lastCompilationLog
                                                 color: root.compilationError.length > 0 ? "#F14C4C" : "#89D185"
-                                                font.family: "Monospace"
+                                                font.family: "Monospace, Consolas"
                                                 font.pixelSize: 11
                                                 wrapMode: Text.WordWrap
                                                 Layout.fillWidth: true
@@ -1114,6 +1420,40 @@ Rectangle {
             }
         }
         root.parsedSliders = list
+    }
+
+    function findInEditor(term) {
+        if (!term || term.length === 0) return
+        var idx = codeEditor.text.indexOf(term, codeEditor.cursorPosition)
+        if (idx === -1) idx = codeEditor.text.indexOf(term, 0)
+        if (idx !== -1) {
+            codeEditor.cursorPosition = idx
+            codeEditor.select(idx, idx + term.length)
+        }
+    }
+
+    function findNext() {
+        if (!searchField.text || searchField.text.length === 0) return
+        var term = searchField.text
+        var start = codeEditor.cursorPosition + 1
+        var idx = codeEditor.text.indexOf(term, start)
+        if (idx === -1) idx = codeEditor.text.indexOf(term, 0)
+        if (idx !== -1) {
+            codeEditor.cursorPosition = idx
+            codeEditor.select(idx, idx + term.length)
+        }
+    }
+
+    function findPrev() {
+        if (!searchField.text || searchField.text.length === 0) return
+        var term = searchField.text
+        var start = Math.max(0, codeEditor.cursorPosition - 1)
+        var idx = codeEditor.text.lastIndexOf(term, start)
+        if (idx === -1) idx = codeEditor.text.lastIndexOf(term)
+        if (idx !== -1) {
+            codeEditor.cursorPosition = idx
+            codeEditor.select(idx, idx + term.length)
+        }
     }
 
     function openForPlugin(trkIdx, plgIdx, plgNm) {
