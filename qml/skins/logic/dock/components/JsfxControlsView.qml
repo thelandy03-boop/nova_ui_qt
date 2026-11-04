@@ -3,12 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /**
- * Vista de Interfaz Gráfica (UI) para plugins JSFX.
- * Reinterpretación auténtica del entorno Cockos REAPER FX:
- * - Cabecera industrial de ventana de plugin (prefijo JS, botón Param, Presets y Reset)
- * - Faders horizontales estilo REAPER con riel biselado 3D y fader caps metálicos
- * - Displays de valor numérico biselados hundidos
- * - Control de alta precisión con arrastre, rueda de ratón y doble clic para resetear
+ * Vista de Interfaz Gráfica (UI) para plugins JSFX en disposición VERTICAL.
+ * Reinterpretación auténtica del entorno Cockos REAPER / Consola de estudio:
+ * - Tiras verticales de fader (channel strips de parámetros) en fila horizontal
+ * - Faders verticales con riel 3D biselado y Fader Caps metálicos auténticos
+ * - Display numérico biselado hundido en la base de cada fader
+ * - Arrastre vertical ergonómico, rueda de ratón y doble clic para restaurar
  */
 Rectangle {
     id: root
@@ -111,7 +111,7 @@ Rectangle {
         spacing: 0
 
         // =====================================================================
-        // 1. CABECERA REAPER FX WINDOW (Bypass [✓], JS: Título, Param, Preset)
+        // 1. CABECERA REAPER FX WINDOW (JS: Título y botón Reset)
         // =====================================================================
         Rectangle {
             Layout.fillWidth: true
@@ -183,7 +183,7 @@ Rectangle {
         }
 
         // =====================================================================
-        // 2. CONTENIDO PRINCIPAL: FADERS JSFX DE REAPER
+        // 2. CONTENIDO PRINCIPAL: TIRAS VERTICALES DE FADERS ESTILO REAPER
         // =====================================================================
         Item {
             Layout.fillWidth: true
@@ -203,27 +203,25 @@ Rectangle {
                 }
             }
 
-            // Lista estructurada de Faders estilo REAPER
+            // Tiras verticales alineadas en fila horizontal
             ListView {
-                id: slidersView
+                id: stripsList
                 anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                anchors.topMargin: 14
-                anchors.bottomMargin: 14
+                anchors.margins: 14
+                orientation: ListView.Horizontal
                 visible: root.slidersList.length > 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.slidersList
-                spacing: 6
+                spacing: 10
 
                 delegate: Rectangle {
-                    id: rowDelegate
-                    width: slidersView.width
-                    height: 40
-                    radius: 3
-                    color: rowMouse.containsMouse ? "#242732" : "#1E2028"
-                    border.color: rowMouse.containsMouse ? "#3A3F50" : "#282B37"
+                    id: stripCard
+                    width: 96
+                    height: stripsList.height
+                    radius: 4
+                    color: stripMouse.containsMouse ? "#232631" : "#1D1F27"
+                    border.color: stripMouse.containsMouse ? "#3B4154" : "#272A36"
                     border.width: 1
 
                     property var param: modelData
@@ -245,149 +243,149 @@ Rectangle {
                         }
                     }
 
-                    RowLayout {
+                    ColumnLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 14
-                        spacing: 14
+                        anchors.margins: 8
+                        spacing: 8
 
-                        // 1. Etiqueta del slider estilo Reaper
+                        // 1. Rótulo superior del parámetro
                         Text {
-                            Layout.preferredWidth: (parent.width > 600) ? 190 : 140
-                            text: rowDelegate.param.name
+                            Layout.fillWidth: true
+                            text: stripCard.param.name
                             color: "#D8DCE6"
                             font.pixelSize: 11
                             font.bold: true
                             font.family: "Segoe UI, Inter, Sans-serif"
+                            horizontalAlignment: Text.AlignHCenter
                             elide: Text.ElideRight
                         }
 
-                        // 2. Riel y Fader metálico de REAPER
+                        // 2. Fader vertical de REAPER
                         Item {
-                            id: faderTrack
+                            id: verticalFader
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 28
+                            Layout.fillHeight: true
 
-                            // Canal / Riel horizontal con profundidad 3D biselada
+                            // Riel vertical 3D centrado
                             Rectangle {
-                                id: slotBase
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                height: 5
-                                radius: 2
-                                color: "#0D0E12"
+                                id: vertRail
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 6
+                                radius: 3
+                                color: "#0C0D11"
                                 border.color: "#050608"
                                 border.width: 1
 
-                                // Micro-bisel inferior para profundidad de hardware
+                                // Micro-bisel derecho para profundidad 3D
                                 Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
+                                    anchors.left: parent.right
+                                    anchors.top: parent.top
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: -1
-                                    height: 1
+                                    width: 1
                                     color: "#383D4E"
                                     opacity: 0.6
                                 }
 
-                                // Barra de relleno azul clásico de REAPER
+                                // Barra de relleno vertical desde el fondo (0% abajo, 100% arriba)
                                 Rectangle {
-                                    anchors.left: parent.left
-                                    anchors.top: parent.top
                                     anchors.bottom: parent.bottom
-                                    width: Math.max(4, parent.width * rowDelegate.normVal)
-                                    radius: 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: parent.width
+                                    height: Math.max(4, parent.height * stripCard.normVal)
+                                    radius: 3
                                     color: "#3A6EA5"
                                 }
                             }
 
-                            // Fader Cap metálico auténtico de REAPER
+                            // Fader Cap metálico horizontal de REAPER
                             Rectangle {
-                                id: faderCap
-                                x: Math.max(0, Math.min(parent.width - width, (parent.width - width) * rowDelegate.normVal))
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 16
-                                height: 24
+                                id: vertCap
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: Math.max(0, Math.min(parent.height - height, (parent.height - height) * (1.0 - stripCard.normVal)))
+                                width: 28
+                                height: 15
                                 radius: 2
                                 border.color: "#111216"
                                 border.width: 1
                                 antialiasing: true
 
-                                // Gradiente metálico de 9 paradas estilo Cockos REAPER
+                                // Gradiente metálico horizontal estilo Cockos REAPER
                                 gradient: Gradient {
                                     GradientStop { position: 0.00; color: "#E0E2E8" }
                                     GradientStop { position: 0.15; color: "#FFFFFF" }
                                     GradientStop { position: 0.35; color: "#7B8090" }
                                     GradientStop { position: 0.48; color: "#3B3F4A" }
-                                    GradientStop { position: 0.50; color: "#000000" } // Ranura central
+                                    GradientStop { position: 0.50; color: "#000000" } // Muesca central
                                     GradientStop { position: 0.52; color: "#3B3F4A" }
                                     GradientStop { position: 0.65; color: "#7B8090" }
                                     GradientStop { position: 0.85; color: "#CBD0DC" }
                                     GradientStop { position: 1.00; color: "#585D6C" }
                                 }
 
-                                // Línea de posición central con micro-relieve
+                                // Muesca horizontal central de posición
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    width: 1.5
-                                    height: 14
-                                    color: rowMouse.drag.active ? "#60A5FA" : "#000000"
+                                    width: 18
+                                    height: 1.5
+                                    color: stripMouse.drag.active ? "#60A5FA" : "#000000"
 
-                                    // Micro bisel blanco a la derecha
+                                    // Micro-bisel inferior
                                     Rectangle {
-                                        anchors.left: parent.right
-                                        anchors.top: parent.top
-                                        anchors.bottom: parent.bottom
-                                        width: 1
+                                        anchors.top: parent.bottom
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        height: 1
                                         color: "#FFFFFF"
                                         opacity: 0.35
                                     }
                                 }
 
-                                // Bisel luminoso izquierdo
+                                // Bisel luminoso superior
                                 Rectangle {
-                                    anchors.left: parent.left
                                     anchors.top: parent.top
-                                    anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 1
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
                                     anchors.topMargin: 1
-                                    anchors.bottomMargin: 1
-                                    width: 1
+                                    anchors.leftMargin: 1
+                                    anchors.rightMargin: 1
+                                    height: 1
                                     color: "#FFFFFF"
                                     opacity: 0.4
                                 }
                             }
 
                             MouseArea {
-                                id: rowMouse
+                                id: stripMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
+                                cursorShape: Qt.SizeVerCursor
 
-                                function applyPos(mouse) {
-                                    var n = mouse.x / width
-                                    rowDelegate.updateFromNorm(n)
+                                function applyY(mouseY) {
+                                    var usable = Math.max(1, verticalFader.height - vertCap.height)
+                                    var n = 1.0 - ((mouseY - vertCap.height / 2) / usable)
+                                    stripCard.updateFromNorm(n)
                                 }
 
-                                onPressed: (mouse) => applyPos(mouse)
+                                onPressed: (mouse) => applyY(mouse.y)
                                 onPositionChanged: (mouse) => {
-                                    if (pressed) applyPos(mouse)
+                                    if (pressed) applyY(mouse.y)
                                 }
                                 onWheel: (wheel) => {
                                     var delta = (wheel.angleDelta.y > 0) ? 0.02 : -0.02
-                                    rowDelegate.updateFromNorm(rowDelegate.normVal + delta)
+                                    stripCard.updateFromNorm(stripCard.normVal + delta)
                                 }
                                 onDoubleClicked: {
-                                    rowDelegate.currentVal = rowDelegate.param.value
-                                    rowDelegate.updateFromNorm((rowDelegate.param.value - rowDelegate.param.min) / (rowDelegate.param.max - rowDelegate.param.min))
+                                    stripCard.currentVal = stripCard.param.value
+                                    stripCard.updateFromNorm((stripCard.param.value - stripCard.param.min) / (stripCard.param.max - stripCard.param.min))
                                 }
                             }
                         }
 
-                        // 3. Display numérico biselado hundido estilo REAPER
+                        // 3. Display numérico biselado hundido en la base
                         Rectangle {
-                            Layout.preferredWidth: 85
+                            Layout.fillWidth: true
                             Layout.preferredHeight: 22
                             radius: 2
                             color: "#0E0F14"
@@ -407,13 +405,14 @@ Rectangle {
                             Text {
                                 anchors.centerIn: parent
                                 text: {
-                                    var num = rowDelegate.currentVal
+                                    var num = stripCard.currentVal
                                     var fmt = (Math.abs(num) >= 100) ? num.toFixed(0) : ((Math.abs(num) >= 10) ? num.toFixed(1) : num.toFixed(2))
-                                    return fmt + (rowDelegate.param.unit ? (" " + rowDelegate.param.unit) : "")
+                                    return fmt + (stripCard.param.unit ? (" " + stripCard.param.unit) : "")
                                 }
-                                color: "#E0E8F2"
-                                font.pixelSize: 11
+                                color: "#60A5FA"
+                                font.pixelSize: 10
                                 font.family: "Monospace, Consolas, Courier New"
+                                horizontalAlignment: Text.AlignHCenter
                             }
                         }
                     }
