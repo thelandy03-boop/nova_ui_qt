@@ -202,7 +202,7 @@ Rectangle {
                     // 1. MODO NORMAL (LECTURA / SELECCIÓN)
                     Row {
                         anchors.fill: parent
-                        anchors.leftMargin: 24
+                        anchors.leftMargin: 26
                         anchors.rightMargin: 6
                         spacing: 6
                         visible: root.renamingIndex !== index
@@ -225,34 +225,20 @@ Rectangle {
                             }
                         }
 
-                        // Nombre base editable
+                        // Nombre completo natural con extensión ("simple_delay.jsfx")
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: model.baseName
+                            width: parent.width - 26 - 6 - 12 - 6 - 22
+                            text: model.name
                             color: root.selectedFile === model.name ? "#FFFFFF" : "#CCCCCC"
                             font.pixelSize: 11
                             font.family: "Monospace, Consolas, Courier New"
                             elide: Text.ElideRight
                         }
 
-                        // Extensión protegida / atenuada (.jsfx deshabilitado para tocar)
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: model.ext
-                            color: "#5C6370"
-                            font.pixelSize: 10
-                            font.family: "Monospace, Consolas, Courier New"
-                        }
-
-                        Item {
-                            width: 1
-                            height: 1
-                            // Espaciador para empujar botón a la derecha
-                        }
-
                         // Botón de lápiz para renombrar (visible en hover o selección)
                         Rectangle {
-                            width: 18; height: 18
+                            width: 16; height: 16
                             anchors.verticalCenter: parent.verticalCenter
                             visible: fileMouse.containsMouse || root.selectedFile === model.name
                             color: renameBtnMouse.containsMouse ? "#3A3F4D" : "transparent"
