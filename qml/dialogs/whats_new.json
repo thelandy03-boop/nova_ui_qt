@@ -3,20 +3,44 @@
     "1.0.17": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",
-      "description": "Mejoras para que usar Nova en tu teléfono sea mucho más cómodo y sin errores:",
+      "description": "Todo lo que cambia desde la versión anterior, contado de forma sencilla:",
       "buttonText": "¡Entendido, a probar! ➜",
       "features": [
+        {
+          "category": "NUEVO",
+          "icon": "🎛️",
+          "title": "Efectos Incluidos en tus Pistas",
+          "description": "Ahora puedes añadir un ecualizador, un compresor, un eco y un efecto de sala a cualquier pista, y escuchar el cambio al momento mientras reproduces tu música."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "🧩",
+          "title": "Crea tus Propios Efectos",
+          "description": "En el menú de herramientas tienes un nuevo taller para crear o modificar tus propios efectos. Puedes empezar con una plantilla, buscar dentro de tu efecto, pegar texto desde el portapapeles y recibir un aviso si algo necesita corrección."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "🎚️",
+          "title": "Controles Cómodos con el Dedo",
+          "description": "Los ajustes de tus efectos aparecen como controles deslizantes grandes y fáciles de mover. También tienes botones para subir o bajar un poquito cada valor y un botón para ver el efecto a pantalla completa."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "📁",
+          "title": "Tus Efectos, Bien Organizados",
+          "description": "Dentro del taller puedes crear carpetas, guardar varios efectos, cambiarles el nombre o borrarlos. Todo se guarda correctamente para que encuentres enseguida el efecto que buscas."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "🔔",
+          "title": "Aviso Cuando Hay una Versión Nueva",
+          "description": "Si hay una actualización disponible, tu teléfono te avisará con una notificación. Al tocarla se abre Nova y puedes actualizar desde la propia app."
+        },
         {
           "category": "NUEVO",
           "icon": "👋",
           "title": "Mensaje Sincero al Empezar",
           "description": "Al abrir la app por primera vez, verás una bienvenida que te cuenta con total honestidad que este proyecto lo hace una sola persona y que aún está en construcción."
-        },
-        {
-          "category": "CORRECCIÓN",
-          "icon": "📦",
-          "title": "Actualizaciones Sin Errores",
-          "description": "Corregimos el mensaje de 'Error al analizar el paquete'. Ahora las nuevas versiones se descargan completas y se instalan en tu teléfono sin dar problemas."
         },
         {
           "category": "MEJORA",
@@ -35,6 +59,42 @@
           "icon": "🎙️",
           "title": "Tu Voz se Dibuja en Tiempo Real",
           "description": "Ahora ves exactamente cómo sube y baja el dibujo de tu voz en la pantalla mientras cantas o hablas. Al parar, tu grabación queda guardada tal cual la hiciste."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "📦",
+          "title": "Actualizaciones Sin Errores",
+          "description": "La app comprueba que la actualización se ha descargado entera y que es la oficial antes de instalarla. Se acabó el mensaje de 'Error al analizar el paquete' y las descargas a medias."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "🎵",
+          "title": "Importa Canciones Sin Duplicados",
+          "description": "Si eliges una canción que ya está en el proyecto, Nova reutiliza el archivo en vez de crear copias con nombres raros. Las canciones con # en el nombre también se importan bien."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "🧹",
+          "title": "Borrar sin Dejar Sonando",
+          "description": "Al borrar un audio, la selección y el dibujo de la onda se limpian correctamente. Si borras el último audio, la música se detiene sola en vez de quedarse sonando."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "⚡",
+          "title": "La Onda Aparece al Instante",
+          "description": "En cuanto terminas de importar o grabar, el dibujo de la onda aparece en la pantalla sin tener que tocar nada ni esperar."
+        },
+        {
+          "category": "CORRECCIÓN",
+          "icon": "🛡️",
+          "title": "Más Estable y Sin Cortes",
+          "description": "Corregimos fallos que podían consumir memoria de más y provocar cortes o cierres durante la reproducción o la grabación. Tu música y tus proyectos siguen más seguros."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "🪟",
+          "title": "Novedades Más Fáciles de Leer",
+          "description": "Esta misma pantalla ahora tiene los títulos, las tarjetas y la barra de desplazamiento mejor colocados para que puedas leer las novedades cómodamente."
         }
       ]
     },
