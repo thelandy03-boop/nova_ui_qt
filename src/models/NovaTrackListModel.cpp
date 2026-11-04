@@ -7,6 +7,7 @@
 #include "audio/dsp/NovaCompressor.h"
 #include "audio/dsp/NovaStereoDelay.h"
 #include "audio/dsp/NovaReverb.h"
+#include "audio/dsp/jsfx/NovaJsfxManager.h"
 
 #include <QMetaObject>
 
@@ -641,6 +642,10 @@ QVariantList NovaTrackListModel::availablePlugins() const
     } catch (...) {}
 #endif
 
+    for (const auto& jsfx : NovaJsfxManager::instance().availableJsfxPlugins()) {
+        addPlug(jsfx.id, jsfx.name, jsfx.category, jsfx.description);
+    }
+
     return list;
 }
 
@@ -713,6 +718,26 @@ bool NovaTrackListModel::addPluginToTrack(int trackRow, const QString &pluginId)
             QVariantMap{{QStringLiteral("index"), 1}, {QStringLiteral("name"), QStringLiteral("Mezcla Wet")}, {QStringLiteral("value"), 20.0}, {QStringLiteral("min"), 0.0}, {QStringLiteral("max"), 100.0}, {QStringLiteral("unit"), QStringLiteral("%")}}
         };
         effect = std::make_shared<NovaReverb>();
+    } else if (pluginId.startsWith(QStringLiteral("jsfx:")) || pluginId.endsWith(QStringLiteral(".jsfx")) || pluginId.endsWith(QStringLiteral(".txt"))) {
+        auto jsfx = NovaJsfxManager::instance().createEffect(pluginId);
+        if (jsfx) {
+            stub.name = jsfx->name();
+            stub.category = jsfx->category();
+            for (const auto& sl : jsfx->sliders()) {
+                QVariantMap pmap;
+                pmap[QStringLiteral("index")] = sl.index;
+                pmap[QStringLiteral("name")] = sl.name;
+                pmap[QStringLiteral("value")] = sl.defaultValue;
+                pmap[QStringLiteral("min")] = sl.minValue;
+                pmap[QStringLiteral("max")] = sl.maxValue;
+                pmap[QStringLiteral("unit")] = sl.unit;
+                stub.parameters.append(pmap);
+            }
+            effect = jsfx;
+        } else {
+            stub.name = pluginId;
+            stub.category = QStringLiteral("JSFX");
+        }
     } else {
         stub.name = pluginId;
         stub.category = QStringLiteral("EFECTO");
@@ -925,4 +950,14 @@ NovaDspChain* NovaTrackListModel::dspChainForTrack(int trackRow) const
         return d_ptr->trackDspChains[trackRow].get();
     }
     return nullptr;
+}
+
+bool NovaTrackListModel::importJsfxScript(const QString &filePath)
+{
+    QString err;
+    if (NovaJsfxManager::instance().registerUserScript(filePath, &err)) {
+        return true;
+    }
+    qCWarning(novaCore) << "Error al importar script JSFX:" << err;
+    return false;
 }

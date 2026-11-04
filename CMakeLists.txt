@@ -176,6 +176,12 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/dsp/NovaStereoDelay.cpp
     src/audio/dsp/NovaReverb.h
     src/audio/dsp/NovaReverb.cpp
+    src/audio/dsp/jsfx/NovaJsfxVm.h
+    src/audio/dsp/jsfx/NovaJsfxVm.cpp
+    src/audio/dsp/jsfx/NovaJsfxEffect.h
+    src/audio/dsp/jsfx/NovaJsfxEffect.cpp
+    src/audio/dsp/jsfx/NovaJsfxManager.h
+    src/audio/dsp/jsfx/NovaJsfxManager.cpp
     third_party/minimp3/minimp3.h
     third_party/dr_libs/dr_flac.h
 )
@@ -428,6 +434,17 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     target_link_libraries(test_audio_dsp PRIVATE Qt6::Core)
     target_include_directories(test_audio_dsp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME audio_dsp COMMAND test_audio_dsp)
+
+    # El host y evaluador de scripts JSFX de Cockos REAPER
+    add_executable(test_audio_jsfx
+        tests/test_audio_jsfx.cpp
+        src/audio/dsp/jsfx/NovaJsfxVm.cpp
+        src/audio/dsp/jsfx/NovaJsfxEffect.cpp
+        src/audio/dsp/jsfx/NovaJsfxManager.cpp
+    )
+    target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core)
+    target_include_directories(test_audio_jsfx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME audio_jsfx COMMAND test_audio_jsfx)
 
     # El gestor de parches de colaboración local (.novapatch)
     add_executable(test_patch_manager
