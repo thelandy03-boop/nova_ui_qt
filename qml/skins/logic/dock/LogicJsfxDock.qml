@@ -28,7 +28,7 @@ Rectangle {
     property bool hasError: false
 
     // Estado del explorador lateral izquierdo
-    property bool showSidebar: true
+    property bool showSidebar: (Qt.platform.os !== "android")
     property int activeActivityTab: 0 // 0: Explorer, 1: Search, 2: Git, 3: Run, 4: Extensions
     property string selectedFile: "simple_delay.jsfx"
 

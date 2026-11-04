@@ -12,8 +12,9 @@ Rectangle {
     property string sourceText: ""
     property int lineCount: 1
 
-    Layout.preferredWidth: 54
+    Layout.preferredWidth: (Qt.platform.os === "android") ? 0 : 54
     Layout.fillHeight: true
+    visible: (Qt.platform.os !== "android")
     color: "#181A20"
     clip: true
 

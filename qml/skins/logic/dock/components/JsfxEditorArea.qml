@@ -192,8 +192,9 @@ Item {
                     color: "#D4D4D4"
                     selectedTextColor: "#FFFFFF"
                     selectionColor: "#264F78"
-                    font.family: "JetBrains Mono, Consolas, 'Courier New', Monospace"
-                    font.pixelSize: 13
+                    font.family: (Qt.platform.os === "android") ? "monospace" : "JetBrains Mono, Consolas, 'Courier New', Monospace"
+                    font.pixelSize: (Qt.platform.os === "android") ? 13 : 13
+                    inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                     wrapMode: TextEdit.NoWrap
                     tabStopDistance: 32
                     cursorVisible: true

@@ -25,7 +25,7 @@ Rectangle {
     signal revertClicked()
 
     Layout.fillWidth: true
-    Layout.preferredHeight: 34
+    Layout.preferredHeight: (Qt.platform.os === "android") ? 38 : 34
     color: "#21232A"
     border.color: "#15161A"
     border.width: 1
@@ -149,7 +149,7 @@ Rectangle {
 
         // Botón ▶ Compile
         Rectangle {
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
             Layout.preferredWidth: compileBtnRow.implicitWidth + 20
             radius: 3
             color: compileMouse.containsMouse ? "#323846" : "#252832"
@@ -191,7 +191,7 @@ Rectangle {
 
         // Botón 💾 Save
         Rectangle {
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
             Layout.preferredWidth: saveBtnRow.implicitWidth + 20
             radius: 3
             color: saveMouse.containsMouse ? "#323846" : "#252832"
@@ -244,7 +244,7 @@ Rectangle {
 
         // Botón 🔍 Search
         Rectangle {
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
             Layout.preferredWidth: searchBtnRow.implicitWidth + 20
             radius: 3
             color: searchMouse.containsMouse || root.searchActive ? "#323846" : "#252832"
@@ -289,8 +289,8 @@ Rectangle {
 
         // Botón ⚙ Settings
         Rectangle {
-            Layout.preferredHeight: 24
-            Layout.preferredWidth: 26
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
+            Layout.preferredWidth: (Qt.platform.os === "android") ? 30 : 26
             radius: 3
             color: settingsMouse.containsMouse ? "#323846" : "transparent"
 

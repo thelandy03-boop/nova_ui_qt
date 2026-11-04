@@ -79,22 +79,30 @@ Rectangle {
                 font.family: "Segoe UI, Inter, Sans-serif"
             }
 
-            Rectangle { width: 1; height: 14; color: "#2B2E38" }
+            Rectangle {
+                width: 1; height: 14; color: "#2B2E38"
+                visible: root.width > 550 && Qt.platform.os !== "android"
+            }
 
             Text {
                 text: "Spaces: 4"
                 color: "#8F94A0"
                 font.pixelSize: 11
                 font.family: "Segoe UI, Inter, Sans-serif"
+                visible: root.width > 550 && Qt.platform.os !== "android"
             }
 
-            Rectangle { width: 1; height: 14; color: "#2B2E38" }
+            Rectangle {
+                width: 1; height: 14; color: "#2B2E38"
+                visible: root.width > 550 && Qt.platform.os !== "android"
+            }
 
             Text {
                 text: "UTF-8"
                 color: "#8F94A0"
                 font.pixelSize: 11
                 font.family: "Segoe UI, Inter, Sans-serif"
+                visible: root.width > 550 && Qt.platform.os !== "android"
             }
 
             Rectangle { width: 1; height: 14; color: "#2B2E38" }

@@ -14,7 +14,7 @@ Rectangle {
 
     signal tabClicked(int tabIndex)
 
-    Layout.preferredWidth: 38
+    Layout.preferredWidth: (Qt.platform.os === "android") ? 42 : 38
     Layout.fillHeight: true
     color: "#1E1F24"
     border.color: "#141518"
@@ -29,7 +29,7 @@ Rectangle {
         // 1. Explorador de archivos (Páginas superpuestas)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 44 : 38
             color: root.activeTab === 0 && root.sidebarOpen ? "#252832" : "transparent"
 
             Rectangle {
@@ -72,7 +72,7 @@ Rectangle {
         // 2. Búsqueda (Lupa vectorial)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 44 : 38
             color: root.activeTab === 1 && root.sidebarOpen ? "#252832" : "transparent"
 
             Rectangle {
@@ -114,7 +114,7 @@ Rectangle {
         // 3. Source Control / Git (Canvas vectorial)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 44 : 38
             color: root.activeTab === 2 && root.sidebarOpen ? "#252832" : "transparent"
 
             Rectangle {
@@ -171,7 +171,7 @@ Rectangle {
         // 4. Run / Debug (Play contorno vectorial)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 44 : 38
             color: root.activeTab === 3 && root.sidebarOpen ? "#252832" : "transparent"
 
             Rectangle {
@@ -211,7 +211,7 @@ Rectangle {
         // 5. Extensiones (4 cubos modulares de VS Code)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 44 : 38
             color: root.activeTab === 4 && root.sidebarOpen ? "#252832" : "transparent"
 
             Rectangle {
