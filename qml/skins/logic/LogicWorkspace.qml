@@ -6,6 +6,7 @@ import "tcp"
 import "timeline"
 import "dialogs"
 import "rack"
+import "../../dialogs"
 
 Rectangle {
     id: root
@@ -27,6 +28,10 @@ Rectangle {
             Layout.preferredHeight: 70
 
             onCollaborationRequested: inviteCollaboratorsDialog.open()
+            onJsfxEditorRequested: {
+                var currentTrack = (root.activeFxTrackIndex >= 0) ? root.activeFxTrackIndex : 0
+                jsfxEditorDialog.openNewScript(currentTrack)
+            }
             onHomeRequested: {
                 if (root.parent && root.parent.parent && root.parent.parent.goBack) {
                     root.parent.parent.goBack()
@@ -90,6 +95,9 @@ Rectangle {
             onCloseRequested: {
                 root.showFxRack = false
             }
+            onEditJsfxRequested: (trkIdx, plgIdx, plgNm) => {
+                jsfxEditorDialog.openForPlugin(trkIdx, plgIdx, plgNm)
+            }
 
             Behavior on Layout.preferredHeight {
                 NumberAnimation { duration: 160; easing.type: Easing.InOutQuad }
@@ -138,6 +146,17 @@ Rectangle {
 
         onLinkCopied: (link) => {
             console.log(" Enlace copiado al portapapeles:", link)
+        }
+    }
+
+    // DIÁLOGO MODAL DEL EDITOR DE SCRIPTS JSFX
+    JsfxCodeEditorDialog {
+        id: jsfxEditorDialog
+        anchors.fill: parent
+        z: 10000
+        visible: false
+        onScriptApplied: {
+            if (fxRackPanel) fxRackPanel.refreshPlugins()
         }
     }
 }

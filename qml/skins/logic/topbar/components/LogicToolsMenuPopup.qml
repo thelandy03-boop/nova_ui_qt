@@ -9,6 +9,7 @@ Popup {
     closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
 
     signal collaborationClicked()
+    signal jsfxEditorClicked()
 
     background: Rectangle {
         color: "transparent"
@@ -38,6 +39,15 @@ Popup {
                     onClicked: {
                         popup.close()
                         popup.collaborationClicked()
+                    }
+                }
+
+                SubMenuItemButton {
+                    iconText: "</>"
+                    label: "Editor de Scripts JSFX"
+                    onClicked: {
+                        popup.close()
+                        popup.jsfxEditorClicked()
                     }
                 }
 

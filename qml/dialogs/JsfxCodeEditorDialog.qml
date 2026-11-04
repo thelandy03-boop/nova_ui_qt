@@ -197,7 +197,6 @@ Rectangle {
                                 font.pixelSize: 12
                                 horizontalAlignment: Text.AlignRight
                                 rightPadding: 10
-                                lineHeight: 1.35
                             }
                         }
                     }
@@ -236,7 +235,6 @@ Rectangle {
                             wrapMode: TextEdit.NoWrap
                             tabStopDistance: 32
                             cursorVisible: true
-                            lineHeight: 1.35
 
                             onTextChanged: {
                                 statusBanner.text = "Modificado (Presiona Ctrl+S para compilar)"

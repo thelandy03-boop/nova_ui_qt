@@ -1030,6 +1030,15 @@ QString NovaTrackListModel::updatePluginScript(int trackRow, int pluginIndex, co
 
 bool NovaTrackListModel::createCustomJsfxPlugin(int trackRow, const QString &name, const QString &sourceCode)
 {
+    if (trackRow < 0) {
+        if (rowCount() == 0) {
+            addAudioTrack(QStringLiteral("Audio 1"));
+            trackRow = 0;
+        } else {
+            trackRow = 0;
+        }
+    }
+
     auto jsfx = std::make_shared<NovaJsfxEffect>(sourceCode, name);
     QString err;
     if (!jsfx->recompile(sourceCode, &err)) {

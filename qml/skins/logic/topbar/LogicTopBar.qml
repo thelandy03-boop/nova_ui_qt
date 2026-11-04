@@ -9,6 +9,7 @@ Rectangle {
     color: "#2C303A"
 
     signal collaborationRequested()
+    signal jsfxEditorRequested()
     signal homeRequested()
 
     Rectangle {
@@ -42,6 +43,7 @@ Rectangle {
             LogicToolsButtonBlock {
                 Layout.fillHeight: true
                 onCollaborationRequested: root.collaborationRequested()
+                onJsfxEditorRequested: root.jsfxEditorRequested()
             }
         }
 

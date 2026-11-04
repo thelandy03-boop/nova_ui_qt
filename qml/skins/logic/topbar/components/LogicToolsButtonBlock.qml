@@ -7,6 +7,7 @@ Item {
     implicitHeight: 70
 
     signal collaborationRequested()
+    signal jsfxEditorRequested()
 
     // Variable para evitar que el clic de cierre vuelva a abrir el popup
     property bool blockReopen: false
@@ -19,6 +20,9 @@ Item {
 
         onCollaborationClicked: {
             root.collaborationRequested()
+        }
+        onJsfxEditorClicked: {
+            root.jsfxEditorRequested()
         }
 
         // Se ejecuta justo cuando el popup se va a cerrar por clic externo
