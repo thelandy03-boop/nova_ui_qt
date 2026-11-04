@@ -166,8 +166,35 @@ Rectangle {
 
                 Row {
                     anchors.centerIn: parent
-                    spacing: 5
-                    Text { text: "🎛️"; font.pixelSize: 10 }
+                    spacing: 6
+
+                    Canvas {
+                        id: previewEyeCanvas
+                        width: 13; height: 9
+                        anchors.verticalCenter: parent.verticalCenter
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            ctx.strokeStyle = (root.activeView === "ui") ? "#FFFFFF" : "#CBD5E1"
+                            ctx.fillStyle = (root.activeView === "ui") ? "#FFFFFF" : "#CBD5E1"
+                            ctx.lineWidth = 1.2
+                            // Contorno del ojo
+                            ctx.beginPath()
+                            ctx.moveTo(0.5, height / 2)
+                            ctx.quadraticCurveTo(width / 2, -1, width - 0.5, height / 2)
+                            ctx.quadraticCurveTo(width / 2, height + 1, 0.5, height / 2)
+                            ctx.stroke()
+                            // Pupila central
+                            ctx.beginPath()
+                            ctx.arc(width / 2, height / 2, 2, 0, Math.PI * 2)
+                            ctx.fill()
+                        }
+                        Connections {
+                            target: root
+                            function onActiveViewChanged() { previewEyeCanvas.requestPaint() }
+                        }
+                    }
+
                     Text {
                         text: "Vista previa"
                         color: root.activeView === "ui" ? "#FFFFFF" : "#E8EAED"

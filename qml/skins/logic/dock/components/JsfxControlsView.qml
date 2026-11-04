@@ -17,7 +17,6 @@ Rectangle {
     property int pluginIndex: -1
     property string scriptSource: ""
     property string pluginTitle: "JSFX Plugin"
-    property bool isBypassed: false
     property var slidersList: []
 
     signal editCodeRequested()
@@ -127,43 +126,13 @@ Rectangle {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
                 spacing: 10
 
-                // Casilla de Bypass estilo REAPER [✓]
-                Rectangle {
-                    Layout.preferredWidth: 16
-                    Layout.preferredHeight: 16
-                    radius: 2
-                    color: root.isBypassed ? "#1A1B22" : "#242732"
-                    border.color: root.isBypassed ? "#475569" : "#64748B"
-                    border.width: 1
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✓"
-                        color: root.isBypassed ? "transparent" : "#4ADE80"
-                        font.pixelSize: 11
-                        font.bold: true
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.isBypassed = !root.isBypassed
-                            if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&
-                                root.trackIndex >= 0 && root.pluginIndex >= 0) {
-                                AudioEngine.tracks.setPluginBypassed(root.trackIndex, root.pluginIndex, root.isBypassed)
-                            }
-                        }
-                    }
-                }
-
-                // Título con prefijo "JS:" característico de Reaper
+                // Título con prefijo "JS:" sobrio
                 Row {
-                    spacing: 5
+                    spacing: 6
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
@@ -176,7 +145,7 @@ Rectangle {
 
                     Text {
                         text: root.pluginTitle || "Effect"
-                        color: root.isBypassed ? "#94A3B8" : "#F1F5F9"
+                        color: "#F1F5F9"
                         font.pixelSize: 12
                         font.bold: true
                         font.family: "Segoe UI, Inter, Sans-serif"
@@ -185,69 +154,19 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Botón [ Param ▾ ] estilo REAPER
+                // Botón [ ↺ Reset ] 100% funcional (restablece los faders a sus valores por defecto)
                 Rectangle {
                     Layout.preferredHeight: 22
-                    Layout.preferredWidth: paramRow.implicitWidth + 14
+                    Layout.preferredWidth: resetRow.implicitWidth + 16
                     radius: 3
-                    color: paramMouse.containsMouse ? "#3E4250" : "#2F323D"
-                    border.color: "#434757"
-                    border.width: 1
-
-                    Row {
-                        id: paramRow
-                        anchors.centerIn: parent
-                        spacing: 4
-                        Text { text: "Param"; color: "#CBD5E1"; font.pixelSize: 10; font.bold: true }
-                        Text { text: "▾"; color: "#94A3B8"; font.pixelSize: 8 }
-                    }
-
-                    MouseArea {
-                        id: paramMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                }
-
-                // Botón [ + ] Presets estilo REAPER
-                Rectangle {
-                    Layout.preferredHeight: 22
-                    Layout.preferredWidth: 24
-                    radius: 3
-                    color: plusMouse.containsMouse ? "#3E4250" : "#2F323D"
-                    border.color: "#434757"
-                    border.width: 1
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "+"
-                        color: "#CBD5E1"
-                        font.pixelSize: 12
-                        font.bold: true
-                    }
-
-                    MouseArea {
-                        id: plusMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                }
-
-                // Botón [ Reset ] estilo REAPER
-                Rectangle {
-                    Layout.preferredHeight: 22
-                    Layout.preferredWidth: resetRow.implicitWidth + 14
-                    radius: 3
-                    color: resetMouse.containsMouse ? "#3E4250" : "#2F323D"
+                    color: resetMouse.containsMouse ? "#3E4250" : "#2A2D37"
                     border.color: "#434757"
                     border.width: 1
 
                     Row {
                         id: resetRow
                         anchors.centerIn: parent
-                        spacing: 4
+                        spacing: 5
                         Text { text: "↺"; color: "#94A3B8"; font.pixelSize: 10 }
                         Text { text: "Reset"; color: "#CBD5E1"; font.pixelSize: 10; font.bold: true }
                     }
