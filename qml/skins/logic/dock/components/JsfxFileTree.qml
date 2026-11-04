@@ -485,7 +485,7 @@ Rectangle {
 
                         onDoubleClicked: (mouse) => {
                             if (mouse.button === Qt.LeftButton) {
-                                root.startRename(index)
+                                root.fileSelected(model.name)
                             }
                         }
                     }
