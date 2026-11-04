@@ -6,7 +6,7 @@ import "tcp"
 import "timeline"
 import "dialogs"
 import "rack"
-import "../../dialogs"
+import "dock"
 
 Rectangle {
     id: root
@@ -14,6 +14,7 @@ Rectangle {
     color: "#1E1F24"
 
     property bool showFxRack: false
+    property bool showJsfxDock: false
     property int activeFxTrackIndex: -1
     property string activeFxTrackName: ""
 
@@ -30,7 +31,8 @@ Rectangle {
             onCollaborationRequested: inviteCollaboratorsDialog.open()
             onJsfxEditorRequested: {
                 var currentTrack = (root.activeFxTrackIndex >= 0) ? root.activeFxTrackIndex : 0
-                jsfxEditorDialog.openNewScript(currentTrack)
+                root.showJsfxDock = true
+                jsfxDock.openNewScript(currentTrack)
             }
             onHomeRequested: {
                 if (root.parent && root.parent.parent && root.parent.parent.goBack) {
@@ -63,22 +65,48 @@ Rectangle {
                 }
             }
 
-            // ZONA 3: TIMELINE / ARRANGER
-            LogicTimelinePanel {
-                id: timelinePanel
+            // ZONA 3: TIMELINE / ARRANGER + DOCK DE JSFX ACOPLADO
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                spacing: 0
 
-                // 🔄 SINCRONIZACIÓN DE SCROLL VERTICAL PERFECTA
-                Binding {
-                    target: tcpPanel
-                    property: "scrollY"
-                    value: timelinePanel.scrollY
+                LogicTimelinePanel {
+                    id: timelinePanel
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    // 🔄 SINCRONIZACIÓN DE SCROLL VERTICAL PERFECTA
+                    Binding {
+                        target: tcpPanel
+                        property: "scrollY"
+                        value: timelinePanel.scrollY
+                    }
+                    Binding {
+                        target: timelinePanel
+                        property: "scrollY"
+                        value: tcpPanel.scrollY
+                    }
                 }
-                Binding {
-                    target: timelinePanel
-                    property: "scrollY"
-                    value: tcpPanel.scrollY
+
+                // DOCK INTEGRADO DEL EDITOR JSFX (IDÉNTICO A LA CAPTURA)
+                LogicJsfxDock {
+                    id: jsfxDock
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.showJsfxDock ? Math.min(root.height * 0.65, 380) : 0
+                    visible: root.showJsfxDock
+                    clip: true
+
+                    onCloseRequested: {
+                        root.showJsfxDock = false
+                    }
+                    onScriptApplied: {
+                        if (fxRackPanel) fxRackPanel.refreshPlugins()
+                    }
+
+                    Behavior on Layout.preferredHeight {
+                        NumberAnimation { duration: 180; easing.type: Easing.InOutQuad }
+                    }
                 }
             }
         }
@@ -96,7 +124,8 @@ Rectangle {
                 root.showFxRack = false
             }
             onEditJsfxRequested: (trkIdx, plgIdx, plgNm) => {
-                jsfxEditorDialog.openForPlugin(trkIdx, plgIdx, plgNm)
+                root.showJsfxDock = true
+                jsfxDock.openForPlugin(trkIdx, plgIdx, plgNm)
             }
 
             Behavior on Layout.preferredHeight {
@@ -146,17 +175,6 @@ Rectangle {
 
         onLinkCopied: (link) => {
             console.log(" Enlace copiado al portapapeles:", link)
-        }
-    }
-
-    // DIÁLOGO MODAL DEL EDITOR DE SCRIPTS JSFX
-    JsfxCodeEditorDialog {
-        id: jsfxEditorDialog
-        anchors.fill: parent
-        z: 10000
-        visible: false
-        onScriptApplied: {
-            if (fxRackPanel) fxRackPanel.refreshPlugins()
         }
     }
 }
