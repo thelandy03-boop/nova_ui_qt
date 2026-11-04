@@ -333,31 +333,48 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Botón + Archivo
+                // Botón + Archivo (Nuevo script JSFX)
                 Rectangle {
-                    width: 22; height: 20
+                    width: 24; height: 22
                     radius: 3
-                    color: newFileMa.containsMouse ? "#2A2E39" : "transparent"
+                    color: newFileMa.containsMouse ? "#262B36" : "transparent"
+                    border.color: newFileMa.containsMouse ? "#3A4150" : "transparent"
+                    border.width: 1
                     Layout.alignment: Qt.AlignVCenter
                     ToolTip.visible: newFileMa.containsMouse
                     ToolTip.text: "Nuevo archivo JSFX"
-                    ToolTip.delay: 300
+                    ToolTip.delay: 250
 
-                    Canvas {
-                        width: 12; height: 12
+                    Item {
+                        width: 15; height: 15
                         anchors.centerIn: parent
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, 12, 12)
-                            ctx.strokeStyle = newFileMa.containsMouse ? "#E6EDF3" : "#8B949E"
-                            ctx.lineWidth = 1.2
-                            // Hoja de archivo
-                            ctx.strokeRect(1, 1, 7, 10)
-                            // Signo +
-                            ctx.beginPath()
-                            ctx.moveTo(9.5, 4.5); ctx.lineTo(9.5, 8.5)
-                            ctx.moveTo(7.5, 6.5); ctx.lineTo(11.5, 6.5)
-                            ctx.stroke()
+
+                        // Silueta de página de código
+                        Rectangle {
+                            x: 1; y: 1
+                            width: 9; height: 13
+                            color: newFileMa.containsMouse ? "#1E222B" : "#16181E"
+                            border.color: newFileMa.containsMouse ? "#58A6FF" : "#8B949E"
+                            border.width: 1.2
+                            radius: 1.5
+
+                            // Líneas que representan código escrito
+                            Rectangle { x: 2; y: 3; width: 4; height: 1; color: newFileMa.containsMouse ? "#58A6FF" : "#6E7681" }
+                            Rectangle { x: 2; y: 5; width: 5; height: 1; color: newFileMa.containsMouse ? "#58A6FF" : "#6E7681" }
+                            Rectangle { x: 2; y: 7; width: 3; height: 1; color: newFileMa.containsMouse ? "#58A6FF" : "#6E7681" }
+                        }
+
+                        // Badge circular con signo + verde de alta visibilidad
+                        Rectangle {
+                            x: 7; y: 7
+                            width: 8; height: 8
+                            radius: 4
+                            color: "#181A20"
+                            border.color: "#3FB950"
+                            border.width: 1
+
+                            Rectangle { anchors.centerIn: parent; width: 4; height: 1.2; color: "#3FB950" }
+                            Rectangle { anchors.centerIn: parent; width: 1.2; height: 4; color: "#3FB950" }
                         }
                     }
 
@@ -370,33 +387,51 @@ Rectangle {
                     }
                 }
 
-                // Botón + Carpeta
+                // Botón + Carpeta (Nueva carpeta)
                 Rectangle {
-                    width: 22; height: 20
+                    width: 24; height: 22
                     radius: 3
-                    color: newFolderMa.containsMouse ? "#2A2E39" : "transparent"
+                    color: newFolderMa.containsMouse ? "#262B36" : "transparent"
+                    border.color: newFolderMa.containsMouse ? "#3A4150" : "transparent"
+                    border.width: 1
                     Layout.alignment: Qt.AlignVCenter
                     ToolTip.visible: newFolderMa.containsMouse
                     ToolTip.text: "Nueva carpeta"
-                    ToolTip.delay: 300
+                    ToolTip.delay: 250
 
-                    Canvas {
-                        width: 12; height: 12
+                    Item {
+                        width: 16; height: 15
                         anchors.centerIn: parent
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, 12, 12)
-                            ctx.strokeStyle = newFolderMa.containsMouse ? "#E6EDF3" : "#8B949E"
-                            ctx.lineWidth = 1.2
-                            // Carpeta
-                            ctx.beginPath()
-                            ctx.moveTo(1, 3); ctx.lineTo(4, 3); ctx.lineTo(5.5, 4.5); ctx.lineTo(10.5, 4.5); ctx.lineTo(10.5, 10.5); ctx.lineTo(1, 10.5); ctx.closePath()
-                            ctx.stroke()
-                            // Signo +
-                            ctx.beginPath()
-                            ctx.moveTo(5.5, 6.5); ctx.lineTo(5.5, 9.5)
-                            ctx.moveTo(4, 8); ctx.lineTo(7, 8)
-                            ctx.stroke()
+
+                        // Pestaña superior izquierda de la carpeta
+                        Rectangle {
+                            x: 1; y: 2
+                            width: 5; height: 3
+                            color: newFolderMa.containsMouse ? "#FFE082" : "#D4B16A"
+                            radius: 1
+                        }
+
+                        // Cuerpo frontal de la carpeta
+                        Rectangle {
+                            x: 1; y: 4
+                            width: 12; height: 9
+                            color: newFolderMa.containsMouse ? "#2A2418" : "#1A1712"
+                            border.color: newFolderMa.containsMouse ? "#FFE082" : "#E5C07B"
+                            border.width: 1.2
+                            radius: 1.5
+                        }
+
+                        // Badge circular con signo + verde de alta visibilidad
+                        Rectangle {
+                            x: 8; y: 7
+                            width: 8; height: 8
+                            radius: 4
+                            color: "#181A20"
+                            border.color: "#3FB950"
+                            border.width: 1
+
+                            Rectangle { anchors.centerIn: parent; width: 4; height: 1.2; color: "#3FB950" }
+                            Rectangle { anchors.centerIn: parent; width: 1.2; height: 4; color: "#3FB950" }
                         }
                     }
 
@@ -406,44 +441,6 @@ Rectangle {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.createNewFolder()
-                    }
-                }
-
-                // Botón Compactar Folders (Collapse All)
-                Rectangle {
-                    width: 22; height: 20
-                    radius: 3
-                    color: compactMa.containsMouse ? "#2A2E39" : "transparent"
-                    Layout.alignment: Qt.AlignVCenter
-                    ToolTip.visible: compactMa.containsMouse
-                    ToolTip.text: "Compactar / Colapsar carpetas"
-                    ToolTip.delay: 300
-
-                    Canvas {
-                        width: 12; height: 12
-                        anchors.centerIn: parent
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, 12, 12)
-                            ctx.strokeStyle = compactMa.containsMouse ? "#E6EDF3" : "#8B949E"
-                            ctx.lineWidth = 1.2
-                            // Flecha colapsar superior hacia abajo
-                            ctx.beginPath()
-                            ctx.moveTo(2, 2); ctx.lineTo(6, 5); ctx.lineTo(10, 2)
-                            ctx.stroke()
-                            // Flecha colapsar inferior hacia arriba
-                            ctx.beginPath()
-                            ctx.moveTo(2, 10); ctx.lineTo(6, 7); ctx.lineTo(10, 10)
-                            ctx.stroke()
-                        }
-                    }
-
-                    MouseArea {
-                        id: compactMa
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleCompactAllFolders()
                     }
                 }
             }
