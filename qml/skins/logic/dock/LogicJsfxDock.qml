@@ -21,6 +21,8 @@ Rectangle {
     property int trackIndex: -1
     property int pluginIndex: -1
     property string pluginName: "ace_eq.jsfx"
+    property string activeRackPluginFile: ""
+    property int activeRackPluginIndex: -1
     property bool isNewPlugin: false
     property bool isModified: false
 
@@ -35,6 +37,12 @@ Rectangle {
     property bool searchVisible: false
     property string activeView: "code" // "code" o "ui"
     property bool isMaximized: false
+
+    onActiveViewChanged: {
+        if (activeView === "ui") {
+            controlsView.refreshSliders()
+        }
+    }
 
     signal closeRequested()
     signal scriptApplied()
@@ -305,6 +313,9 @@ Rectangle {
     }
 
     function handleFileCreated(name) {
+        root.pluginIndex = -1
+        root.activeRackPluginFile = ""
+        root.activeRackPluginIndex = -1
         var baseContent = "// " + name + "\n// Script JSFX nuevo\n\ndesc: " + name.replace(".jsfx", "") + "\n\n@init\n// Inicializacion de variables\n\n@sample\nspl0 = spl0;\nspl1 = spl1;\n"
         root.customFileScripts[name] = baseContent
         root.loadFileByName(name)
@@ -326,6 +337,15 @@ Rectangle {
         fileTree.cancelRename()
         root.selectedFile = fname
         root.pluginName = fname
+
+        // Si el archivo cargado coincide con el plugin abierto desde el rack, mantener el enlace
+        if (fname === root.activeRackPluginFile && root.activeRackPluginIndex >= 0) {
+            root.pluginIndex = root.activeRackPluginIndex
+        } else {
+            // Si es otro script o archivo diferente, desvincular del plugin de la pista
+            root.pluginIndex = -1
+        }
+
         var content = (root.customFileScripts && root.customFileScripts[fname])
                       ? root.customFileScripts[fname]
                       : templates.getTemplate(fname)
@@ -342,6 +362,8 @@ Rectangle {
         root.pluginIndex = plgIdx
         root.pluginName = (plgNm.indexOf(".jsfx") !== -1) ? plgNm : (plgNm.toLowerCase().replace(/ /g, "_") + ".jsfx")
         root.selectedFile = root.pluginName
+        root.activeRackPluginFile = root.pluginName
+        root.activeRackPluginIndex = plgIdx
         root.isNewPlugin = false
         root.isModified = false
 
@@ -366,6 +388,8 @@ Rectangle {
         fileTree.cancelRename()
         root.trackIndex = trkIdx
         root.pluginIndex = -1
+        root.activeRackPluginFile = ""
+        root.activeRackPluginIndex = -1
         root.pluginName = "ace_eq.jsfx"
         root.selectedFile = "ace_eq.jsfx"
         root.isNewPlugin = true

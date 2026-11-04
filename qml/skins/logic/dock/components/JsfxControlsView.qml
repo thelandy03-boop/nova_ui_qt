@@ -32,6 +32,9 @@ Rectangle {
     onScriptSourceChanged: refreshSliders()
     onTrackIndexChanged: refreshSliders()
     onPluginIndexChanged: refreshSliders()
+    onVisibleChanged: {
+        if (visible) refreshSliders()
+    }
     Component.onCompleted: refreshSliders()
 
     // Conexión reactiva si cambian los plug-ins de la pista
@@ -49,29 +52,54 @@ Rectangle {
         var detectedTitle = ""
         var detectedCategory = ""
 
-        // 1. Si el plug-in está asignado en una pista, tomar directamente sus datos reales
+        // 1. Si el plug-in está asignado en una pista, verificar que el script del editor coincida
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && root.pluginIndex >= 0) {
             try {
                 var trackPlugins = AudioEngine.tracks.trackPlugins(root.trackIndex)
                 if (trackPlugins && root.pluginIndex >= 0 && root.pluginIndex < trackPlugins.length) {
                     var plg = trackPlugins[root.pluginIndex]
                     if (plg) {
-                        detectedTitle = plg.name || ""
-                        if (plg.category) detectedCategory = plg.category
-                        root.isBypassed = !!plg.bypassed
-                        if (plg.parameters && plg.parameters.length > 0) {
-                            for (var p = 0; p < plg.parameters.length; p++) {
-                                var pr = plg.parameters[p]
-                                list.push({
-                                    index: (pr.index !== undefined) ? pr.index : p,
-                                    sliderNum: p + 1,
-                                    name: pr.name || ("P" + (p + 1)),
-                                    value: (pr.value !== undefined) ? pr.value : 0.0,
-                                    min: (pr.min !== undefined) ? pr.min : 0.0,
-                                    max: (pr.max !== undefined) ? pr.max : 1.0,
-                                    step: (pr.step !== undefined) ? pr.step : 0.01,
-                                    unit: pr.unit || ""
-                                })
+                        var matchesScript = true
+                        var sDesc = ""
+                        if (typeof AudioEngine.tracks.getJsfxDescription === "function" && root.scriptSource) {
+                            sDesc = AudioEngine.tracks.getJsfxDescription(root.scriptSource)
+                        } else if (root.scriptSource) {
+                            var lines = root.scriptSource.split(/\r?\n/)
+                            for (var li = 0; li < Math.min(lines.length, 30); li++) {
+                                var lTrim = lines[li].trim()
+                                if (lTrim.toLowerCase().indexOf("desc:") === 0) {
+                                    sDesc = lTrim.substring(5).trim()
+                                    break
+                                }
+                            }
+                        }
+
+                        if (sDesc && sDesc.length > 0 && plg.name && plg.name.length > 0) {
+                            var cleanDesc = sDesc.toLowerCase().replace(/[^a-z0-9]/g, "")
+                            var cleanName = plg.name.toLowerCase().replace(/[^a-z0-9]/g, "")
+                            if (cleanDesc !== cleanName && cleanDesc.indexOf(cleanName) === -1 && cleanName.indexOf(cleanDesc) === -1) {
+                                matchesScript = false
+                            }
+                        }
+
+                        if (matchesScript) {
+                            detectedTitle = plg.name || ""
+                            if (plg.category) detectedCategory = plg.category
+                            root.isBypassed = !!plg.bypassed
+                            if (plg.parameters && plg.parameters.length > 0) {
+                                for (var p = 0; p < plg.parameters.length; p++) {
+                                    var pr = plg.parameters[p]
+                                    list.push({
+                                        index: (pr.index !== undefined) ? pr.index : p,
+                                        sliderNum: p + 1,
+                                        name: pr.name || ("P" + (p + 1)),
+                                        value: (pr.value !== undefined) ? pr.value : 0.0,
+                                        min: (pr.min !== undefined) ? pr.min : 0.0,
+                                        max: (pr.max !== undefined) ? pr.max : 1.0,
+                                        step: (pr.step !== undefined) ? pr.step : 0.01,
+                                        unit: pr.unit || ""
+                                    })
+                                }
                             }
                         }
                     }
