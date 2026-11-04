@@ -12,6 +12,13 @@
 
     <!-- Instalacion de APKs (actualizacion obligatoria) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 🔒 Aviso de nueva version con una notificacion del sistema.
+         En Android 13+ (API 33) es un permiso en tiempo de ejecucion. NO se
+         pide al arrancar: se pide solo cuando la comprobacion encuentra una
+         actualizacion real (ver UpdateNotifier.java). Si el usuario ya lo
+         concedio, la notificacion se publica directamente. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- 🔒 El permiso que corresponde al tipo "mediaPlayback" del servicio en

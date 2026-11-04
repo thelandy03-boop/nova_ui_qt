@@ -14,10 +14,14 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.net.Uri;
 import android.provider.Settings;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 import java.io.File;
@@ -104,6 +108,9 @@ public class MainActivity extends QtActivityBase {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // Si el usuario acaba de conceder POST_NOTIFICATIONS, publicar el
+        // aviso de actualizacion que quedo pendiente.
+        UpdateNotifier.onPermissionResult(this, requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
             for (int result : grantResults) {
@@ -211,6 +218,23 @@ public class MainActivity extends QtActivityBase {
         } catch (Exception e) {
             Log.e(TAG, "openInstallPermissionSettings: failed", e);
         }
+    }
+
+    /**
+     * Publica la notificacion del sistema que avisa de una nueva version.
+     * Llamado desde C++ (NovaUpdateChecker) via JNI cuando la release de
+     * GitHub es mas nueva que la version instalada.
+     */
+    public static void showUpdateNotification(String version, String currentVersion) {
+        UpdateNotifier.showOrRequest(getInstance(), version, currentVersion);
+    }
+
+    /**
+     * Retira la notificacion de actualizacion cuando ya no queda nada que
+     * instalar (por ejemplo, tras actualizar la app).
+     */
+    public static void cancelUpdateNotification() {
+        UpdateNotifier.cancel(getInstance());
     }
 
     public static void installApk(String apkPath) {

@@ -144,6 +144,13 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
     proceso**). El micro se pide el día que haya grabación. El spike lee de
     la carpeta propia de la app, que no necesita permisos.
 
+    La única excepción es `POST_NOTIFICATIONS` (Android 13+): se declara en el
+    manifest, pero **no se pide al arrancar**. Se pide solo cuando la
+    comprobación de actualizaciones encuentra una versión nueva de verdad
+    (`UpdateNotifier.java`), porque es justo el momento en que hay algo que
+    avisar. Si el usuario lo deniega, el overlay interno de actualización
+    sigue funcionando como respaldo.
+
 12. **El APK tiene que llevar los recursos de las librerías de Qt**
     (`res/values/libs.xml`). `androiddeployqt` los escribe en
     `<staging>/res/values/libs.xml`; el módulo Gradle `app` solo los empaqueta

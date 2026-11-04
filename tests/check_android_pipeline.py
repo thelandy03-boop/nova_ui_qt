@@ -44,6 +44,8 @@ CMAKE_OBSOLETO = ROOT / "android" / "app" / "src" / "main" / "cpp" / "CMakeLists
 # o se la sacan (a los Ajustes del sistema, o con un crash).
 ACTIVITY = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "MainActivity.java"
 SERVICIO = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "AudioForegroundService.java"
+NOTIFICADOR = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "UpdateNotifier.java"
+UPDATE_CHECKER = ROOT / "src" / "core" / "NovaUpdateChecker.cpp"
 
 # El manifest que usa de verdad AGP: el del modulo app. El de la raiz
 # (android/AndroidManifest.xml) lo parchea androiddeployqt, pero AGP lo
@@ -362,6 +364,79 @@ def el_servicio_en_primer_plano_no_mata_la_app() -> None:
     )
 
 
+def la_actualizacion_avisa_con_una_notificacion() -> None:
+    """Cuando hay una version nueva, el usuario recibe una notificacion.
+
+    El overlay interno ya bloquea la app, pero si el aviso solo existe dentro
+    de la app el usuario no se entera mientras esta en otra tarea. La
+    notificacion del sistema es la que avisa fuera de la app.
+
+    En Android 13+ hay que declarar POST_NOTIFICATIONS y pedirlo en tiempo de
+    ejecucion. Se pide SOLO cuando la comprobacion encuentra una actualizacion
+    real: al arrancar no se pide ningun permiso (ver la trampa 11 de
+    AGENTS.md). Sin el permiso, el overlay interno sigue siendo el respaldo.
+    """
+    manifest = _leer(MANIFEST_APP)
+    permisos = re.findall(
+        r'<uses-permission\s+android:name\s*=\s*"([^"]+)"', manifest
+    )
+    _exigir(
+        "android.permission.POST_NOTIFICATIONS" in permisos,
+        "el manifest efectivo no declara POST_NOTIFICATIONS: Android 13+ no "
+        "mostrara la notificacion de nueva version",
+    )
+
+    _exigir(
+        NOTIFICADOR.is_file(),
+        "no existe UpdateNotifier.java: la nueva version no tiene quien "
+        "publique la notificacion del sistema",
+    )
+    notificador = _leer(NOTIFICADOR)
+    for fragmento, motivo in (
+        ("nova_updates", "no define un canal propio de actualizaciones"),
+        ("NotificationCompat", "no construye una notificacion del sistema"),
+        ("POST_NOTIFICATIONS", "no contempla el permiso de Android 13+"),
+        ("KEY_LAST_NOTIFIED", "no evita repetir el aviso de la misma version"),
+    ):
+        _exigir(
+            fragmento in notificador,
+            f"UpdateNotifier.java {motivo} (falta '{fragmento}')",
+        )
+
+    actividad = _leer(ACTIVITY)
+    _exigir(
+        "showUpdateNotification" in actividad,
+        "MainActivity no expone showUpdateNotification: C++ no puede publicar "
+        "la notificacion por JNI",
+    )
+    _exigir(
+        "UpdateNotifier.onPermissionResult" in actividad,
+        "MainActivity no procesa el resultado del permiso de notificaciones: "
+        "si el usuario lo concede, la notificacion pendiente se perderia",
+    )
+
+    checker = _leer(UPDATE_CHECKER)
+    _exigir(
+        "notifyUpdateAvailable" in checker and "showUpdateNotification" in checker,
+        "NovaUpdateChecker no avisa por notificacion al detectar una version "
+        "nueva: el usuario solo lo veria si tiene la app abierta",
+    )
+
+    # El permiso de notificaciones no puede pedirse en onCreate: la app no
+    # pide permisos al arrancar. Se pide solo al encontrar una actualizacion.
+    inicio = actividad.find("protected void onCreate")
+    fin = actividad.find("protected void onResume", inicio)
+    _exigir(
+        inicio != -1 and fin != -1,
+        "no se encuentra el bloque onCreate de MainActivity",
+    )
+    _exigir(
+        "requestPermissions" not in actividad[inicio:fin],
+        "MainActivity pide permisos en onCreate: el permiso de notificaciones "
+        "tiene que pedirse solo cuando haya una actualizacion que avisar",
+    )
+
+
 def no_vuelve_el_manifest_duplicado() -> None:
     """android/src/main/ era una copia muerta de la plantilla.
 
@@ -501,6 +576,7 @@ COMPROBACIONES = (
     ("el_manifest_efectivo_declara_el_nombre_de_la_lib", el_manifest_efectivo_declara_el_nombre_de_la_lib),
     ("el_manifest_efectivo_llega_al_staging", el_manifest_efectivo_llega_al_staging),
     ("el_servicio_en_primer_plano_no_mata_la_app", el_servicio_en_primer_plano_no_mata_la_app),
+    ("la_actualizacion_avisa_con_una_notificacion", la_actualizacion_avisa_con_una_notificacion),
     ("no_vuelve_el_manifest_duplicado", no_vuelve_el_manifest_duplicado),
     ("el_script_de_build_sabe_hacer_debug", el_script_de_build_sabe_hacer_debug),
     ("el_script_de_build_pasa_el_qt_de_escritorio", el_script_de_build_pasa_el_qt_de_escritorio),

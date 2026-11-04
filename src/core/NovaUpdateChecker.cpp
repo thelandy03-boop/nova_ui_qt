@@ -97,6 +97,16 @@ NovaUpdateChecker::NovaUpdateChecker(QObject *parent)
     // 1. Cargar base de datos de novedades nativamente desde JSON
     loadWhatsNewData();
 
+#if defined(Q_OS_ANDROID)
+    // Mientras la app siga abierta, volver a comprobar cada 6 horas: asi el
+    // aviso de nueva version tambien llega si el usuario no reinicia la app.
+    // check() tiene su propio limite para no consultar GitHub en cada vuelta.
+    auto *periodicCheck = new QTimer(this);
+    periodicCheck->setInterval(6 * 60 * 60 * 1000);
+    connect(periodicCheck, &QTimer::timeout, this, &NovaUpdateChecker::check);
+    periodicCheck->start();
+#endif
+
     // 2. Comprobar con SemVer si hay novedades que mostrar de una actualización
     QSettings settings;
     if (!settings.contains(QStringLiteral("last_seen_version"))) {
@@ -289,6 +299,24 @@ void NovaUpdateChecker::check()
     return;
 #endif
     if (m_checking) return;
+
+    // Si ya sabemos que hay que actualizar, no hace falta seguir consultando
+    // GitHub. Pero si se vuelve a llamar (por ejemplo, al regresar a la app
+    // despues de activar las notificaciones en Ajustes), se reintenta publicar
+    // el aviso: UpdateNotifier no repite la misma version.
+    if (m_updateRequired) {
+        notifyUpdateAvailable();
+        return;
+    }
+
+    // Las llamadas desde QML al volver a la app no deben convertirse en una
+    // peticion de red cada vez: como mucho una consulta cada 30 minutos.
+    static constexpr qint64 kMinimoEntreConsultasMs = 30 * 60 * 1000;
+    if (m_lastCheck.isValid() && m_lastCheck.elapsed() < kMinimoEntreConsultasMs) {
+        return;
+    }
+    m_lastCheck.start();
+
     m_checking = true;
     Q_EMIT checkingChanged();
 
@@ -399,6 +427,48 @@ void NovaUpdateChecker::onReplyFinished(QNetworkReply *reply)
         Q_EMIT updateRequiredChanged();
         qCInfo(novaCore) << "UpdateChecker: nueva version disponible:" << tag
                          << "(instalada:" << m_currentVersion << ")";
+        // Aviso al usuario con una notificacion del sistema (con el overlay
+        // interno como respaldo cuando la app esta en primer plano).
+        notifyUpdateAvailable();
+    } else {
+        // La version publicada ya no es mas nueva: retirar un aviso antiguo
+        // que pudiera quedar de una comprobacion anterior.
+        cancelUpdateNotification();
+    }
+#endif
+}
+
+void NovaUpdateChecker::notifyUpdateAvailable()
+{
+#if defined(Q_OS_ANDROID)
+    if (m_latestVersion.isEmpty()) {
+        return;
+    }
+    try {
+        QJniObject jVersion = QJniObject::fromString(m_latestVersion);
+        QJniObject jCurrent = QJniObject::fromString(m_currentVersion);
+        QJniObject::callStaticMethod<void>(
+            "com/novastudio/nova/MainActivity",
+            "showUpdateNotification",
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            jVersion.object<jstring>(),
+            jCurrent.object<jstring>());
+    } catch (...) {
+        qCWarning(novaCore) << "UpdateChecker: no se pudo publicar la notificacion de actualizacion";
+    }
+#endif
+}
+
+void NovaUpdateChecker::cancelUpdateNotification()
+{
+#if defined(Q_OS_ANDROID)
+    try {
+        QJniObject::callStaticMethod<void>(
+            "com/novastudio/nova/MainActivity",
+            "cancelUpdateNotification",
+            "()V");
+    } catch (...) {
+        qCWarning(novaCore) << "UpdateChecker: no se pudo retirar la notificacion de actualizacion";
     }
 #endif
 }

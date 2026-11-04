@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QElapsedTimer>
 
 /**
  * Comprobador de actualizaciones obligatorias con descarga e instalacion
@@ -116,6 +117,12 @@ private:
     bool verifySha256(const QString &filePath, const QString &expectedHash);
     void updateInstallPermission();
 
+    /** Avisa por notificacion del sistema de que hay una version nueva. */
+    void notifyUpdateAvailable();
+
+    /** Retira la notificacion cuando ya no hay actualizacion pendiente. */
+    void cancelUpdateNotification();
+
     void loadWhatsNewData();
     QVariantMap processReleaseData(const QJsonObject &releaseObj, const QString &ver);
 
@@ -139,4 +146,5 @@ private:
     QJsonObject m_allReleases;
     QNetworkReply *m_downloadReply = nullptr;
     QString m_apkPath;
+    QElapsedTimer m_lastCheck;
 };

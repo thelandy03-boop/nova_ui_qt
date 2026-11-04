@@ -133,6 +133,10 @@ Window {
         function onStateChanged() {
             if (Qt.application.state === Qt.ApplicationActive && typeof UpdateChecker !== "undefined") {
                 UpdateChecker.checkInstallPermission()
+                // Volver a mirar si hay una version nueva al recuperar el
+                // foco. El comprobador limita la frecuencia (30 min), asi que
+                // esto no genera una peticion de red en cada cambio de estado.
+                UpdateChecker.check()
             }
         }
     }
