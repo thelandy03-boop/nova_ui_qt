@@ -73,8 +73,13 @@ Rectangle {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (root.searchVisible) root.searchVisible = false
-            else root.closeRequested()
+            if (fileTree.renamingIndex !== -1) {
+                fileTree.cancelRename()
+            } else if (root.searchVisible) {
+                root.searchVisible = false
+            } else {
+                root.closeRequested()
+            }
         }
     }
 
@@ -159,6 +164,7 @@ Rectangle {
                 Layout.fillHeight: true
 
                 onTextModified: {
+                    fileTree.cancelRename()
                     root.isModified = true
                     root.customFileScripts[root.selectedFile] = editorArea.text
                 }
@@ -242,6 +248,7 @@ Rectangle {
     }
 
     function loadFileByName(fname) {
+        fileTree.cancelRename()
         root.selectedFile = fname
         root.pluginName = fname
         root.isModified = false
@@ -256,6 +263,7 @@ Rectangle {
     }
 
     function openForPlugin(trkIdx, plgIdx, plgNm) {
+        fileTree.cancelRename()
         root.trackIndex = trkIdx
         root.pluginIndex = plgIdx
         root.pluginName = (plgNm.indexOf(".jsfx") !== -1) ? plgNm : (plgNm.toLowerCase().replace(/ /g, "_") + ".jsfx")
@@ -280,6 +288,7 @@ Rectangle {
     }
 
     function openNewScript(trkIdx) {
+        fileTree.cancelRename()
         root.trackIndex = trkIdx
         root.pluginIndex = -1
         root.pluginName = "simple_delay.jsfx"

@@ -27,7 +27,18 @@ Rectangle {
         ListElement { name: "utils.jsh";          baseName: "utils";          ext: ".jsh";  cat: "Utility" }
     }
 
+    onSelectedFileChanged: {
+        if (renamingIndex !== -1 && filesModel.count > renamingIndex) {
+            if (filesModel.get(renamingIndex).name !== selectedFile) {
+                cancelRename()
+            }
+        }
+    }
+
     function startRename(idx) {
+        if (renamingIndex !== -1 && renamingIndex !== idx) {
+            cancelRename()
+        }
         if (idx >= 0 && idx < filesModel.count) {
             renamingIndex = idx
         }
@@ -60,6 +71,14 @@ Rectangle {
 
         var newName = cleanBase + ext
         if (newName !== oldName) {
+            // Evitar colisión de nombres duplicados
+            for (var i = 0; i < filesModel.count; ++i) {
+                if (i !== idx && filesModel.get(i).name.toLowerCase() === newName.toLowerCase()) {
+                    renamingIndex = -1
+                    return
+                }
+            }
+
             filesModel.setProperty(idx, "baseName", cleanBase)
             filesModel.setProperty(idx, "name", newName)
             if (root.selectedFile === oldName) {
@@ -102,6 +121,14 @@ Rectangle {
         clip: true
         contentWidth: availableWidth
 
+        MouseArea {
+            anchors.fill: parent
+            z: -1
+            onClicked: {
+                if (root.renamingIndex !== -1) root.cancelRename()
+            }
+        }
+
         ColumnLayout {
             width: parent.width
             spacing: 2
@@ -113,6 +140,13 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 22
                 color: "transparent"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (root.renamingIndex !== -1) root.cancelRename()
+                    }
+                }
 
                 RowLayout {
                     anchors.fill: parent
@@ -149,6 +183,13 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 22
                 color: "transparent"
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (root.renamingIndex !== -1) root.cancelRename()
+                    }
+                }
 
                 Row {
                     anchors.fill: parent
@@ -431,6 +472,9 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
 
                         onClicked: (mouse) => {
+                            if (root.renamingIndex !== -1) {
+                                root.cancelRename()
+                            }
                             if (mouse.button === Qt.RightButton) {
                                 fileContextMenu.targetIndex = index
                                 fileContextMenu.popup()
