@@ -71,7 +71,15 @@ Item {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     if (root.clipIndex >= 0) {
-                        AudioEngine.regions.removeRegion(root.clipIndex)
+                        var targetIdx = root.clipIndex
+                        var grid = root.parent
+                        while (grid && !grid.hasOwnProperty("selectedClip")) {
+                            grid = grid.parent
+                        }
+                        if (grid && grid.hasOwnProperty("selectedClip")) {
+                            grid.selectedClip = null
+                        }
+                        AudioEngine.regions.removeRegion(targetIdx)
                     }
                 }
             }

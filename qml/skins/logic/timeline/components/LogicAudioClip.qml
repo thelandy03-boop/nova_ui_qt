@@ -77,6 +77,12 @@ Item {
         }
     }
 
+    Component.onDestruction: {
+        if (timelineGrid && timelineGrid.selectedClip === root) {
+            timelineGrid.selectedClip = null
+        }
+    }
+
     Binding on x {
         when: !mainDragArea.drag.active && !leftHandleArea.pressed
         value: AudioEngine.beatToPixel(root.startBeat, root.barWidth)
@@ -245,6 +251,9 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        if (timelineGrid && timelineGrid.selectedClip === root) {
+                            timelineGrid.selectedClip = null
+                        }
                         AudioEngine.regions.removeRegion(index)
                     }
                 }
@@ -253,6 +262,7 @@ Item {
 
         // 🎙️ WAVEFORM REAL VECTORIAL HD (Caché RAM en C++)
         NovaWaveformItem {
+            id: waveformItem
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
@@ -269,6 +279,16 @@ Item {
             // clip y quedaba fuera de la vista.
             pixelsPerBeat: root.barWidth / 4.0
             visible: true
+        }
+
+        // Repintado automático en cuanto los picos asíncronos estén listos
+        Connections {
+            target: AudioEngine.regions
+            function onPeaksReady(rid) {
+                if (rid === (model.regionId || "")) {
+                    waveformItem.update()
+                }
+            }
         }
 
         // ── CAPAS DE GRADIENTES DE FUNDIDO (FADES OVERLAYS) ──

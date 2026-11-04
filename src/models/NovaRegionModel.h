@@ -176,6 +176,8 @@ signals:
     void importingChanged(bool importing);
     void importFinished(bool success, const QString &message);
     void maxEndBeatChanged(double maxEndBeat);
+    // 📈 Notificación inmediata cuando los picos de una región se han calculado y cacheado
+    void peaksReady(const QString &regionId);
 
 private:
     void requestRegionPeaks(const QString &regionId,

@@ -108,6 +108,20 @@ QString NovaPlatformUtils::copyContentUriToLocal(const QString &contentUri)
 
     QString destPath = importsDir + QStringLiteral("/") + fileName;
 
+    // Si ya existe el archivo en la caché de medios con tamaño idéntico al origen,
+    // reutilizarlo directamente para evitar re-copiar y prevenir bloqueos.
+    if (QFile::exists(destPath)) {
+        const qint64 srcSize = srcFile.size();
+        const qint64 dstSize = QFileInfo(destPath).size();
+        if (srcSize > 0 && srcSize == dstSize) {
+            srcFile.close();
+            qInfo() << "✅ [NovaPlatformUtils] Reutilizando medio importado en caché:" << destPath;
+            return QDir::cleanPath(destPath);
+        }
+        // Si el tamaño difiere (archivo actualizado), eliminar el anterior limpiamente
+        QFile::remove(destPath);
+    }
+
     QFile destFile(destPath);
     if (!destFile.open(QIODevice::WriteOnly)) {
         qWarning() << "❌ [NovaPlatformUtils] No se pudo crear archivo destino:" << destPath << destFile.errorString();
@@ -162,27 +176,26 @@ QString NovaPlatformUtils::sanitizePath(const QString &rawPath)
         return copyContentUriToLocal(contentUri);
     }
 
-    // 3. Si contiene el esquema "file:", extraer la ruta local absoluta de forma robusta
+    // 3. Si contiene el esquema "file:", extraer la ruta local absoluta de forma robusta.
+    // Nota: No se usa QUrl::toLocalFile() directamente sobre cadenas con '#' porque
+    // QUrl lo interpreta como URL fragment (#1) y trunca el nombre de archivos como "Take #1.wav".
     if (path.startsWith(QLatin1String("file:"), Qt::CaseInsensitive)) {
-        QUrl url(rawPath);
-        if (url.isValid() && url.isLocalFile()) {
-            path = url.toLocalFile();
+        if (path.startsWith(QLatin1String("file:///"), Qt::CaseInsensitive)) {
+            path.remove(0, 7);
+        } else if (path.startsWith(QLatin1String("file://"), Qt::CaseInsensitive)) {
+            path.remove(0, 6);
+        } else if (path.startsWith(QLatin1String("file:/"), Qt::CaseInsensitive)) {
+            path.remove(0, 5);
         } else {
-            // Limpieza manual de seguridad si el esquema de QUrl falla
-            path.remove(0, 5); // Quita "file:"
-            
-            // Reemplazar diagonales dobles iniciales de esquemas como file:// o file:///
-            while (path.startsWith(QLatin1String("//"))) {
-                path.remove(0, 1);
-            }
-            
-            // Garantizar que en Linux/Android empiece con un solo "/"
-#if !defined(Q_OS_WIN)
-            if (!path.startsWith(QLatin1Char('/'))) {
-                path = QLatin1Char('/') + path;
-            }
-#endif
+            path.remove(0, 5);
         }
+
+        // Garantizar que en Linux/Android empiece con un solo "/"
+#if !defined(Q_OS_WIN)
+        if (!path.startsWith(QLatin1Char('/'))) {
+            path = QLatin1Char('/') + path;
+        }
+#endif
     }
 
     // 4. Normalizar la ruta final del sistema de archivos

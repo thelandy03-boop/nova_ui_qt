@@ -140,6 +140,15 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
     connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackFinished,
             this, &NovaAudioEngine::androidAutoAdvance);
 
+    // Cuando se eliminan clips de la sesión y no queda ninguno, detener motor de audio
+    connect(m_regionModel, &NovaRegionModel::regionCountChanged, this, [this](int count) {
+        if (count == 0) {
+            m_androidEngine.setPlaying(false);
+            m_transport.stop();
+            NovaWaveformCache::removePeaks(QStringLiteral("spike"));
+        }
+    });
+
     // Feedback visual en vivo: actualizar el clip de grabación en tiempo real conforme avanza el cabezal con picos reales del micro
     connect(&m_transport, &NovaTransportController::positionChanged, this, [this]() {
         if (m_androidGrabando && m_regionModel && m_transport.isPlaying()) {

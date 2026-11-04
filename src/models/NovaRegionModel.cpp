@@ -295,6 +295,17 @@ void NovaRegionModel::requestRegionPeaks(const QString &regionId,
             qCDebug(novaModel) << "📈 Picos listos para" << regionId.toStdString()
                                << "(" << data.peaks.size() << " detalle /"
                                << data.overview.size() << "overview)";
+
+            // 🎨 Notificar a la UI en el hilo principal para actualizar la forma de onda de inmediato
+            QMetaObject::invokeMethod(this, [this, regionId]() {
+                for (size_t i = 0; i < m_regions.size(); ++i) {
+                    if (m_regions[i].id == regionId) {
+                        Q_EMIT dataChanged(index(static_cast<int>(i)), index(static_cast<int>(i)));
+                        break;
+                    }
+                }
+                Q_EMIT peaksReady(regionId);
+            }, Qt::QueuedConnection);
         } else {
             qCWarning(novaModel) << "📈 No se pudieron calcular los picos de"
                                  << regionId.toStdString() << "(la forma de onda quedará plana)";
@@ -623,31 +634,51 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
                 return;
             }
 
-            // Nombre único dentro de la carpeta de audio del proyecto. Se lista
-            // una sola vez la carpeta para no hacer hasta 1000 QFileInfo::exists.
+            // Comprobar si el archivo de audio ya reside dentro de destDir (por ejemplo,
+            // si el usuario seleccionó un archivo que ya estaba en la sesión o fue importado previamente)
             QString destPath;
-            QSet<QString> existentes;
-            for (const QString &f : QDir(destDir).entryList(QDir::Files)) existentes.insert(f);
-            for (int i = 1; i < 1000; ++i) {
-                const QString candidateName = QString("%1%2.%3")
-                    .arg(baseName,
-                         (i == 1 ? QString() : QString("-%1").arg(i)),
-                         suffix);
-                const QString candidate = destDir + "/" + candidateName;
-                if (!existentes.contains(candidateName) && !QFileInfo::exists(candidate)) {
-                    destPath = candidate;
-                    break;
+            QFileInfo cleanInfo(cleanPath);
+            QDir targetDir(destDir);
+            if (targetDir.canonicalPath() == cleanInfo.dir().canonicalPath()) {
+                destPath = cleanPath;
+            } else {
+                // Si ya existe en destDir un archivo con el mismo nombre y exactamente el mismo tamaño,
+                // reutilizarlo directamente para no saturar el disco con copias duplicadas (audio-2.wav, audio-3.wav...)
+                const QString targetCandidate = destDir + "/" + fileInfo.fileName();
+                if (QFileInfo::exists(targetCandidate)) {
+                    QFileInfo targetInfo(targetCandidate);
+                    if (targetInfo.size() == cleanInfo.size() && cleanInfo.size() > 0) {
+                        destPath = targetCandidate;
+                    }
                 }
-            }
 
-            if (destPath.isEmpty() || !QFile::copy(cleanPath, destPath)) {
-                qCCritical(novaModel) << "❌ Import: no se pudo copiar el archivo a:" << destPath;
-                QMetaObject::invokeMethod(this, [this, finishedFlag]() {
-                    finishedFlag->store(true);
-                    Q_EMIT importFinished(false, QStringLiteral("No se pudo copiar el archivo al proyecto"));
-                    Q_EMIT importingChanged(false);
-                }, Qt::QueuedConnection);
-                return;
+                if (destPath.isEmpty()) {
+                    // Nombre único dentro de la carpeta de audio del proyecto. Se lista
+                    // una sola vez la carpeta para no hacer hasta 1000 QFileInfo::exists.
+                    QSet<QString> existentes;
+                    for (const QString &f : QDir(destDir).entryList(QDir::Files)) existentes.insert(f);
+                    for (int i = 1; i < 1000; ++i) {
+                        const QString candidateName = QString("%1%2.%3")
+                            .arg(baseName,
+                                 (i == 1 ? QString() : QString("-%1").arg(i)),
+                                 suffix);
+                        const QString candidate = destDir + "/" + candidateName;
+                        if (!existentes.contains(candidateName) && !QFileInfo::exists(candidate)) {
+                            destPath = candidate;
+                            break;
+                        }
+                    }
+
+                    if (destPath.isEmpty() || !QFile::copy(cleanPath, destPath)) {
+                        qCCritical(novaModel) << "❌ Import: no se pudo copiar el archivo a:" << destPath;
+                        QMetaObject::invokeMethod(this, [this, finishedFlag]() {
+                            finishedFlag->store(true);
+                            Q_EMIT importFinished(false, QStringLiteral("No se pudo copiar el archivo al proyecto"));
+                            Q_EMIT importingChanged(false);
+                        }, Qt::QueuedConnection);
+                        return;
+                    }
+                }
             }
 
             const qint64 tCopy = QDateTime::currentMSecsSinceEpoch();
@@ -869,9 +900,26 @@ void NovaRegionModel::removeRegion(int regionIndex)
 
     auto item = m_regions[static_cast<size_t>(regionIndex)];
 
-    // 🧹 Liberar memoria RAM de la forma de onda inmediatamente (Bug 6)
+    // 1. Deseleccionar ANTES de beginRemoveRows para que ningún binding de la UI
+    // intente acceder a propiedades de una fila que está siendo destruida.
+    if (m_selectedRegionIndex == regionIndex) {
+        m_selectedRegionIndex = -1;
+        Q_EMIT selectedRegionIndexChanged(-1);
+    } else if (m_selectedRegionIndex > regionIndex) {
+        m_selectedRegionIndex--;
+        Q_EMIT selectedRegionIndexChanged(m_selectedRegionIndex);
+    }
+
+    // 2. 🧹 Liberar memoria RAM de la forma de onda inmediatamente
     NovaWaveformCache::removePeaks(item.id);
 
+    // 3. 🧹 Eliminar archivo de caché .novapeak en disco si existe
+    if (m_session) {
+        const QString sessionPeaksDir = QString::fromStdString(m_session->path()) + "/peaks";
+        QFile::remove(sessionPeaksDir + "/" + item.id + ".novapeak");
+    }
+
+    // 4. Remover región de la playlist en el motor Ardour/Stubs
     if (m_session && item.trackIndex >= 0) {
         auto track = findTrackByIndex(item.trackIndex);
         if (track && track->playlist() && item.regionPtr) {
@@ -888,15 +936,6 @@ void NovaRegionModel::removeRegion(int regionIndex)
         m_liveRecordingIndex = -1;
     } else if (m_liveRecordingIndex > regionIndex) {
         m_liveRecordingIndex--;
-    }
-
-    // Actualizar selección global
-    if (m_selectedRegionIndex == regionIndex) {
-        m_selectedRegionIndex = -1;
-        Q_EMIT selectedRegionIndexChanged(m_selectedRegionIndex);
-    } else if (m_selectedRegionIndex > regionIndex) {
-        m_selectedRegionIndex--;
-        Q_EMIT selectedRegionIndexChanged(m_selectedRegionIndex);
     }
 
     Q_EMIT regionCountChanged(static_cast<int>(m_regions.size()));
