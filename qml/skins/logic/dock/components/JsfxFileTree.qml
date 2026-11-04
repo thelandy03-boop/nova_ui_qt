@@ -490,6 +490,7 @@ Rectangle {
 
                                 // Chevron interactivo
                                 Canvas {
+                                    id: chevronCanvas
                                     width: 8; height: 8
                                     anchors.verticalCenter: parent.verticalCenter
                                     onPaint: {
@@ -514,7 +515,7 @@ Rectangle {
 
                                     Connections {
                                         target: model
-                                        function onCollapsedChanged() { parent.requestPaint() }
+                                        function onCollapsedChanged() { chevronCanvas.requestPaint() }
                                     }
                                 }
 

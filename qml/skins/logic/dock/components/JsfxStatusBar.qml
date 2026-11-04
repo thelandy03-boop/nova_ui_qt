@@ -61,6 +61,7 @@ Rectangle {
             Layout.alignment: Qt.AlignVCenter
 
             Canvas {
+                id: logCanvas
                 width: 11; height: 10
                 anchors.verticalCenter: parent.verticalCenter
                 onPaint: {
@@ -80,7 +81,7 @@ Rectangle {
                 }
                 Connections {
                     target: root
-                    function onHasErrorChanged() { parent.requestPaint() }
+                    function onHasErrorChanged() { logCanvas.requestPaint() }
                 }
             }
 

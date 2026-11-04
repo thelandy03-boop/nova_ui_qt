@@ -204,7 +204,10 @@ Rectangle {
         }
 
         // 1. Compilación y validación de sintaxis en la VM JSFX
-        var compileErr = AudioEngine.tracks.compileJsfxScript(editorArea.text)
+        var compileErr = ""
+        if (typeof AudioEngine.tracks.compileJsfxScript === "function") {
+            compileErr = AudioEngine.tracks.compileJsfxScript(editorArea.text)
+        }
         if (compileErr && compileErr.length > 0) {
             root.statusMessage = compileErr
             root.hasError = true
