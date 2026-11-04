@@ -324,6 +324,17 @@ Rectangle {
                                 }
                             }
 
+                            onResetRequested: {
+                                if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && modelData.parameters) {
+                                    for (var p = 0; p < modelData.parameters.length; p++) {
+                                        var pr = modelData.parameters[p]
+                                        var defVal = (pr.min + pr.max) / 2.0
+                                        AudioEngine.tracks.setPluginParameter(root.trackIndex, modelData.index, pr.index, defVal)
+                                    }
+                                    root.refreshPlugins()
+                                }
+                            }
+
                             // Sliders dinámicos según los parámetros reales del plug-in
                             Row {
                                 anchors.centerIn: parent

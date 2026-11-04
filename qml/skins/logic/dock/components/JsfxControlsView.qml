@@ -208,6 +208,7 @@ Rectangle {
                 }
                 enabledFx: !root.isBypassed
                 isJsfx: true
+                showHeaderActions: false
 
                 onEditCodeRequested: {
                     root.editCodeRequested()

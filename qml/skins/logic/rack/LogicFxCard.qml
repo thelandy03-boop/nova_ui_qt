@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 Rectangle {
@@ -9,10 +10,12 @@ Rectangle {
     property bool enabledFx: true
     property color accentColor: "#3B82F6"
     property bool isJsfx: false
+    property bool showHeaderActions: true
 
     signal toggled(bool isEnabled)
     signal removeRequested()
     signal editCodeRequested()
+    signal resetRequested()
 
     default property alias content: contentSlot.data
 
@@ -63,25 +66,27 @@ Rectangle {
                 elide: Text.ElideRight
             }
 
-            // Botón editar código JSFX
+            // Botón de opciones (3 puntos ⋮) con submenú contextual
             Rectangle {
-                visible: root.isJsfx
+                id: moreBtn
+                visible: root.showHeaderActions
                 Layout.preferredWidth: 22
                 Layout.preferredHeight: 18
                 radius: 4
-                color: editCodeArea.containsMouse ? "#2563EB" : "#222530"
+                color: moreArea.containsMouse ? "#2A2E3D" : "#20232C"
+                border.color: moreArea.containsMouse ? "#3E4459" : "#2A2E3D"
+                border.width: 1
 
                 Text {
                     anchors.centerIn: parent
-                    text: "</>"
-                    color: editCodeArea.containsMouse ? "#FFFFFF" : "#38BDF8"
-                    font.pixelSize: 9
+                    text: "⋮"
+                    color: moreArea.containsMouse ? "#FFFFFF" : "#94A3B8"
+                    font.pixelSize: 13
                     font.bold: true
-                    font.family: "Monospace"
                 }
 
                 MouseArea {
-                    id: editCodeArea
+                    id: moreArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
@@ -89,42 +94,40 @@ Rectangle {
                         if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
                             AudioEngine.hapticFeedback()
                         }
-                        root.editCodeRequested()
+                        optionsMenu.open()
                     }
                 }
-            }
 
-            // Botón eliminar plugin
-            Rectangle {
-                Layout.preferredWidth: 20
-                Layout.preferredHeight: 18
-                radius: 4
-                color: deleteArea.containsMouse ? "#EF4444" : "#222530"
+                Menu {
+                    id: optionsMenu
+                    y: moreBtn.height + 4
+                    x: -80
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "✕"
-                    color: deleteArea.containsMouse ? "#FFFFFF" : "#64748B"
-                    font.pixelSize: 10
-                    font.bold: true
-                }
+                    MenuItem {
+                        text: "Ver / Editar código JSFX"
+                        visible: root.isJsfx
+                        onTriggered: root.editCodeRequested()
+                    }
 
-                MouseArea {
-                    id: deleteArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
-                            AudioEngine.hapticFeedback()
-                        }
-                        root.removeRequested()
+                    MenuItem {
+                        text: "Restablecer parámetros"
+                        onTriggered: root.resetRequested()
+                    }
+
+                    MenuSeparator {
+                        visible: root.isJsfx
+                    }
+
+                    MenuItem {
+                        text: "Eliminar plug-in"
+                        onTriggered: root.removeRequested()
                     }
                 }
             }
 
             // Interruptor ON / BYPASS
             Rectangle {
+                visible: root.showHeaderActions
                 Layout.preferredWidth: 32
                 Layout.preferredHeight: 18
                 radius: 9
