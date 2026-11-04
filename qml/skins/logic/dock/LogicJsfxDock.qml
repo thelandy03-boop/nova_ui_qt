@@ -97,6 +97,7 @@ Rectangle {
 
             onCompileClicked: root.compileAndApply()
             onSaveClicked: root.saveAndInsert()
+            onPasteClicked: editorArea.pasteFromClipboard()
             onSearchClicked: {
                 root.searchVisible = !root.searchVisible
                 if (root.searchVisible) searchBar.forceFocus()
@@ -181,10 +182,6 @@ Rectangle {
         JsfxStatusBar {
             statusMessage: root.statusMessage
             hasError: root.hasError
-            currentSection: editorArea.currentSection
-            currentLine: editorArea.currentLine
-            currentCol: editorArea.currentCol
-            onPasteClicked: editorArea.pasteFromClipboard()
         }
     }
 

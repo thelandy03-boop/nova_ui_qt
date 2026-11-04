@@ -17,6 +17,7 @@ Rectangle {
 
     signal compileClicked()
     signal saveClicked()
+    signal pasteClicked()
     signal searchClicked()
     signal closeClicked()
     signal templateSelected(string name)
@@ -239,6 +240,58 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.saveClicked()
+            }
+        }
+
+        // Botón 📋 Pegar
+        Rectangle {
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
+            Layout.preferredWidth: pasteBtnRow.implicitWidth + 20
+            radius: 3
+            color: pasteMouse.containsMouse ? "#323846" : "#252832"
+            border.color: "#343A48"
+            border.width: 1
+
+            Row {
+                id: pasteBtnRow
+                anchors.centerIn: parent
+                spacing: 6
+
+                Canvas {
+                    width: 11; height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.strokeStyle = "#E8EAED"
+                        ctx.lineWidth = 1.1
+                        // Portapapeles
+                        ctx.strokeRect(1, 2, 9, 9)
+                        // Clip dorado
+                        ctx.fillStyle = "#D4B16A"
+                        ctx.fillRect(3.5, 0.5, 4, 2.5)
+                        // Líneas de texto
+                        ctx.beginPath()
+                        ctx.moveTo(3, 5)
+                        ctx.lineTo(8, 5)
+                        ctx.moveTo(3, 7.5)
+                        ctx.lineTo(8, 7.5)
+                        ctx.stroke()
+                    }
+                }
+
+                Text { text: "Pegar"; color: "#E8EAED"; font.pixelSize: 11; font.family: "Segoe UI, Inter, Sans-serif" }
+            }
+
+            MouseArea {
+                id: pasteMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                ToolTip.visible: containsMouse
+                ToolTip.text: "Pegar texto del portapapeles (Ctrl+V)"
+                ToolTip.delay: 300
+                onClicked: root.pasteClicked()
             }
         }
 
