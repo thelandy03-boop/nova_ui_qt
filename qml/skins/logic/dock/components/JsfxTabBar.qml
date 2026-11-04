@@ -150,84 +150,76 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // Selector segmentado de vista: [ 🎛️ Controles ] | [ </> Código ]
-        Rectangle {
-            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
-            Layout.preferredWidth: viewModeRow.implicitWidth + 4
-            radius: 4
-            color: "#181A22"
-            border.color: "#2C303E"
-            border.width: 1
+        // Botones de Modo de Vista: [ 🎛️ Controles ] y [ </> Código ]
+        Row {
+            spacing: 4
+            Layout.alignment: Qt.AlignVCenter
 
-            Row {
-                id: viewModeRow
-                anchors.centerIn: parent
-                spacing: 2
+            // Botón [ 🎛️ Controles ]
+            Rectangle {
+                width: 90
+                height: (Qt.platform.os === "android") ? 28 : 24
+                radius: 3
+                color: root.activeView === "ui" ? "#2563EB" : (uiMouse.containsMouse ? "#323846" : "#252832")
+                border.color: root.activeView === "ui" ? "#3B82F6" : "#343A48"
+                border.width: 1
 
-                // Pestaña UI / Controles
-                Rectangle {
-                    width: uiModeText.implicitWidth + 16
-                    height: (Qt.platform.os === "android") ? 24 : 20
-                    radius: 3
-                    color: root.activeView === "ui" ? "#2563EB" : (uiMouse.containsMouse ? "#262933" : "transparent")
-
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 4
-                        Text { text: "🎛️"; font.pixelSize: 10 }
-                        Text {
-                            id: uiModeText
-                            text: "Controles"
-                            color: root.activeView === "ui" ? "#FFFFFF" : "#94A3B8"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.family: "Segoe UI, Inter, Sans-serif"
-                        }
-                    }
-
-                    MouseArea {
-                        id: uiMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.viewModeChanged("ui")
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 5
+                    Text { text: "🎛️"; font.pixelSize: 10 }
+                    Text {
+                        text: "Controles"
+                        color: root.activeView === "ui" ? "#FFFFFF" : "#E8EAED"
+                        font.pixelSize: 11
+                        font.bold: true
+                        font.family: "Segoe UI, Inter, Sans-serif"
                     }
                 }
 
-                // Pestaña Código </>
-                Rectangle {
-                    width: codeModeText.implicitWidth + 16
-                    height: (Qt.platform.os === "android") ? 24 : 20
-                    radius: 3
-                    color: root.activeView === "code" ? "#2563EB" : (codeMouse.containsMouse ? "#262933" : "transparent")
+                MouseArea {
+                    id: uiMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.viewModeChanged("ui")
+                }
+            }
 
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: 4
-                        Text {
-                            text: "</>"
-                            color: root.activeView === "code" ? "#FFFFFF" : "#38BDF8"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.family: "Monospace"
-                        }
-                        Text {
-                            id: codeModeText
-                            text: "Código"
-                            color: root.activeView === "code" ? "#FFFFFF" : "#94A3B8"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.family: "Segoe UI, Inter, Sans-serif"
-                        }
-                    }
+            // Botón [ </> Código ]
+            Rectangle {
+                width: 80
+                height: (Qt.platform.os === "android") ? 28 : 24
+                radius: 3
+                color: root.activeView === "code" ? "#2563EB" : (codeMouse.containsMouse ? "#323846" : "#252832")
+                border.color: root.activeView === "code" ? "#3B82F6" : "#343A48"
+                border.width: 1
 
-                    MouseArea {
-                        id: codeMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.viewModeChanged("code")
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 5
+                    Text {
+                        text: "</>"
+                        color: root.activeView === "code" ? "#FFFFFF" : "#38BDF8"
+                        font.pixelSize: 10
+                        font.bold: true
+                        font.family: "Monospace"
                     }
+                    Text {
+                        text: "Código"
+                        color: root.activeView === "code" ? "#FFFFFF" : "#E8EAED"
+                        font.pixelSize: 11
+                        font.bold: true
+                        font.family: "Segoe UI, Inter, Sans-serif"
+                    }
+                }
+
+                MouseArea {
+                    id: codeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.viewModeChanged("code")
                 }
             }
         }
