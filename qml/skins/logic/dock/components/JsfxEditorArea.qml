@@ -168,34 +168,16 @@ Item {
                 width: Math.max(editorScrollView.width - gutter.width - 50, codeTextEdit.contentWidth + 40)
                 height: parent.height
 
-                // Resaltado de línea activa estilo VS Code
+                // Resaltado de línea activa estilo VS Code alineado al píxel exacto
                 Rectangle {
                     x: 0
-                    y: codeTextEdit.cursorRectangle.y
+                    y: codeTextEdit.y + codeTextEdit.cursorRectangle.y
                     width: parent.width
                     height: codeTextEdit.cursorRectangle.height > 0 ? codeTextEdit.cursorRectangle.height : 18
                     color: "#20232B"
                     border.color: "#282C37"
                     border.width: 1
                     visible: codeTextEdit.activeFocus
-                }
-
-                // Guías de indentación verticales
-                Row {
-                    x: 10 + 32
-                    y: 8
-                    height: codeTextEdit.contentHeight
-                    spacing: 31
-                    opacity: 0.12
-
-                    Repeater {
-                        model: 6
-                        delegate: Rectangle {
-                            width: 1
-                            height: codeTextEdit.contentHeight
-                            color: "#8F94A0"
-                        }
-                    }
                 }
 
                 // TextEdit con renderizado nativo nítido
