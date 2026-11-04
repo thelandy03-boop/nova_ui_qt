@@ -494,11 +494,12 @@ Rectangle {
                                             radius: 3
                                             color: tplMouse.containsMouse ? "#2A2D2E" : "transparent"
 
-                                            ColumnLayout {
-                                                anchors.fill: parent
+                                            Column {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.verticalCenter: parent.verticalCenter
                                                 anchors.leftMargin: 8
                                                 spacing: 2
-                                                alignment: Qt.AlignVCenter
 
                                                 Text {
                                                     text: "⚡ " + modelData.name
