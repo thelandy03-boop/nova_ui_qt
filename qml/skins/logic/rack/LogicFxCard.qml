@@ -8,9 +8,11 @@ Rectangle {
     property string category: "EQ"
     property bool enabledFx: true
     property color accentColor: "#3B82F6"
+    property bool isJsfx: false
 
     signal toggled(bool isEnabled)
     signal removeRequested()
+    signal editCodeRequested()
 
     default property alias content: contentSlot.data
 
@@ -59,6 +61,37 @@ Rectangle {
                 font.pixelSize: 11
                 font.bold: true
                 elide: Text.ElideRight
+            }
+
+            // Botón editar código JSFX
+            Rectangle {
+                visible: root.isJsfx
+                Layout.preferredWidth: 22
+                Layout.preferredHeight: 18
+                radius: 4
+                color: editCodeArea.containsMouse ? "#2563EB" : "#222530"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "</>"
+                    color: editCodeArea.containsMouse ? "#FFFFFF" : "#38BDF8"
+                    font.pixelSize: 9
+                    font.bold: true
+                    font.family: "Monospace"
+                }
+
+                MouseArea {
+                    id: editCodeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.editCodeRequested()
+                    }
+                }
             }
 
             // Botón eliminar plugin

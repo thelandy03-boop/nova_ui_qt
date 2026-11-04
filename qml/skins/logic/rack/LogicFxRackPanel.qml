@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import "../../../dialogs"
 
 Rectangle {
     id: root
@@ -305,6 +306,11 @@ Rectangle {
                                 return "#38BDF8"
                             }
                             enabledFx: !modelData.bypassed && !root.masterBypass
+                            isJsfx: (modelData.category === "JSFX") || (modelData.uniqueId && modelData.uniqueId.indexOf("jsfx:") === 0)
+
+                            onEditCodeRequested: {
+                                jsfxEditor.openForPlugin(root.trackIndex, modelData.index, modelData.name)
+                            }
 
                             onToggled: (isEnabled) => {
                                 if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0) {
@@ -491,6 +497,37 @@ Rectangle {
                     font.pixelSize: 11
                 }
 
+                // Acciones rápidas JSFX
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 32
+                        radius: 6
+                        color: newJsfxBtnArea.containsMouse ? "#2563EB" : "#1D4ED8"
+
+                        Row {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Text { text: "➕"; color: "#FFFFFF"; font.pixelSize: 11 }
+                            Text { text: "Nuevo Script JSFX (desde plantilla)"; color: "#FFFFFF"; font.pixelSize: 11; font.bold: true }
+                        }
+
+                        MouseArea {
+                            id: newJsfxBtnArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.showAddDialog = false
+                                jsfxEditor.openNewScript(root.trackIndex)
+                            }
+                        }
+                    }
+                }
+
                 // Lista de plug-ins disponibles
                 ListView {
                     id: availableView
@@ -594,5 +631,12 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // 4. DIÁLOGO DEL EDITOR DE SCRIPTS JSFX EN VIVO
+    JsfxCodeEditorDialog {
+        id: jsfxEditor
+        visible: false
+        onScriptApplied: root.refreshPlugins()
     }
 }

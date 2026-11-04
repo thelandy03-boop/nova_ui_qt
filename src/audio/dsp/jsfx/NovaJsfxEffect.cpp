@@ -37,25 +37,20 @@ bool NovaJsfxEffect::loadScriptFile(const QString& filePath, QString* outError)
     return loadScript(content, outError);
 }
 
+bool NovaJsfxEffect::recompile(const QString& newSource, QString* outError)
+{
+    return loadScript(newSource, outError);
+}
+
 bool NovaJsfxEffect::loadScript(const QString& scriptContent, QString* outError)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-
-    parseScript(scriptContent);
-
-    std::string errStr;
-    bool ok = true;
-    // Compilar cada sección
-    if (!m_progInit.empty()) {
-        // ya se compilaron en parseScript
-    }
-
-    reset();
-    return ok;
+    return parseScript(scriptContent, outError);
 }
 
-void NovaJsfxEffect::parseScript(const QString& scriptContent)
+bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError)
 {
+    m_scriptContent = scriptContent;
     m_sliders.clear();
     m_sliderVarIndices.clear();
 
@@ -132,15 +127,31 @@ void NovaJsfxEffect::parseScript(const QString& scriptContent)
     }
 
     // Compilar programas EEL2 en la VM
-    m_vm.compile(initSrc.toStdString(), m_progInit);
-    m_vm.compile(sliderSrc.toStdString(), m_progSlider);
-    m_vm.compile(blockSrc.toStdString(), m_progBlock);
-    m_vm.compile(sampleSrc.toStdString(), m_progSample);
+    std::string err;
+    if (!m_vm.compile(initSrc.toStdString(), m_progInit, &err)) {
+        if (outError) *outError = QStringLiteral("Error en @init: %1").arg(QString::fromStdString(err));
+        return false;
+    }
+    if (!m_vm.compile(sliderSrc.toStdString(), m_progSlider, &err)) {
+        if (outError) *outError = QStringLiteral("Error en @slider: %1").arg(QString::fromStdString(err));
+        return false;
+    }
+    if (!m_vm.compile(blockSrc.toStdString(), m_progBlock, &err)) {
+        if (outError) *outError = QStringLiteral("Error en @block: %1").arg(QString::fromStdString(err));
+        return false;
+    }
+    if (!m_vm.compile(sampleSrc.toStdString(), m_progSample, &err)) {
+        if (outError) *outError = QStringLiteral("Error en @sample: %1").arg(QString::fromStdString(err));
+        return false;
+    }
 
     // Inicializar estado con la tasa de muestreo y calcular variables derivadas en @slider
     m_vm.setVariable(m_varSrate, m_lastSampleRate);
     m_vm.execute(m_progInit);
     m_vm.execute(m_progSlider);
+
+    reset();
+    return true;
 }
 
 void NovaJsfxEffect::setParameter(int paramIndex, float value)

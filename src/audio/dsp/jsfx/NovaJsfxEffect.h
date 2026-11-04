@@ -38,18 +38,21 @@ public:
     float getParameter(int paramIndex) const override;
     void reset() override;
 
-    // Carga de scripts
+    // Carga y recompilación en caliente de scripts
     bool loadScript(const QString& scriptContent, QString* outError = nullptr);
     bool loadScriptFile(const QString& filePath, QString* outError = nullptr);
+    bool recompile(const QString& newSource, QString* outError = nullptr);
 
+    QString scriptSource() const { return m_scriptContent; }
     const std::vector<SliderMeta>& sliders() const { return m_sliders; }
 
 private:
-    void parseScript(const QString& scriptContent);
+    bool parseScript(const QString& scriptContent, QString* outError = nullptr);
 
     QString m_id = QStringLiteral("jsfx:custom");
     QString m_name = QStringLiteral("JSFX Plugin");
     QString m_description;
+    QString m_scriptContent;
 
     NovaJsfxVm m_vm;
     NovaJsfxVm::Program m_progInit;

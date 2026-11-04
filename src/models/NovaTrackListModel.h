@@ -66,6 +66,10 @@ public:
     Q_INVOKABLE bool isTrackPluginsBypassed(int trackRow) const;
     Q_INVOKABLE bool setPluginParameter(int trackRow, int pluginIndex, int paramIndex, float value);
     Q_INVOKABLE bool importJsfxScript(const QString &filePath);
+    Q_INVOKABLE bool isJsfxPlugin(int trackRow, int pluginIndex) const;
+    Q_INVOKABLE QString getPluginScript(int trackRow, int pluginIndex) const;
+    Q_INVOKABLE QString updatePluginScript(int trackRow, int pluginIndex, const QString &sourceCode);
+    Q_INVOKABLE bool createCustomJsfxPlugin(int trackRow, const QString &name, const QString &sourceCode);
 
     /** Devuelve la cadena DSP activa para una pista dada. */
     class NovaDspChain* dspChainForTrack(int trackRow) const;

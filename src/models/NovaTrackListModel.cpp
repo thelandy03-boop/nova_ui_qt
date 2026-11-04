@@ -10,6 +10,7 @@
 #include "audio/dsp/jsfx/NovaJsfxManager.h"
 
 #include <QMetaObject>
+#include <QDateTime>
 
 #include <cmath>
 #include <algorithm>
@@ -960,4 +961,106 @@ bool NovaTrackListModel::importJsfxScript(const QString &filePath)
     }
     qCWarning(novaCore) << "Error al importar script JSFX:" << err;
     return false;
+}
+
+bool NovaTrackListModel::isJsfxPlugin(int trackRow, int pluginIndex) const
+{
+    if (d_ptr->stubPlugins.contains(trackRow) &&
+        pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
+        const auto &p = d_ptr->stubPlugins[trackRow][pluginIndex];
+        return p.id.startsWith(QStringLiteral("jsfx:")) || p.category == QStringLiteral("JSFX");
+    }
+    return false;
+}
+
+QString NovaTrackListModel::getPluginScript(int trackRow, int pluginIndex) const
+{
+    if (d_ptr->stubPlugins.contains(trackRow) &&
+        pluginIndex >= 0 && pluginIndex < d_ptr->stubPlugins[trackRow].size()) {
+        const auto &p = d_ptr->stubPlugins[trackRow][pluginIndex];
+        if (p.dspEffect) {
+            auto jsfx = std::dynamic_pointer_cast<NovaJsfxEffect>(p.dspEffect);
+            if (jsfx) {
+                return jsfx->scriptSource();
+            }
+        }
+    }
+    return QString();
+}
+
+QString NovaTrackListModel::updatePluginScript(int trackRow, int pluginIndex, const QString &sourceCode)
+{
+    if (!d_ptr->stubPlugins.contains(trackRow) ||
+        pluginIndex < 0 || pluginIndex >= d_ptr->stubPlugins[trackRow].size()) {
+        return QStringLiteral("Índice de plugin o pista inválido");
+    }
+
+    auto &stub = d_ptr->stubPlugins[trackRow][pluginIndex];
+    if (!stub.dspEffect) {
+        return QStringLiteral("El plugin no tiene procesador DSP activo");
+    }
+
+    auto jsfx = std::dynamic_pointer_cast<NovaJsfxEffect>(stub.dspEffect);
+    if (!jsfx) {
+        return QStringLiteral("El plugin seleccionado no es un script JSFX");
+    }
+
+    QString err;
+    if (!jsfx->recompile(sourceCode, &err)) {
+        return err.isEmpty() ? QStringLiteral("Error de compilación desconocido") : err;
+    }
+
+    // Actualizar nombre y sliders en los metadatos de la UI
+    stub.name = jsfx->name();
+    stub.parameters.clear();
+    for (const auto& sl : jsfx->sliders()) {
+        QVariantMap pmap;
+        pmap[QStringLiteral("index")] = sl.index;
+        pmap[QStringLiteral("name")] = sl.name;
+        pmap[QStringLiteral("value")] = sl.defaultValue;
+        pmap[QStringLiteral("min")] = sl.minValue;
+        pmap[QStringLiteral("max")] = sl.maxValue;
+        pmap[QStringLiteral("unit")] = sl.unit;
+        stub.parameters.append(pmap);
+    }
+
+    Q_EMIT trackPluginsChanged(trackRow);
+    return QString(); // Éxito
+}
+
+bool NovaTrackListModel::createCustomJsfxPlugin(int trackRow, const QString &name, const QString &sourceCode)
+{
+    auto jsfx = std::make_shared<NovaJsfxEffect>(sourceCode, name);
+    QString err;
+    if (!jsfx->recompile(sourceCode, &err)) {
+        qCWarning(novaCore) << "Error al compilar nuevo script JSFX:" << err;
+        return false;
+    }
+
+    NovaTrackListModelPrivate::PluginStubInfo stub;
+    stub.id = QStringLiteral("jsfx:user_%1").arg(QDateTime::currentMSecsSinceEpoch());
+    stub.name = jsfx->name().isEmpty() ? name : jsfx->name();
+    stub.category = QStringLiteral("JSFX");
+
+    for (const auto& sl : jsfx->sliders()) {
+        QVariantMap pmap;
+        pmap[QStringLiteral("index")] = sl.index;
+        pmap[QStringLiteral("name")] = sl.name;
+        pmap[QStringLiteral("value")] = sl.defaultValue;
+        pmap[QStringLiteral("min")] = sl.minValue;
+        pmap[QStringLiteral("max")] = sl.maxValue;
+        pmap[QStringLiteral("unit")] = sl.unit;
+        stub.parameters.append(pmap);
+    }
+
+    stub.dspEffect = jsfx;
+
+    if (!d_ptr->trackDspChains.contains(trackRow)) {
+        d_ptr->trackDspChains[trackRow] = std::make_shared<NovaDspChain>();
+    }
+    d_ptr->trackDspChains[trackRow]->addEffect(jsfx);
+    d_ptr->stubPlugins[trackRow].append(stub);
+
+    Q_EMIT trackPluginsChanged(trackRow);
+    return true;
 }
