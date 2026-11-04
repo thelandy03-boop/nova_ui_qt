@@ -56,6 +56,10 @@ Rectangle {
         onActivated: root.compileAndApply()
     }
     Shortcut {
+        sequence: "F2"
+        onActivated: fileTree.startRenameSelected()
+    }
+    Shortcut {
         sequence: "Ctrl+B"
         onActivated: root.showSidebar = !root.showSidebar
     }
@@ -136,7 +140,7 @@ Rectangle {
                 }
             }
 
-            // 3.2 Árbol de proyectos y archivos
+            // 3.2 Árbol de proyectos y archivos con renombrado seguro
             JsfxFileTree {
                 id: fileTree
                 Layout.preferredWidth: root.showSidebar ? 180 : 0
@@ -145,6 +149,7 @@ Rectangle {
                 clip: true
                 selectedFile: root.selectedFile
                 onFileSelected: (name) => root.loadFileByName(name)
+                onFileRenamed: (oldName, newName) => root.handleFileRenamed(oldName, newName)
             }
 
             // 3.3 Editor de código con Gutter alineado
@@ -153,7 +158,10 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                onTextModified: root.isModified = true
+                onTextModified: {
+                    root.isModified = true
+                    root.customFileScripts[root.selectedFile] = editorArea.text
+                }
             }
 
             // 3.4 Minimapa lateral estilo VS Code
@@ -210,6 +218,25 @@ Rectangle {
         }
     }
 
+    // Caché en memoria para scripts editados y renombrados
+    property var customFileScripts: ({})
+
+    function handleFileRenamed(oldName, newName) {
+        if (root.selectedFile === oldName) {
+            root.selectedFile = newName
+        }
+        if (root.pluginName === oldName) {
+            root.pluginName = newName
+        }
+        if (root.customFileScripts[oldName]) {
+            root.customFileScripts[newName] = root.customFileScripts[oldName]
+            delete root.customFileScripts[oldName]
+        } else {
+            root.customFileScripts[newName] = editorArea.text
+        }
+        root.statusMessage = "Archivo renombrado a " + newName
+    }
+
     function saveAndInsert() {
         root.compileAndApply()
     }
@@ -218,7 +245,11 @@ Rectangle {
         root.selectedFile = fname
         root.pluginName = fname
         root.isModified = false
-        editorArea.text = templates.getTemplate(fname)
+        if (root.customFileScripts && root.customFileScripts[fname]) {
+            editorArea.text = root.customFileScripts[fname]
+        } else {
+            editorArea.text = templates.getTemplate(fname)
+        }
         root.statusMessage = "Compiled successfully"
         root.hasError = false
         editorArea.updateCursorPosition()
