@@ -93,7 +93,7 @@ Rectangle {
                 LogicJsfxDock {
                     id: jsfxDock
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.showJsfxDock ? Math.min(root.height * 0.65, 380) : 0
+                    Layout.preferredHeight: root.showJsfxDock ? Math.min(root.height * 0.72, 450) : 0
                     visible: root.showJsfxDock
                     clip: true
 

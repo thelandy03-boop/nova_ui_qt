@@ -153,32 +153,6 @@ Rectangle {
                 }
 
                 Item { Layout.fillWidth: true }
-
-                // Botón [ ↺ Reset ] 100% funcional (restablece los faders a sus valores por defecto)
-                Rectangle {
-                    Layout.preferredHeight: 22
-                    Layout.preferredWidth: resetRow.implicitWidth + 16
-                    radius: 3
-                    color: resetMouse.containsMouse ? "#3E4250" : "#2A2D37"
-                    border.color: "#434757"
-                    border.width: 1
-
-                    Row {
-                        id: resetRow
-                        anchors.centerIn: parent
-                        spacing: 5
-                        Text { text: "↺"; color: "#94A3B8"; font.pixelSize: 10 }
-                        Text { text: "Reset"; color: "#CBD5E1"; font.pixelSize: 10; font.bold: true }
-                    }
-
-                    MouseArea {
-                        id: resetMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.resetAllSliders()
-                    }
-                }
             }
         }
 
@@ -207,18 +181,18 @@ Rectangle {
             ListView {
                 id: stripsList
                 anchors.fill: parent
-                anchors.margins: 14
+                anchors.margins: 16
                 orientation: ListView.Horizontal
                 visible: root.slidersList.length > 0
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: root.slidersList
-                spacing: 10
+                spacing: 12
 
                 delegate: Rectangle {
                     id: stripCard
-                    width: 96
-                    height: stripsList.height
+                    width: Math.max(104, Math.min(150, (stripsList.width - (root.slidersList.length - 1) * 12) / Math.max(1, root.slidersList.length)))
+                    height: Math.max(160, stripsList.height - 4)
                     radius: 4
                     color: stripMouse.containsMouse ? "#232631" : "#1D1F27"
                     border.color: stripMouse.containsMouse ? "#3B4154" : "#272A36"
