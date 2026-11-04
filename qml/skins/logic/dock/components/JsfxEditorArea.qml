@@ -165,7 +165,7 @@ Item {
             // ZONA EDITABLE DEL CÓDIGO
             Item {
                 id: codeEditorContainer
-                width: Math.max(editorScrollView.width - gutter.width - 50, codeTextEdit.contentWidth + 40)
+                width: Math.max(editorScrollView.width - gutter.width - 20, codeTextEdit.contentWidth + 30)
                 height: parent.height
 
                 // Resaltado de línea activa estilo VS Code alineado al píxel exacto
@@ -186,8 +186,8 @@ Item {
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.topMargin: 8
-                    anchors.leftMargin: 10
-                    width: parent.width
+                    anchors.leftMargin: 4
+                    width: parent.width - 10
                     height: Math.max(contentHeight + 30, editorScrollView.height)
                     color: "#D4D4D4"
                     selectedTextColor: "#FFFFFF"

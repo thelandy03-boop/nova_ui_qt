@@ -70,14 +70,14 @@ Rectangle {
                 Layout.preferredHeight: 22
                 color: "transparent"
 
-                RowLayout {
+                Row {
                     anchors.fill: parent
                     anchors.leftMargin: 16
                     spacing: 6
 
                     Canvas {
                         width: 8; height: 8
-                        Layout.alignment: Qt.AlignVCenter
+                        anchors.verticalCenter: parent.verticalCenter
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, 8, 8)
@@ -100,6 +100,7 @@ Rectangle {
                     }
 
                     Text {
+                        anchors.verticalCenter: parent.verticalCenter
                         text: "jsfx_effects"
                         color: "#CCCCCC"
                         font.pixelSize: 11
@@ -126,15 +127,16 @@ Rectangle {
                     Layout.preferredHeight: 22
                     color: root.selectedFile === modelData.name ? "#2A2D37" : (fileMouse.containsMouse ? "#20232B" : "transparent")
 
-                    RowLayout {
+                    Row {
                         anchors.fill: parent
-                        anchors.leftMargin: 28
+                        anchors.leftMargin: 26
                         anchors.rightMargin: 8
                         spacing: 6
 
                         // Insignia vectorial JS
                         Rectangle {
-                            width: 11; height: 13
+                            width: 12; height: 13
+                            anchors.verticalCenter: parent.verticalCenter
                             color: "#1E2026"
                             border.color: root.selectedFile === modelData.name ? "#D4B16A" : "#8F94A0"
                             border.width: 1
@@ -150,12 +152,13 @@ Rectangle {
                         }
 
                         Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 26 - 8 - 12 - 6
                             text: modelData.name
                             color: root.selectedFile === modelData.name ? "#FFFFFF" : "#CCCCCC"
                             font.pixelSize: 11
                             font.family: "Monospace, Consolas, Courier New"
                             elide: Text.ElideRight
-                            Layout.fillWidth: true
                         }
                     }
 
