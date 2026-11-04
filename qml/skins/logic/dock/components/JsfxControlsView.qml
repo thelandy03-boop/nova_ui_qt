@@ -56,7 +56,9 @@ Rectangle {
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && root.pluginIndex >= 0) {
             try {
                 var trackPlugins = AudioEngine.tracks.trackPlugins(root.trackIndex)
-                if (trackPlugins && root.pluginIndex >= 0 && root.pluginIndex < trackPlugins.length) {
+                if (!trackPlugins || root.pluginIndex >= trackPlugins.length) {
+                    root.pluginIndex = -1
+                } else {
                     var plg = trackPlugins[root.pluginIndex]
                     if (plg) {
                         var matchesScript = true
@@ -265,12 +267,23 @@ Rectangle {
                         model: root.slidersList
 
                         delegate: LogicFxSlider {
+                            id: fxSliderItem
                             property var p: modelData
+                            property real currentVal: (p.value !== undefined) ? p.value : 0.0
                             label: p.name || ("P" + (index + 1))
-                            value: (p.max > p.min) ? Math.max(0.0, Math.min(1.0, (p.value - p.min) / (p.max - p.min))) : 0.5
+                            value: (p.max > p.min) ? Math.max(0.0, Math.min(1.0, (currentVal - p.min) / (p.max - p.min))) : 0.5
                             displayValue: {
-                                var num = p.value
-                                var fmt = (Math.abs(num) >= 100) ? num.toFixed(0) : ((Math.abs(num) >= 10) ? num.toFixed(1) : num.toFixed(2))
+                                var num = currentVal
+                                var fmt = ""
+                                if (p.step >= 1 || (Number.isInteger(num) && (!p.step || p.step >= 1))) {
+                                    fmt = Math.round(num).toString()
+                                } else if (Math.abs(num) >= 100) {
+                                    fmt = num.toFixed(0)
+                                } else if (Math.abs(num) >= 10) {
+                                    fmt = num.toFixed(1)
+                                } else {
+                                    fmt = num.toFixed(2)
+                                }
                                 return fmt + (p.unit ? " " + p.unit : "")
                             }
                             activeColor: fxCard.accentColor
@@ -280,6 +293,7 @@ Rectangle {
                                 if (p.step > 0) {
                                     realVal = Math.round(realVal / p.step) * p.step
                                 }
+                                currentVal = realVal
                                 p.value = realVal
                                 root.parameterChanged(p.index !== undefined ? p.index : index, realVal)
                                 if (typeof AudioEngine !== "undefined" && AudioEngine.tracks &&

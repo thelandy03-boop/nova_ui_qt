@@ -18,6 +18,12 @@ Rectangle {
     property int activeFxTrackIndex: -1
     property string activeFxTrackName: ""
 
+    onActiveFxTrackIndexChanged: {
+        if (jsfxDock && jsfxDock.pluginIndex < 0) {
+            jsfxDock.trackIndex = root.activeFxTrackIndex
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

@@ -330,6 +330,27 @@ Rectangle {
     }
 
     function saveAndInsert() {
+        if (root.pluginIndex < 0 && typeof AudioEngine !== "undefined" && AudioEngine.tracks) {
+            var trk = (root.trackIndex >= 0) ? root.trackIndex : 0
+            var plugName = root.pluginName.replace(".jsfx", "")
+            var ok = AudioEngine.tracks.createCustomJsfxPlugin(trk, plugName, editorArea.text)
+            if (ok) {
+                root.trackIndex = trk
+                var plugins = AudioEngine.tracks.trackPlugins(trk)
+                root.pluginIndex = (plugins && plugins.length > 0) ? (plugins.length - 1) : 0
+                root.activeRackPluginFile = root.pluginName
+                root.activeRackPluginIndex = root.pluginIndex
+                root.isNewPlugin = false
+                root.isModified = false
+                root.hasError = false
+                root.statusMessage = "Plug-in insertado en la pista con éxito"
+                statusBar.setLog(false, root.statusMessage)
+                root.scriptApplied()
+                controlsView.refreshSliders()
+                root.activeView = "ui"
+                return
+            }
+        }
         root.compileAndApply()
     }
 
