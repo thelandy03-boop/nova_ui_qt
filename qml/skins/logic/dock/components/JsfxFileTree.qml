@@ -632,9 +632,9 @@ Rectangle {
                                             }
                                         }
 
-                                        // Nombre del archivo
+                                        // Nombre del archivo (en PC ocupa todo el ancho)
                                         Text {
-                                            width: parent.width - 24 - 44
+                                            width: (Qt.platform.os === "android") ? (parent.width - 24 - 44) : (parent.width - 24 - 8)
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: model.name
                                             color: root.selectedFile === model.name ? "#FFFFFF" : "#CCCCCC"
@@ -643,11 +643,12 @@ Rectangle {
                                             elide: Text.ElideRight
                                         }
 
-                                        // Botón lápiz renombrar (Android / Hover)
+                                        // Botón lápiz renombrar (EXCLUSIVO ANDROID)
                                         Rectangle {
-                                            width: 16; height: 16
+                                            width: (Qt.platform.os === "android") ? 16 : 0
+                                            height: (Qt.platform.os === "android") ? 16 : 0
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: (Qt.platform.os === "android") || fileMouse.containsMouse
+                                            visible: (Qt.platform.os === "android")
                                             color: renameBtnMouse.containsMouse ? "#30363D" : "transparent"
                                             radius: 2
 
@@ -676,17 +677,18 @@ Rectangle {
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
                                                 ToolTip.visible: containsMouse
-                                                ToolTip.text: "Renombrar archivo (F2)"
+                                                ToolTip.text: "Renombrar archivo"
                                                 ToolTip.delay: 300
                                                 onClicked: root.startRename(index)
                                             }
                                         }
 
-                                        // Botón papelera eliminar (Android / Hover)
+                                        // Botón papelera eliminar (EXCLUSIVO ANDROID)
                                         Rectangle {
-                                            width: 16; height: 16
+                                            width: (Qt.platform.os === "android") ? 16 : 0
+                                            height: (Qt.platform.os === "android") ? 16 : 0
                                             anchors.verticalCenter: parent.verticalCenter
-                                            visible: ((Qt.platform.os === "android") || fileMouse.containsMouse) && filesModel.count > 1
+                                            visible: (Qt.platform.os === "android") && filesModel.count > 1
                                             color: delBtnMouse.containsMouse ? "#3B1818" : "transparent"
                                             radius: 2
 
