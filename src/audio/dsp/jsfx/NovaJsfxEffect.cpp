@@ -357,8 +357,6 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
         if (effChannels > 1) {
             m_engine->procesarMuestra(&interleavedBuffer[idxL], &interleavedBuffer[idxL + 1]);
         } else {
-            // En mono se conserva el resultado de spl0, como hacia la VM
-            // anterior; spl1 recibe la misma entrada pero se descarta.
             float descartado = interleavedBuffer[idxL];
             m_engine->procesarMuestra(&interleavedBuffer[idxL], &descartado);
         }
