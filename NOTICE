@@ -1,0 +1,43 @@
+NOVA Studio
+Copyright (C) 2026 NOVA Studio contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program includes the following third-party components:
+
+  * YSFX (JoepVanlier/ysfx), vendored in third_party/ysfx
+      Apache License 2.0
+      https://github.com/JoepVanlier/ysfx
+      Vendored at commit 5c3452fee62583aa3d1b7e877d0c758c4024af89,
+      with a local modification documented in
+      third_party/ysfx/NOVA.md (patches/0001-wdl-p1-null.patch).
+
+  * WDL (Cockos), vendored inside YSFX and in third_party/wdl
+      zlib License
+      https://www.cockos.com/wdl/
+
+  * LICE (Cockos), vendored inside YSFX
+      zlib License
+
+  * stb (Sean Barrett et al.), vendored inside YSFX and third_party/stb
+      MIT License / Public Domain
+      https://github.com/nothings/stb
+
+  * dr_libs (David Reid), vendored inside YSFX and third_party/dr_libs
+      MIT License / Unlicense
+      https://github.com/mackron/dr_libs
+
+  * minimp3 (lieff), vendored in third_party/minimp3
+      CC0 / MIT
+      https://github.com/lieff/minimp3
+
+  * Oboe (Google), fetched at configure time via FetchContent
+      Apache License 2.0
+      https://github.com/google/oboe
+
+  * Qt (The Qt Company), dynamically linked
+      LGPL v3 / GPL v3
+      https://www.qt.io

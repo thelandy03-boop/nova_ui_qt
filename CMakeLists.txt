@@ -152,6 +152,17 @@ if(NOT WIN32)
     target_link_libraries(nova_wdl_eel2 PUBLIC m)
 endif()
 
+# YSFX vendorizado (adopcion en curso, no enlazado todavia). Ver third_party/ysfx/NOVA.md.
+set(YSFX_PLUGIN OFF CACHE BOOL "" FORCE)
+set(YSFX_GFX ON CACHE BOOL "" FORCE)
+set(YSFX_PORTABLE ON CACHE BOOL "" FORCE)
+set(YSFX_TESTS OFF CACHE BOOL "" FORCE)
+set(YSFX_TOOLS OFF CACHE BOOL "" FORCE)
+set(YSFX_DEEP_STRIP OFF CACHE BOOL "" FORCE)
+set(YSFX_SKIP_CHECKSUM ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/ysfx ${CMAKE_CURRENT_BINARY_DIR}/ysfx
+                 EXCLUDE_FROM_ALL)
+
 # En Windows, el flag WIN32 evita que se abra la ventana negra de consola CMD
 # En Android, no usamos WIN32
 if(WIN32 AND NOT ANDROID)
@@ -237,18 +248,19 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/dsp/NovaReverb.cpp
     src/audio/dsp/jsfx/NovaJsfxVm.h
     src/audio/dsp/jsfx/NovaJsfxVm.cpp
-    src/audio/dsp/jsfx/NovaJsfxWdlEngine.h
-    src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp
     src/audio/dsp/jsfx/NovaJsfxEffect.h
     src/audio/dsp/jsfx/NovaJsfxEffect.cpp
     src/audio/dsp/jsfx/NovaJsfxManager.h
     src/audio/dsp/jsfx/NovaJsfxManager.cpp
+    src/audio/dsp/jsfx/NovaJsfxWdlEngine.h
+    src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp
     third_party/minimp3/minimp3.h
     third_party/dr_libs/dr_flac.h
 )
 
 # Common Qt libraries for all platforms
 target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui nova_wdl_eel2)
+
 
 if(ANDROID)
     set_property(TARGET nova_ui_qt PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
