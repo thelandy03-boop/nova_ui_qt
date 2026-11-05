@@ -283,23 +283,15 @@ std::string NovaJsfxYsfxEngine::guardarEstado()
 bool NovaJsfxYsfxEngine::cargarEstado(const std::string &estado)
 {
     if (!m_impl->fx || estado.empty()) return false;
+    std::vector<uint8_t> buf(estado.size());
+    for (size_t i = 0; i < estado.size(); ++i) buf[i] = static_cast<uint8_t>(estado[i]);
     ysfx_state_t st{};
-    st.data = reinterpret_cast<uint8_t *>(const_cast<char *>(estado.data()));
-    st.data_size = estado.size();
+    st.data = buf.data();
+    st.data_size = buf.size();
     st.sliders = nullptr;
     st.slider_count = 0;
-    // Guardar sliders actuales (restaurados por el gestor de parches) para
-    // no perderlos: ysfx_load_state los reinicia a los valores por defecto.
-    std::vector<ysfx_real> slidersGuardados;
-    uint32_t nsl = 0;
-    for (uint32_t i = 0; i < ysfx_max_sliders; ++i)
-        if (ysfx_slider_exists(m_impl->fx, i)) ++nsl;
-    slidersGuardados.resize(nsl);
-    for (uint32_t i = 0; i < nsl; ++i)
-        slidersGuardados[i] = ysfx_slider_get_value(m_impl->fx, i);
+    ysfx_delayed_init(m_impl->fx);
     bool r = ysfx_load_state(m_impl->fx, &st);
-    for (uint32_t i = 0; i < nsl; ++i)
-        ysfx_slider_set_value(m_impl->fx, i, slidersGuardados[i], false);
     return r;
 }
 

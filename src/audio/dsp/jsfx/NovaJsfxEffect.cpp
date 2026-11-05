@@ -257,7 +257,8 @@ bool NovaJsfxEffect::loadState(const QByteArray& state)
     m_engine->ejecutarInit();
     const bool ok = m_engine->cargarEstado(
         std::string(state.constData(), static_cast<size_t>(state.size())));
-    m_engine->ejecutarSlider();
+    // YSFX pone must_compute_slider a true en ysfx_load_state: @slider se
+    // ejecuta en el siguiente process(). Llamarlo aqui re-dispara @init.
     return ok;
 }
 
