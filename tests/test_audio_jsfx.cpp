@@ -61,6 +61,29 @@ int main()
                     "la memoria RAM indexada ptr[0] debe persistir y leerse correctamente");
     }
 
+    // 2b. Memoria con base entre paréntesis: (expr)[idx] para leer y escribir.
+    // Es la forma que usan los delays y reverbs reales de JSFX.
+    {
+        NovaJsfxVm vm;
+        NovaJsfxVm::Program prog;
+        bool ok = vm.compile(
+            "base = 1000; offset = 37;"
+            "(base + offset)[5] = 12.25;"
+            "leido = (base + offset)[5];"
+            "otro = (base + offset + 1)[5];",
+            prog);
+        CHECK_NAMED("vm_compile_mem_parentesis", ok,
+                    "debe compilar (expresión)[índice] para leer y escribir memoria");
+
+        vm.execute(prog);
+        CHECK_NAMED("vm_mem_parentesis_lectura",
+                    std::abs(vm.getVariableByName("leido") - 12.25) < 1e-6,
+                    "(base + offset)[5] debe leer el valor escrito en la misma dirección");
+        CHECK_NAMED("vm_mem_parentesis_direccion",
+                    std::abs(vm.getVariableByName("otro")) < 1e-9,
+                    "(base + offset + 1)[5] debe apuntar a una dirección distinta");
+    }
+
     // 3. Test de Script JSFX completo con Sliders y @sample
     {
         QString script = QStringLiteral(
@@ -101,6 +124,50 @@ int main()
                     "cambiar slider1 a -6 dB debe atenuar la señal a la mitad");
     }
 
+    // 3b. Delay realista con memoria entre paréntesis: debe compilar y sonar.
+    {
+        QString script = QStringLiteral(
+            "desc: Eco con Memoria\n"
+            "slider1:10<10,100,1>Tiempo (ms)\n"
+            "slider2:50<0,100,1>Mezcla (%)\n"
+            "\n"
+            "@init\n"
+            "buf = 0;\n"
+            "max_samples = 96000;\n"
+            "\n"
+            "@slider\n"
+            "d = floor(slider1 * 0.001 * srate);\n"
+            "d = min(max_samples - 1, max(10, d));\n"
+            "wet = slider2 / 100;\n"
+            "\n"
+            "@sample\n"
+            "read_pos = (buf - d + max_samples) % max_samples;\n"
+            "delayed = (read_pos + 100000)[0];\n"
+            "(buf + 100000)[0] = spl0 + delayed * 0.5;\n"
+            "spl0 = spl0 + delayed * wet;\n"
+            "spl1 = spl0;\n"
+            "buf = (buf + 1) % max_samples;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("jsfx_delay_parentesis_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("loadScript() debe aceptar (expr)[idx]") : err).toUtf8().constData());
+
+        std::vector<float> buffer(1100 * kChannels, 0.0f);
+        buffer[0] = 1.0f;
+        buffer[1] = 1.0f;
+        effect.process(buffer.data(), 1100, kChannels, kSampleRate);
+
+        CHECK_NAMED("jsfx_delay_primer_eco",
+                    buffer[480 * kChannels] > 0.45f && buffer[480 * kChannels] < 0.55f,
+                    "el primer eco debe aparecer a 480 muestras (10 ms a 48 kHz)");
+        CHECK_NAMED("jsfx_delay_segundo_eco",
+                    buffer[960 * kChannels] > 0.22f && buffer[960 * kChannels] < 0.28f,
+                    "el feedback debe producir un segundo eco atenuado");
+    }
+
     // 4. Test de Plugins JSFX integrados de NovaJsfxManager
     {
         auto& mgr = NovaJsfxManager::instance();
@@ -139,14 +206,31 @@ int main()
         auto aceDelay = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_delay"));
         CHECK_NAMED("jsfx_create_ace_delay", aceDelay != nullptr, "debe instanciar ACE Delay como efecto JSFX real");
         if (aceDelay) {
-            std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
-            aceDelay->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
-            CHECK_NAMED("jsfx_ace_delay_runs", !std::isnan(buffer[0]), "ACE Delay debe procesar audio sin NaN");
+            QString err;
+            bool compila = aceDelay->loadScript(
+                mgr.getScriptContent(QStringLiteral("jsfx:builtin:ace_delay")), &err);
+            CHECK_NAMED("jsfx_ace_delay_compila", compila,
+                        (err.isEmpty() ? QStringLiteral("ACE Delay debe compilar") : err).toUtf8().constData());
+
+            aceDelay->setParameter(0, 10.0f); // 10 ms de retardo
+            std::vector<float> buffer(1100 * kChannels, 0.0f);
+            buffer[0] = 1.0f;
+            buffer[1] = 1.0f;
+            aceDelay->process(buffer.data(), 1100, kChannels, kSampleRate);
+            CHECK_NAMED("jsfx_ace_delay_eco",
+                        buffer[480 * kChannels] > 0.2f && buffer[480 * kChannels] < 0.3f,
+                        "ACE Delay debe producir el eco a 10 ms con mezcla del 25%");
         }
 
         auto aceReverb = mgr.createEffect(QStringLiteral("jsfx:builtin:ace_reverb"));
         CHECK_NAMED("jsfx_create_ace_reverb", aceReverb != nullptr, "debe instanciar ACE Reverb como efecto JSFX real");
         if (aceReverb) {
+            QString err;
+            bool compila = aceReverb->loadScript(
+                mgr.getScriptContent(QStringLiteral("jsfx:builtin:ace_reverb")), &err);
+            CHECK_NAMED("jsfx_ace_reverb_compila", compila,
+                        (err.isEmpty() ? QStringLiteral("ACE Reverb debe compilar") : err).toUtf8().constData());
+
             std::vector<float> buffer(kNumFrames * kChannels, 0.5f);
             aceReverb->process(buffer.data(), kNumFrames, kChannels, kSampleRate);
             CHECK_NAMED("jsfx_ace_reverb_runs", !std::isnan(buffer[0]), "ACE Reverb debe procesar audio sin NaN");

@@ -418,6 +418,34 @@ private:
             restore(cp);
         }
 
+        // Caso 3: Asignación a memoria con base entre paréntesis ((expr)[idx] = valor).
+        // EEL2 permite calcular la dirección base con cualquier expresión, no solo
+        // con un identificador: es la forma habitual de escribir delays y reverbs.
+        if (m_current.type == TOK_LPAREN) {
+            Checkpoint cp = save();
+            size_t oldProgSize = outProg.size();
+            advance(); // consumir '('
+
+            // La expresión base ya deja su valor en la pila: sirve como dirección.
+            if (parseExpression(outProg) && match(TOK_RPAREN) && m_current.type == TOK_LBRACKET) {
+                advance(); // consumir '['
+
+                if (parseExpression(outProg)) {
+                    outProg.push_back(NovaJsfxVm::Instruction{NovaJsfxVm::OP_ADD, 0.0, -1, -1, 0});
+
+                    if (match(TOK_RBRACKET) && match(TOK_ASSIGN)) {
+                        if (parseExpression(outProg)) {
+                            outProg.push_back(NovaJsfxVm::Instruction{NovaJsfxVm::OP_STORE_MEM, 0.0, -1, -1, 0});
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            outProg.resize(oldProgSize);
+            restore(cp);
+        }
+
         return parseTernary(outProg);
     }
 
@@ -614,6 +642,15 @@ private:
             advance();
             if (!parseExpression(outProg)) return false;
             if (!match(TOK_RPAREN)) return false;
+
+            // Memoria con base entre paréntesis: (expr)[idx]
+            if (m_current.type == TOK_LBRACKET) {
+                advance();
+                if (!parseExpression(outProg)) return false;
+                outProg.push_back(NovaJsfxVm::Instruction{NovaJsfxVm::OP_ADD, 0.0, -1, -1, 0});
+                if (!match(TOK_RBRACKET)) return false;
+                outProg.push_back(NovaJsfxVm::Instruction{NovaJsfxVm::OP_LOAD_MEM, 0.0, -1, -1, 0});
+            }
             return true;
         }
 
