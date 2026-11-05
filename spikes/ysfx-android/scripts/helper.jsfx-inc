@@ -1,0 +1,4 @@
+// Funciones compartidas por imports.jsfx.
+@init
+function duplicar(x) ( x * 2; );
+function sumar(a, b) ( a + b; );

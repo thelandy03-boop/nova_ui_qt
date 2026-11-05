@@ -1,0 +1,10 @@
+desc:Nova Spike Gain
+slider1:1<0,1,0.01>Gain
+slider2:0<-1,1,0.01>Pan
+@init
+gain = 1;
+@slider
+gain = slider1;
+@sample
+spl0 *= gain;
+spl1 *= gain;

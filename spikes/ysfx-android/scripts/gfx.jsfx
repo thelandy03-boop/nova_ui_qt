@@ -1,0 +1,28 @@
+desc:Nova Spike GFX
+@gfx 320 200
+ancho_visto = gfx_w;
+alto_visto = gfx_h;
+
+// Fondo azul oscuro.
+gfx_r = 0.1; gfx_g = 0.2; gfx_b = 0.3; gfx_a = 1.0;
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Rectángulo naranja.
+gfx_r = 1.0; gfx_g = 0.6; gfx_b = 0.0;
+gfx_rect(20, 20, 120, 80);
+
+// Círculo verde.
+gfx_r = 0.1; gfx_g = 0.9; gfx_b = 0.3;
+gfx_circle(220, 100, 50, 1, 1);
+
+// Texto blanco.
+gfx_r = 1.0; gfx_g = 1.0; gfx_b = 1.0;
+gfx_setfont(1, "Arial", 20);
+gfx_x = 20;
+gfx_y = 150;
+gfx_drawstr("NOVA YSFX");
+
+// Marca cian que sigue al ratón: sirve para comprobar gfx_x/gfx_y.
+gfx_x = mouse_x;
+gfx_y = mouse_y;
+gfx_setpixel(0.0, 1.0, 1.0);

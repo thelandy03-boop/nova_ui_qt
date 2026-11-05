@@ -1,0 +1,10 @@
+desc:Nova Spike Serialize
+slider1:1<0,1,0.01>Gain
+@init
+contador = 0;
+@sample
+contador += 1;
+spl0 *= slider1;
+spl1 *= slider1;
+@serialize
+file_var(0, contador);

@@ -1,0 +1,8 @@
+desc:Nova Spike Imports
+import helper.jsfx-inc
+@init
+largo = strlen("NOVA!");
+suma = sumar(3, 4);
+@sample
+spl0 = duplicar(spl0);
+spl1 = duplicar(spl1);

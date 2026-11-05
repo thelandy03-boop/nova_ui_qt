@@ -1,0 +1,10 @@
+desc:Nova Spike MIDI
+@init
+notas = 0;
+@sample
+while (midirecv(offset, msg1, msg2, msg3)) (
+  midisend(offset, msg1, msg2, msg3);
+  notas += 1;
+);
+spl0 = spl0;
+spl1 = spl1;
