@@ -45,6 +45,15 @@ Las piezas del motor (todas en `src/audio/`, en C++ puro y testeables en el host
 
 Oboe aparece **solo en la última capa**. Todo lo demás se prueba en Linux.
 
+Los scripts JSFX no los ejecuta `NovaJsfxVm` (la VM propia sigue en el árbol
+para los tests de referencia, pero la app ya no la usa), sino el motor EEL2
+real de Cockos, vendorizado sin modificar en `third_party/wdl/`. El adaptador es
+`src/audio/dsp/jsfx/NovaJsfxWdlEngine.*`; `NovaJsfxEffect` sigue siendo la
+fachada que usa la UI. Se compila como librería C estática `nova_wdl_eel2` en
+modo portable (sin JIT), así que el mismo código vale en Linux y en Android.
+`@gfx` y `@serialize` quedan fuera de esta fase y el parser de cabecera los
+ignora.
+
 ---
 
 ## 2. Comandos canónicos
@@ -191,6 +200,15 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
     características en `features`. El contrato `tests/check_whats_new.py` y
     `build_android.sh` bloquean el build de inmediato si falta. Además, la
     versión por defecto de `src/core/NovaUpdateChecker.h` debe coincidir.
+
+16. **WDL se compila aparte y con dos definiciones obligatorias.**
+    `nova_wdl_eel2` es C puro y se compila con `EEL_TARGET_PORTABLE` (sin JIT,
+    válido en Android) y `WDL_FFT_REALSIZE=8` (la FFT debe usar `double`, como
+    EEL2). En ARM necesita además `-fsigned-char`; sin ello el lexer interpreta
+    mal los literales. El flag también va a `NovaJsfxWdlEngine.cpp`, porque
+    `wdltypes.h` comprueba al compilar que `char` sea con signo. No se toca
+    `third_party/wdl/`: cualquier cambio se documenta y se justifica igual que
+    con `minimp3`.
 
 ---
 

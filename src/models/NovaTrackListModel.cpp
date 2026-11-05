@@ -1093,11 +1093,11 @@ QString NovaTrackListModel::compileJsfxScript(const QString &sourceCode)
 
 QVariantList NovaTrackListModel::parseJsfxSliders(const QString &sourceCode) const
 {
-    NovaJsfxEffect effect;
-    QString err;
-    effect.loadScript(sourceCode, &err);
+    // Solo cabecera: la UI debe poder pintar los controles mientras se
+    // escribe, aunque el cuerpo del script todavia no compile.
+    const auto metadata = NovaJsfxEffect::parseMetadata(sourceCode);
     QVariantList list;
-    for (const auto &sl : effect.sliders()) {
+    for (const auto &sl : metadata.sliders) {
         QVariantMap map;
         map[QStringLiteral("index")] = sl.index;
         map[QStringLiteral("sliderNum")] = sl.sliderNum;
@@ -1114,8 +1114,5 @@ QVariantList NovaTrackListModel::parseJsfxSliders(const QString &sourceCode) con
 
 QString NovaTrackListModel::getJsfxDescription(const QString &sourceCode) const
 {
-    NovaJsfxEffect effect;
-    QString err;
-    effect.loadScript(sourceCode, &err);
-    return effect.name();
+    return NovaJsfxEffect::parseMetadata(sourceCode).name;
 }

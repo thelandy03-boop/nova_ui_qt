@@ -4,13 +4,11 @@
 #include <QTextStream>
 #include <QRegularExpression>
 #include <algorithm>
+#include <string>
 
 NovaJsfxEffect::NovaJsfxEffect()
+    : m_engine(std::make_unique<NovaJsfxWdlEngine>())
 {
-    m_varSpl0 = m_vm.getOrRegisterVariable("spl0");
-    m_varSpl1 = m_vm.getOrRegisterVariable("spl1");
-    m_varSrate = m_vm.getOrRegisterVariable("srate");
-    m_varSamplesBlock = m_vm.getOrRegisterVariable("samplesblock");
 }
 
 NovaJsfxEffect::NovaJsfxEffect(const QString& scriptContent, const QString& customName)
@@ -48,14 +46,13 @@ bool NovaJsfxEffect::loadScript(const QString& scriptContent, QString* outError)
     return parseScript(scriptContent, outError);
 }
 
-bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError)
+NovaJsfxEffect::ParsedScript NovaJsfxEffect::parseSource(const QString& scriptContent,
+                                                         const QString& baseName)
 {
-    m_scriptContent = scriptContent;
-    m_sliders.clear();
-    m_sliderVarIndices.clear();
+    ParsedScript parsed;
+    parsed.name = baseName;
 
     QString currentSection = QStringLiteral("header");
-    QString initSrc, sliderSrc, blockSrc, sampleSrc;
 
     const QStringList lines = scriptContent.split(QRegularExpression(QStringLiteral("[\r\n]+")));
 
@@ -86,12 +83,12 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
 
         if (currentSection == QStringLiteral("header")) {
             if (trimmed.startsWith(QStringLiteral("desc:"), Qt::CaseInsensitive)) {
-                m_name = trimmed.mid(5).trimmed();
+                parsed.name = trimmed.mid(5).trimmed();
             } else {
                 auto match = sliderRegex.match(trimmed);
                 if (match.hasMatch()) {
                     SliderMeta meta;
-                    meta.index = static_cast<int>(m_sliders.size());
+                    meta.index = static_cast<int>(parsed.sliders.size());
                     meta.sliderNum = match.captured(1).toInt();
                     meta.defaultValue = match.captured(2).toFloat();
                     meta.minValue = match.captured(3).toFloat();
@@ -108,84 +105,142 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
                         meta.unit = meta.name.mid(pOpen + 1, meta.name.length() - pOpen - 2).trimmed();
                     }
 
-                    int varIdx = m_vm.getOrRegisterVariable(QStringLiteral("slider%1").arg(meta.sliderNum).toStdString());
-                    m_vm.setVariable(varIdx, meta.defaultValue);
-
-                    m_sliders.push_back(meta);
-                    m_sliderVarIndices.push_back(varIdx);
+                    parsed.sliders.push_back(meta);
                 }
             }
         } else if (currentSection == QStringLiteral("init")) {
-            initSrc += trimmed + QLatin1Char('\n');
+            parsed.initSrc += trimmed + QLatin1Char('\n');
         } else if (currentSection == QStringLiteral("slider")) {
-            sliderSrc += trimmed + QLatin1Char('\n');
+            parsed.sliderSrc += trimmed + QLatin1Char('\n');
         } else if (currentSection == QStringLiteral("block")) {
-            blockSrc += trimmed + QLatin1Char('\n');
+            parsed.blockSrc += trimmed + QLatin1Char('\n');
         } else if (currentSection == QStringLiteral("sample")) {
-            sampleSrc += trimmed + QLatin1Char('\n');
+            parsed.sampleSrc += trimmed + QLatin1Char('\n');
         }
     }
 
-    // Compilar programas EEL2 en la VM
+    return parsed;
+}
+
+NovaJsfxEffect::Metadata NovaJsfxEffect::parseMetadata(const QString& scriptContent)
+{
+    ParsedScript parsed = parseSource(scriptContent, QStringLiteral("JSFX Plugin"));
+    Metadata metadata;
+    metadata.name = parsed.name;
+    metadata.sliders = std::move(parsed.sliders);
+    return metadata;
+}
+
+bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError)
+{
+    // El editor reabre el ultimo texto intentado, aunque el cuerpo no compile.
+    m_scriptContent = scriptContent;
+
+    ParsedScript parsed = parseSource(scriptContent, m_name);
+
+    // El motor se construye aparte y solo se publica si todas las secciones
+    // compilan. Asi un script roto no deja el efecto anterior a medias.
+    auto engine = std::make_unique<NovaJsfxWdlEngine>();
+
+    std::vector<void*> sliderVars;
+    sliderVars.reserve(parsed.sliders.size());
+    for (const SliderMeta& meta : parsed.sliders) {
+        void* var = engine->registrarVariable("slider" + std::to_string(meta.sliderNum));
+        engine->asignarVariable(var, meta.defaultValue);
+        sliderVars.push_back(var);
+    }
+
+    engine->setSampleRate(m_lastSampleRate);
+    engine->setSamplesBlock(m_lastSamplesBlock);
+    engine->setTempo(120.0);
+    engine->setNumChannels(2);
+    engine->setPlayPosition(0.0);
+
+    NovaJsfxWdlEngine::Programas programas;
+    programas.init = parsed.initSrc.toStdString();
+    programas.slider = parsed.sliderSrc.toStdString();
+    programas.block = parsed.blockSrc.toStdString();
+    programas.sample = parsed.sampleSrc.toStdString();
+
     std::string err;
-    if (!m_vm.compile(initSrc.toStdString(), m_progInit, &err)) {
-        if (outError) *outError = QStringLiteral("Error en @init: %1").arg(QString::fromStdString(err));
-        return false;
-    }
-    if (!m_vm.compile(sliderSrc.toStdString(), m_progSlider, &err)) {
-        if (outError) *outError = QStringLiteral("Error en @slider: %1").arg(QString::fromStdString(err));
-        return false;
-    }
-    if (!m_vm.compile(blockSrc.toStdString(), m_progBlock, &err)) {
-        if (outError) *outError = QStringLiteral("Error en @block: %1").arg(QString::fromStdString(err));
-        return false;
-    }
-    if (!m_vm.compile(sampleSrc.toStdString(), m_progSample, &err)) {
-        if (outError) *outError = QStringLiteral("Error en @sample: %1").arg(QString::fromStdString(err));
+    if (!engine->compilar(programas, &err)) {
+        if (outError) {
+            *outError = QStringLiteral("Error en %1").arg(QString::fromStdString(err));
+        }
         return false;
     }
 
-    // Inicializar estado con la tasa de muestreo y calcular variables derivadas en @slider
-    m_vm.setVariable(m_varSrate, m_lastSampleRate);
-    m_vm.execute(m_progInit);
-    m_vm.execute(m_progSlider);
+    // Inicializar el estado con la tasa de muestreo y calcular las variables
+    // derivadas de @slider antes de publicar el motor.
+    engine->ejecutarInit();
+    engine->ejecutarSlider();
 
-    reset();
+    m_engine = std::move(engine);
+    m_sliders = std::move(parsed.sliders);
+    m_sliderVars = std::move(sliderVars);
+    m_name = parsed.name;
+    m_playPosition = 0.0;
+
+    // Se conserva el comportamiento historico: tras cargar se vacia la RAM y
+    // se vuelven a ejecutar @init/@slider con los valores por defecto.
+    resetSinBloqueo();
     return true;
 }
 
 void NovaJsfxEffect::setParameter(int paramIndex, float value)
 {
-    if (paramIndex >= 0 && paramIndex < static_cast<int>(m_sliderVarIndices.size())) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_vm.setVariable(m_sliderVarIndices[static_cast<size_t>(paramIndex)], value);
-        // Ejecutar código de @slider
-        m_vm.execute(m_progSlider);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine || paramIndex < 0 || paramIndex >= static_cast<int>(m_sliderVars.size())) {
+        return;
     }
+
+    m_engine->setSampleRate(m_lastSampleRate);
+    m_engine->setSamplesBlock(m_lastSamplesBlock);
+    m_engine->setPlayPosition(m_playPosition);
+    m_engine->asignarVariable(m_sliderVars[static_cast<size_t>(paramIndex)], value);
+    // Ejecutar codigo de @slider
+    m_engine->ejecutarSlider();
 }
 
 float NovaJsfxEffect::getParameter(int paramIndex) const
 {
-    if (paramIndex >= 0 && paramIndex < static_cast<int>(m_sliderVarIndices.size())) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return static_cast<float>(m_vm.getVariable(m_sliderVarIndices[static_cast<size_t>(paramIndex)]));
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine || paramIndex < 0 || paramIndex >= static_cast<int>(m_sliderVars.size())) {
+        return 0.0f;
     }
-    return 0.0f;
+    return static_cast<float>(m_engine->leerVariable(m_sliderVars[static_cast<size_t>(paramIndex)]));
 }
 
 void NovaJsfxEffect::reset()
 {
-    m_vm.clearMemory();
-    m_vm.setVariable(m_varSrate, m_lastSampleRate);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    resetSinBloqueo();
+}
 
-    // Asignar valores por defecto a los sliders en la VM
-    for (size_t i = 0; i < m_sliders.size(); ++i) {
-        m_vm.setVariable(m_sliderVarIndices[i], m_sliders[i].defaultValue);
+void NovaJsfxEffect::resetSinBloqueo()
+{
+    m_playPosition = 0.0;
+    m_lastSamplesBlock = 512;
+
+    if (!m_engine) return;
+
+    // Vaciar la RAM de los scripts es lo que hace el boton de reset: los
+    // buffers de delay vuelven a cero y @init los reconstruye.
+    m_engine->limpiarMemoria();
+    m_engine->setSampleRate(m_lastSampleRate);
+    m_engine->setSamplesBlock(m_lastSamplesBlock);
+    m_engine->setTempo(120.0);
+    m_engine->setPlayPosition(0.0);
+    m_engine->setNumChannels(2);
+
+    const size_t limite = std::min(m_sliders.size(), m_sliderVars.size());
+    for (size_t i = 0; i < limite; ++i) {
+        m_engine->asignarVariable(m_sliderVars[i], m_sliders[i].defaultValue);
     }
 
     // Ejecutar @init y @slider
-    m_vm.execute(m_progInit);
-    m_vm.execute(m_progSlider);
+    m_engine->ejecutarInit();
+    m_engine->ejecutarSlider();
 }
 
 void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channels, int sampleRate)
@@ -194,37 +249,42 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
 
     std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
     if (!lock.owns_lock()) return;
+    if (!m_engine) return;
 
     if (sampleRate != m_lastSampleRate && sampleRate > 0) {
         m_lastSampleRate = sampleRate;
-        m_vm.setVariable(m_varSrate, sampleRate);
-        m_vm.execute(m_progInit);
-        m_vm.execute(m_progSlider);
+        m_engine->setSampleRate(sampleRate);
+        m_engine->ejecutarInit();
+        m_engine->ejecutarSlider();
     }
 
-    m_vm.setVariable(m_varSamplesBlock, numFrames);
+    m_lastSamplesBlock = numFrames;
+    m_engine->setSamplesBlock(numFrames);
+    m_engine->setPlayPosition(m_playPosition);
 
     // Ejecutar @block una vez por bloque de audio
-    m_vm.execute(m_progBlock);
+    m_engine->ejecutarBlock();
+
+    if (sampleRate > 0) {
+        m_playPosition += static_cast<double>(numFrames) / static_cast<double>(sampleRate);
+    }
 
     // Si no hay código en @sample, no hay nada que procesar
-    if (m_progSample.empty()) return;
+    if (!m_engine->tieneSample()) return;
 
     int effChannels = std::min(channels, 2);
 
     // Ejecutar @sample por cada fotograma de audio
     for (int frame = 0; frame < numFrames; ++frame) {
         int idxL = frame * channels;
-        int idxR = (effChannels > 1) ? (idxL + 1) : idxL;
 
-        m_vm.setVariable(m_varSpl0, interleavedBuffer[idxL]);
-        m_vm.setVariable(m_varSpl1, interleavedBuffer[idxR]);
-
-        m_vm.execute(m_progSample);
-
-        interleavedBuffer[idxL] = static_cast<float>(m_vm.getVariable(m_varSpl0));
         if (effChannels > 1) {
-            interleavedBuffer[idxR] = static_cast<float>(m_vm.getVariable(m_varSpl1));
+            m_engine->procesarMuestra(&interleavedBuffer[idxL], &interleavedBuffer[idxL + 1]);
+        } else {
+            // En mono se conserva el resultado de spl0, como hacia la VM
+            // anterior; spl1 recibe la misma entrada pero se descarta.
+            float descartado = interleavedBuffer[idxL];
+            m_engine->procesarMuestra(&interleavedBuffer[idxL], &descartado);
         }
     }
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "audio/dsp/NovaDspEffect.h"
-#include "audio/dsp/jsfx/NovaJsfxVm.h"
+#include "audio/dsp/jsfx/NovaJsfxWdlEngine.h"
 #include <QString>
 #include <vector>
 #include <memory>
@@ -11,6 +11,9 @@
  * Efecto DSP que ejecuta scripts JSFX de Cockos REAPER.
  * Carga archivos de script JSFX (.jsfx / .txt), parsea sus sliders y evalúa
  * el código DSP (@init, @slider, @block, @sample) en tiempo real.
+ *
+ * La fachada y el parser de cabecera son propios. El lenguaje EEL2 lo
+ * ejecuta el motor real de Cockos (WDL) a través de NovaJsfxWdlEngine.
  */
 class NovaJsfxEffect : public NovaDspEffect {
 public:
@@ -24,6 +27,18 @@ public:
         float stepValue = 0.01f;
         QString unit;
     };
+
+    struct Metadata {
+        QString name;
+        std::vector<SliderMeta> sliders;
+    };
+
+    /**
+     * Lee solo la cabecera (desc: y sliderN:), sin crear ni compilar una VM.
+     * La usa la UI para mostrar los controles mientras se escribe, aunque el
+     * cuerpo del script todavia no compile.
+     */
+    static Metadata parseMetadata(const QString& scriptContent);
 
     NovaJsfxEffect();
     explicit NovaJsfxEffect(const QString& scriptContent, const QString& customName = QString());
@@ -47,27 +62,31 @@ public:
     const std::vector<SliderMeta>& sliders() const { return m_sliders; }
 
 private:
+    struct ParsedScript {
+        QString name;
+        std::vector<SliderMeta> sliders;
+        QString initSrc;
+        QString sliderSrc;
+        QString blockSrc;
+        QString sampleSrc;
+    };
+
+    static ParsedScript parseSource(const QString& scriptContent, const QString& baseName);
     bool parseScript(const QString& scriptContent, QString* outError = nullptr);
+    void resetSinBloqueo();
 
     QString m_id = QStringLiteral("jsfx:custom");
     QString m_name = QStringLiteral("JSFX Plugin");
     QString m_description;
     QString m_scriptContent;
 
-    NovaJsfxVm m_vm;
-    NovaJsfxVm::Program m_progInit;
-    NovaJsfxVm::Program m_progSlider;
-    NovaJsfxVm::Program m_progBlock;
-    NovaJsfxVm::Program m_progSample;
-
-    int m_varSpl0 = -1;
-    int m_varSpl1 = -1;
-    int m_varSrate = -1;
-    int m_varSamplesBlock = -1;
+    std::unique_ptr<NovaJsfxWdlEngine> m_engine;
 
     std::vector<SliderMeta> m_sliders;
-    std::vector<int> m_sliderVarIndices;
+    std::vector<void*> m_sliderVars;
 
+    double m_playPosition = 0.0;
     int m_lastSampleRate = 48000;
+    int m_lastSamplesBlock = 512;
     mutable std::mutex m_mutex;
 };

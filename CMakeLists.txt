@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
-project(nova_ui_qt LANGUAGES CXX)
+# WDL (el motor EEL2 de los JSFX) es C puro, por eso el proyecto tambien
+# declara el lenguaje C. El resto de la app sigue siendo C++20.
+project(nova_ui_qt LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -95,6 +97,61 @@ qt_policy(SET QTP0004 NEW)
 
 include(cmake/NovaQml.cmake)
 
+# ---------------------------------------------------------------------------
+# WDL EEL2: motor real de los scripts JSFX
+# ---------------------------------------------------------------------------
+# Codigo vendorizado sin modificar de Cockos WDL (ver third_party/wdl/README.md).
+# Se compila como libreria estatica C aparte:
+#   - EEL_TARGET_PORTABLE evita generar codigo ejecutable en runtime, que es
+#     lo que Android moderno no permite de forma fiable.
+#   - WDL_FFT_REALSIZE=8 hace que la FFT use el mismo double que EEL2.
+add_library(nova_wdl_eel2 STATIC
+    third_party/wdl/eel2/nseel-caltab.c
+    third_party/wdl/eel2/nseel-compiler.c
+    third_party/wdl/eel2/nseel-eval.c
+    third_party/wdl/eel2/nseel-lextab.c
+    third_party/wdl/eel2/nseel-ram.c
+    third_party/wdl/eel2/nseel-yylex.c
+    third_party/wdl/eel2/nseel-cfunc.c
+    third_party/wdl/fft.c
+)
+target_include_directories(nova_wdl_eel2 PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/wdl
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/wdl/eel2
+)
+target_compile_definitions(nova_wdl_eel2 PUBLIC
+    EEL_TARGET_PORTABLE
+    WDL_FFT_REALSIZE=8
+)
+target_compile_definitions(nova_wdl_eel2 PRIVATE
+    _FILE_OFFSET_BITS=64
+)
+# WDL es C puro: no necesita moc ni recursos. Qt activa AUTOMOC en todo el
+# proyecto, asi que se desactiva solo para esta libreria.
+set_target_properties(nova_wdl_eel2 PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+
+# En ARM `char` es sin signo por defecto. El lexer de WDL espera el `char`
+# con signo de x86 y sin este flag cambia la interpretacion de literales.
+# `wdltypes.h` lo comprueba con un typedef que falla si `char` es sin signo,
+# asi que el flag tambien hace falta en la unidad C++ que incluye sus
+# cabeceras (el adaptador). No se aplica a toda la app: solo a esa unidad.
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND
+   (ANDROID_ABI MATCHES "^arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7|arm)"))
+    target_compile_options(nova_wdl_eel2 PRIVATE -fsigned-char)
+    set_source_files_properties(
+        src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp
+        PROPERTIES COMPILE_OPTIONS "-fsigned-char"
+    )
+endif()
+
+if(NOT WIN32)
+    target_link_libraries(nova_wdl_eel2 PUBLIC m)
+endif()
+
 # En Windows, el flag WIN32 evita que se abra la ventana negra de consola CMD
 # En Android, no usamos WIN32
 if(WIN32 AND NOT ANDROID)
@@ -180,6 +237,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/dsp/NovaReverb.cpp
     src/audio/dsp/jsfx/NovaJsfxVm.h
     src/audio/dsp/jsfx/NovaJsfxVm.cpp
+    src/audio/dsp/jsfx/NovaJsfxWdlEngine.h
+    src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp
     src/audio/dsp/jsfx/NovaJsfxEffect.h
     src/audio/dsp/jsfx/NovaJsfxEffect.cpp
     src/audio/dsp/jsfx/NovaJsfxManager.h
@@ -189,7 +248,7 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
 )
 
 # Common Qt libraries for all platforms
-target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui)
+target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui nova_wdl_eel2)
 
 if(ANDROID)
     set_property(TARGET nova_ui_qt PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
@@ -441,10 +500,11 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     add_executable(test_audio_jsfx
         tests/test_audio_jsfx.cpp
         src/audio/dsp/jsfx/NovaJsfxVm.cpp
+        src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp
         src/audio/dsp/jsfx/NovaJsfxEffect.cpp
         src/audio/dsp/jsfx/NovaJsfxManager.cpp
     )
-    target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core)
+    target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core nova_wdl_eel2)
     target_include_directories(test_audio_jsfx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME audio_jsfx COMMAND test_audio_jsfx)
 

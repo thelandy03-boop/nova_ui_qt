@@ -237,6 +237,225 @@ int main()
         }
     }
 
+    // 5. El motor WDL ejecuta el lenguaje real: while, loop, funciones y this.
+    {
+        QString script = QStringLiteral(
+            "desc: Pruebas de Lenguaje EEL2\n"
+            "slider1:4<1,8,1>Iteraciones\n"
+            "\n"
+            "@init\n"
+            "function doble(v) ( v * 2; );\n"
+            "function acumula(v) ( this.s += v; this.s; );\n"
+            "this.s = 0;\n"
+            "\n"
+            "@sample\n"
+            "suma = 0; i = 0;\n"
+            "while (i < slider1) ( suma += i; i += 1; );\n"
+            "loop(2, suma += 10);\n"
+            "d = doble(suma);\n"
+            "a = acumula(1);\n"
+            "b = acumula(2);\n"
+            "spl0 = spl0 + a + b + (d == 52 ? 0 : 1000);\n"
+            "spl1 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_lenguaje_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("while/loop/funciones deben compilar") : err).toUtf8().constData());
+
+        std::vector<float> buffer(4 * kChannels, 0.0f);
+        effect.process(buffer.data(), 4, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_while_loop_funciones_this",
+                    std::abs(buffer[0] - 4.0f) < 1e-4f,
+                    "while=6, loop=26, doble=52 y this acumulado 1+3 deben dar 4");
+    }
+
+    // 6. Funciones de compatibilidad que WDL no trae de serie.
+    {
+        QString script = QStringLiteral(
+            "desc: Funciones de Compatibilidad\n"
+            "@sample\n"
+            "spl0 = tanh(0) + log2(2) + exp2(0) + round(1.6) + trunc(1.9)"
+            " + clamp(5, 0, 2) + lerp(0, 10, 0.5);\n"
+            "spl1 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_funciones_extra_compilan", ok,
+                    (err.isEmpty() ? QStringLiteral("tanh/log2/exp2/round/trunc/clamp/lerp deben existir") : err).toUtf8().constData());
+
+        std::vector<float> buffer(2 * kChannels, 0.0f);
+        effect.process(buffer.data(), 2, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_funciones_extra_valores",
+                    std::abs(buffer[0] - 12.0f) < 1e-4f,
+                    "0+1+1+2+1+2+5 debe dar 12");
+    }
+
+    // 7. La cabecera se puede leer sin compilar el cuerpo (editor en vivo).
+    {
+        const QString roto = QStringLiteral(
+            "desc: Metadatos sin compilar\n"
+            "slider1:3<0,10,1>Ganancia\n"
+            "slider2:-6<-60,12,0.5>Nivel (dB)\n"
+            "@sample\n"
+            "esto no es EEL2 valido !!!\n");
+
+        NovaJsfxEffect::Metadata meta = NovaJsfxEffect::parseMetadata(roto);
+        CHECK_NAMED("jsfx_metadata_sin_compilar", meta.name == QStringLiteral("Metadatos sin compilar")
+                                                     && meta.sliders.size() == 2,
+                    "desc y sliders deben leerse aunque el cuerpo no compile");
+        CHECK_NAMED("jsfx_metadata_unidad", meta.sliders.size() == 2
+                                                && meta.sliders[1].unit == QStringLiteral("dB"),
+                    "la unidad debe deducirse del nombre del slider");
+
+        NovaJsfxEffect effect;
+        QString err;
+        CHECK_NAMED("wdl_error_sintaxis", !effect.loadScript(roto, &err) && !err.isEmpty(),
+                    "un cuerpo invalido debe devolver error de compilacion");
+    }
+
+    // 8. Un recompile fallido no puede dejar el efecto anterior a medias.
+    {
+        const QString bueno = QStringLiteral(
+            "desc: Gain Estable\n"
+            "slider1:1<0,2,0.1>Ganancia\n"
+            "@sample\n"
+            "spl0 = spl0 * slider1;\n"
+            "spl1 = spl1 * slider1;\n");
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(bueno, &err);
+        CHECK_NAMED("wdl_recompila_base", ok,
+                    (err.isEmpty() ? QStringLiteral("el script base debe compilar") : err).toUtf8().constData());
+
+        std::vector<float> buffer(8 * kChannels, 0.25f);
+        effect.process(buffer.data(), 8, kChannels, kSampleRate);
+        const float antes = buffer[0];
+
+        QString errMalo;
+        bool malo = effect.recompile(QStringLiteral("desc: Roto\n@sample\nspl0 = spl0 * ;\n"), &errMalo);
+        CHECK_NAMED("wdl_recompila_falla", !malo && !errMalo.isEmpty(),
+                    "un recompile invalido debe devolver error");
+
+        buffer.assign(8 * kChannels, 0.25f);
+        effect.process(buffer.data(), 8, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_recompila_conserva_motor", std::abs(buffer[0] - antes) < 1e-6f,
+                    "el motor anterior debe seguir procesando tras un recompile fallido");
+    }
+
+    // 9. @block recibe samplesblock y se ejecuta antes de @sample.
+    {
+        QString script = QStringLiteral(
+            "desc: Bloque\n"
+            "@block\n"
+            "bloque_gain = (samplesblock == 64) ? 0.5 : 0;\n"
+            "@sample\n"
+            "spl0 = spl0 * bloque_gain;\n"
+            "spl1 = spl1 * bloque_gain;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_block_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("@block debe compilar") : err).toUtf8().constData());
+
+        std::vector<float> buffer(64 * kChannels, 1.0f);
+        effect.process(buffer.data(), 64, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_block_samplesblock",
+                    std::abs(buffer[0] - 0.5f) < 1e-6f,
+                    "@block debe ver samplesblock=64 y aplicar 0.5");
+    }
+
+    // 10. @gfx y @serialize se siguen ignorando, como en la fachada anterior.
+    {
+        QString script = QStringLiteral(
+            "desc: Con Gfx y Serialize\n"
+            "@init\n"
+            "x = 1;\n"
+            "@gfx 100 100\n"
+            "gfx_setpixel(0, 0, 1, 0, 0);\n"
+            "@serialize\n"
+            "file_var(0, x);\n"
+            "@sample\n"
+            "spl0 = spl0 * 0.5;\n"
+            "spl1 = spl1 * 0.5;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_ignora_gfx_serialize", ok,
+                    (err.isEmpty() ? QStringLiteral("@gfx y @serialize deben ignorarse") : err.toUtf8().constData()));
+
+        std::vector<float> buffer(2 * kChannels, 1.0f);
+        effect.process(buffer.data(), 2, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_audio_tras_gfx", std::abs(buffer[0] - 0.5f) < 1e-6f,
+                    "@sample debe procesar aunque existan @gfx y @serialize");
+    }
+
+    // 11. El FFT de WDL queda registrado (el script compila y ejecuta).
+    {
+        QString script = QStringLiteral(
+            "desc: FFT disponible\n"
+            "@init\n"
+            "buf = 0;\n"
+            "memset(buf, 0, 64);\n"
+            "buf[0] = 1;\n"
+            "fft(buf, 16);\n"
+            "ifft(buf, 16);\n"
+            "valor = buf[0];\n"
+            "@sample\n"
+            "spl0 = spl0 + 0 * valor;\n"
+            "spl1 = spl1 + 0 * valor;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_fft_registrado", ok,
+                    (err.isEmpty() ? QStringLiteral("fft/ifft deben estar registradas") : err.toUtf8().constData()));
+
+        std::vector<float> buffer(2 * kChannels, 0.5f);
+        effect.process(buffer.data(), 2, kChannels, kSampleRate);
+        CHECK_NAMED("wdl_fft_no_rompe_audio", std::isfinite(buffer[0])
+                                                  && std::abs(buffer[0] - 0.5f) < 1e-6f,
+                    "tras usar fft/ifft el audio debe seguir siendo finito y sin cambios");
+    }
+
+    // 12. srate se actualiza cuando el dispositivo cambia de tasa.
+    {
+        QString script = QStringLiteral(
+            "desc: Tasa de Muestreo\n"
+            "@slider\n"
+            "gain = srate / 48000;\n"
+            "@sample\n"
+            "spl0 = spl0 * gain;\n"
+            "spl1 = spl1 * gain;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("wdl_srate_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("srate debe compilar") : err.toUtf8().constData()));
+
+        std::vector<float> buffer(4 * kChannels, 0.25f);
+        effect.process(buffer.data(), 4, kChannels, 48000);
+        CHECK_NAMED("wdl_srate_48k", std::abs(buffer[0] - 0.25f) < 1e-6f,
+                    "a 48 kHz la ganancia debe ser 1");
+
+        buffer.assign(4 * kChannels, 0.25f);
+        effect.process(buffer.data(), 4, kChannels, 96000);
+        CHECK_NAMED("wdl_srate_96k", std::abs(buffer[0] - 0.5f) < 1e-6f,
+                    "a 96 kHz @slider debe recalcular gain=2");
+    }
+
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

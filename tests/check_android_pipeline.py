@@ -47,6 +47,12 @@ SERVICIO = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastu
 NOTIFICADOR = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "novastudio" / "nova" / "UpdateNotifier.java"
 UPDATE_CHECKER = ROOT / "src" / "core" / "NovaUpdateChecker.cpp"
 
+# El motor de los JSFX es WDL (C puro), vendorizado sin modificar. Se compila
+# aparte y necesita flags propios; el adaptador C++ que incluye sus cabeceras
+# tambien, porque wdltypes.h comprueba en compilacion que `char` sea con signo.
+WDL_DIR = ROOT / "third_party" / "wdl"
+ADAPTADOR_WDL = ROOT / "src" / "audio" / "dsp" / "jsfx" / "NovaJsfxWdlEngine.cpp"
+
 # El manifest que usa de verdad AGP: el del modulo app. El de la raiz
 # (android/AndroidManifest.xml) lo parchea androiddeployqt, pero AGP lo
 # ignora: es codigo muerto. Por eso las comprobaciones de arranque leen
@@ -521,6 +527,46 @@ def el_arch_de_aqt_es_por_abi() -> None:
 # ---------------------------------------------------------------------------
 
 
+def el_motor_jsfx_usa_wdl_portable_en_arm() -> None:
+    codigo = _codigo(_leer(CMAKE_LISTS))
+
+    _exigir(
+        "third_party/wdl/eel2/nseel-compiler.c" in codigo,
+        "el CMakeLists ya no compila el motor EEL2 vendorizado de WDL",
+    )
+    _exigir(
+        "EEL_TARGET_PORTABLE" in codigo,
+        "falta EEL_TARGET_PORTABLE: sin el, WDL intentaria generar codigo "
+        "ejecutable en runtime y el backend no es fiable en Android",
+    )
+    _exigir(
+        "WDL_FFT_REALSIZE=8" in codigo,
+        "falta WDL_FFT_REALSIZE=8: la FFT de WDL debe usar double, como EEL2",
+    )
+    _exigir(
+        codigo.count("-fsigned-char") >= 2,
+        "en ARM, -fsigned-char debe aplicarse a la libreria WDL y tambien a "
+        "NovaJsfxWdlEngine.cpp (wdltypes.h falla si char es sin signo)",
+    )
+    _exigir(
+        "set_source_files_properties" in codigo
+        and "src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp" in codigo,
+        "el adaptador que incluye wdltypes.h no recibe el flag de char con signo",
+    )
+
+    _exigir(
+        ADAPTADOR_WDL.is_file(),
+        "falta src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp: no hay adaptador WDL",
+    )
+
+    for relativo in ("README.md", "LICENSE", "LICENSE-bison.txt",
+                     "eel2/ns-eel.h", "eel2/nseel-compiler.c", "fft.c"):
+        _exigir(
+            (WDL_DIR / relativo).is_file(),
+            f"falta third_party/wdl/{relativo}: el motor vendorizado esta incompleto",
+        )
+
+
 def el_agente_tiene_la_guide() -> None:
     _exigir(AGENTS.is_file(), "no existe AGENTS.md: el agente no tiene guia de este repo")
     texto = _leer(AGENTS)
@@ -581,6 +627,7 @@ COMPROBACIONES = (
     ("el_script_de_build_sabe_hacer_debug", el_script_de_build_sabe_hacer_debug),
     ("el_script_de_build_pasa_el_qt_de_escritorio", el_script_de_build_pasa_el_qt_de_escritorio),
     ("el_arch_de_aqt_es_por_abi", el_arch_de_aqt_es_por_abi),
+    ("el_motor_jsfx_usa_wdl_portable_en_arm", el_motor_jsfx_usa_wdl_portable_en_arm),
     ("el_agente_tiene_la_guide", el_agente_tiene_la_guide),
     ("hay_un_comando_unico_de_verificacion", hay_un_comando_unico_de_verificacion),
 )
