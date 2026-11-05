@@ -7,7 +7,7 @@
 #include <string>
 
 NovaJsfxEffect::NovaJsfxEffect()
-    : m_engine(std::make_unique<NovaJsfxYsfxEngine>())
+    : m_engine(std::make_unique<NovaJsfxWdlEngine>())
 {
 }
 
@@ -145,7 +145,7 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
 
     // El motor se construye aparte y solo se publica si todas las secciones
     // compilan. Asi un script roto no deja el efecto anterior a medias.
-    auto engine = std::make_unique<NovaJsfxYsfxEngine>();
+    auto engine = std::make_unique<NovaJsfxWdlEngine>();
 
     std::vector<void*> sliderVars;
     sliderVars.reserve(parsed.sliders.size());
@@ -164,8 +164,15 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     engine->setPlayState(hayTransporte && m_transporteReproduciendo.load(std::memory_order_relaxed) ? 1 : 0);
     engine->setNumChannels(2);
 
+    NovaJsfxWdlEngine::Programas programas;
+    programas.init = parsed.initSrc.toStdString();
+    programas.slider = parsed.sliderSrc.toStdString();
+    programas.block = parsed.blockSrc.toStdString();
+    programas.sample = parsed.sampleSrc.toStdString();
+    programas.serialize = parsed.serializeSrc.toStdString();
+
     std::string err;
-    if (!engine->cargar(scriptContent.toStdString(), &err)) {
+    if (!engine->compilar(programas, &err)) {
         if (outError) {
             *outError = QStringLiteral("Error en %1").arg(QString::fromStdString(err));
         }
@@ -247,7 +254,7 @@ bool NovaJsfxEffect::loadState(const QByteArray& state)
 
     // Orden de REAPER: @init con la RAM intacta, luego @serialize en lectura
     // y por ultimo @slider. Los sliders se restauran antes de esta llamada.
-    // m_engine->ejecutarInit(); // skipped for YSFX to preserve RAM
+    m_engine->ejecutarInit();
 
     const bool ok = m_engine->cargarEstado(
         std::string(state.constData(), static_cast<size_t>(state.size())));
@@ -325,20 +332,35 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
         m_lastSampleRate = sampleRate;
         m_engine->setSampleRate(sampleRate);
         m_engine->ejecutarInit();
-        // m_engine->ejecutarSlider();  // YSFX: @slider se ejecuta en process()
+        m_engine->ejecutarSlider();
     }
 
     m_lastSamplesBlock = numFrames;
     m_engine->setSamplesBlock(numFrames);
     aplicarTransporteAlMotor();
 
+    // Ejecutar @block una vez por bloque de audio
+    m_engine->ejecutarBlock();
+
     if (sampleRate > 0) {
         m_playPosition += static_cast<double>(numFrames) / static_cast<double>(sampleRate);
     }
 
+    // Si no hay código en @sample, no hay nada que procesar
     if (!m_engine->tieneSample()) return;
 
     int effChannels = std::min(channels, 2);
-    m_engine->procesarBloque(interleavedBuffer, numFrames, effChannels > 0 ? effChannels : 1);
+
+    // Ejecutar @sample por cada fotograma de audio
+    for (int frame = 0; frame < numFrames; ++frame) {
+        int idxL = frame * channels;
+
+        if (effChannels > 1) {
+            m_engine->procesarMuestra(&interleavedBuffer[idxL], &interleavedBuffer[idxL + 1]);
+        } else {
+            float descartado = interleavedBuffer[idxL];
+            m_engine->procesarMuestra(&interleavedBuffer[idxL], &descartado);
+        }
+    }
 }
 
