@@ -3,8 +3,12 @@
 #include "audio/dsp/jsfx/NovaJsfxEffect.h"
 #include "audio/dsp/jsfx/NovaJsfxManager.h"
 
+#include <QFile>
+#include <QRegularExpression>
+
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 static int g_failures = 0;
@@ -21,6 +25,67 @@ static int g_checks = 0;
                         __FILE__, __LINE__);                                    \
         }                                                                       \
     } while (0)
+
+struct PlantillaJsfx {
+    QString nombre;
+    QString codigo;
+};
+
+// JsfxTemplates.qml guarda cada script como concatenación de literales QML.
+// Se deshacen los escapes (\n, \", \\) para quedarse con el texto real.
+static QString desescaparQml(const QString &texto)
+{
+    QString salida;
+    salida.reserve(texto.size());
+    for (int i = 0; i < texto.size(); ++i) {
+        const QChar c = texto.at(i);
+        if (c != QLatin1Char('\\') || i + 1 >= texto.size()) {
+            salida += c;
+            continue;
+        }
+        const QChar siguiente = texto.at(++i);
+        if (siguiente == QLatin1Char('n')) salida += QLatin1Char('\n');
+        else if (siguiente == QLatin1Char('r')) salida += QLatin1Char('\r');
+        else if (siguiente == QLatin1Char('t')) salida += QLatin1Char('\t');
+        else salida += siguiente;
+    }
+    return salida;
+}
+
+static std::vector<PlantillaJsfx> leerPlantillasJsfx()
+{
+    std::vector<PlantillaJsfx> plantillas;
+
+    QFile archivo(QStringLiteral(
+        NOVA_SOURCE_DIR "/qml/skins/logic/dock/components/JsfxTemplates.qml"));
+    if (!archivo.open(QIODevice::ReadOnly)) return plantillas;
+
+    const QString qml = QString::fromUtf8(archivo.readAll());
+    QRegularExpression propiedades(
+        QStringLiteral("readonly\\s+property\\s+string\\s+(\\w+)\\s*:"));
+    QRegularExpression literales(QStringLiteral("\"((?:[^\"\\\\]|\\\\.)*)\""));
+
+    std::vector<QRegularExpressionMatch> matches;
+    auto it = propiedades.globalMatch(qml);
+    while (it.hasNext()) matches.push_back(it.next());
+
+    for (size_t i = 0; i < matches.size(); ++i) {
+        const int inicio = matches[i].capturedEnd();
+        const int fin = (i + 1 < matches.size()) ? matches[i + 1].capturedStart()
+                                                 : qml.size();
+        const QString bloque = qml.mid(inicio, fin - inicio);
+
+        PlantillaJsfx plantilla;
+        plantilla.nombre = matches[i].captured(1);
+        auto literal = literales.globalMatch(bloque);
+        while (literal.hasNext()) {
+            plantilla.codigo += desescaparQml(literal.next().captured(1));
+        }
+        if (!plantilla.codigo.isEmpty()) plantillas.push_back(std::move(plantilla));
+    }
+
+    return plantillas;
+}
 
 int main()
 {
@@ -454,6 +519,27 @@ int main()
         effect.process(buffer.data(), 4, kChannels, 96000);
         CHECK_NAMED("wdl_srate_96k", std::abs(buffer[0] - 0.5f) < 1e-6f,
                     "a 96 kHz @slider debe recalcular gain=2");
+    }
+
+    // 13. Las plantillas del editor JSFX compilan con el motor WDL.
+    {
+        const auto plantillas = leerPlantillasJsfx();
+        CHECK_NAMED("jsfx_plantillas_qml_encontradas", plantillas.size() == 8,
+                    "deben encontrarse las 8 plantillas del editor JSFX");
+
+        for (const PlantillaJsfx &plantilla : plantillas) {
+            NovaJsfxEffect effect;
+            QString err;
+            const bool ok = effect.loadScript(plantilla.codigo, &err);
+
+            const std::string nombre =
+                "jsfx_plantilla_" + plantilla.nombre.toStdString();
+            const QByteArray errUtf8 = err.toUtf8();
+            const char *mensaje = err.isEmpty()
+                                      ? "la plantilla debe compilar con WDL"
+                                      : errUtf8.constData();
+            CHECK_NAMED(nombre.c_str(), ok, mensaje);
+        }
     }
 
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);

@@ -506,6 +506,11 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
     )
     target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core nova_wdl_eel2)
     target_include_directories(test_audio_jsfx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    # Las plantillas JSFX viven en QML; el test las lee del árbol fuente para
+    # comprobar que siguen compilando con WDL.
+    target_compile_definitions(test_audio_jsfx PRIVATE
+        NOVA_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
     add_test(NAME audio_jsfx COMMAND test_audio_jsfx)
 
     # El gestor de parches de colaboración local (.novapatch)

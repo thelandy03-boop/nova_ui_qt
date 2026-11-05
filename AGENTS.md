@@ -217,10 +217,11 @@ genera `androiddeployqt`. Si necesitas tocar `android/app/build.gradle`, se toca
 - **El escritorio no se toca.** `src/`, `qml/` (fuera de `qml/spike/`) y el
   enlace con Ardour son de la app de escritorio. Un cambio de móvil no puede
   alterar el comportamiento en Linux.
-- **`ctest` tiene que seguir en verde.** Son 12 tests: `project_policy`,
+- **`ctest` tiene que seguir en verde.** Son 14 tests: `project_policy`,
   `simd_peaks`, `audio_decoder`, `audio_player`, `audio_peaks`, `audio_loader`,
-  `patch_manager`, `qml_contract`, `android_build_script`, `spike_contract`,
-  `android_pipeline`, `whats_new_contract`.
+  `audio_dsp`, `audio_jsfx`, `patch_manager`, `qml_contract`,
+  `android_build_script`, `spike_contract`, `android_pipeline`,
+  `whats_new_contract`.
 - **Los tests de contrato leen el código como texto.** `tests/check_*.py`
   comprueban invariantes del repo leyendo ficheros. Si rompes una invariante,
   ese test es el que te lo dice. `tests/check_android_pipeline.py` es el que
