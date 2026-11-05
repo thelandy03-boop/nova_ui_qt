@@ -75,8 +75,11 @@ NovaJsfxEffect::ParsedScript NovaJsfxEffect::parseSource(const QString& scriptCo
         } else if (trimmed.startsWith(QStringLiteral("@sample"), Qt::CaseInsensitive)) {
             currentSection = QStringLiteral("sample");
             continue;
+        } else if (trimmed.startsWith(QStringLiteral("@serialize"), Qt::CaseInsensitive)) {
+            currentSection = QStringLiteral("serialize");
+            continue;
         } else if (trimmed.startsWith(QStringLiteral("@"), Qt::CaseInsensitive)) {
-            // Ignorar otras secciones como @gfx o @serialize por ahora
+            // @gfx y otras secciones quedan fuera de esta fase.
             currentSection = QStringLiteral("other");
             continue;
         }
@@ -116,6 +119,8 @@ NovaJsfxEffect::ParsedScript NovaJsfxEffect::parseSource(const QString& scriptCo
             parsed.blockSrc += trimmed + QLatin1Char('\n');
         } else if (currentSection == QStringLiteral("sample")) {
             parsed.sampleSrc += trimmed + QLatin1Char('\n');
+        } else if (currentSection == QStringLiteral("serialize")) {
+            parsed.serializeSrc += trimmed + QLatin1Char('\n');
         }
     }
 
@@ -164,6 +169,7 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     programas.slider = parsed.sliderSrc.toStdString();
     programas.block = parsed.blockSrc.toStdString();
     programas.sample = parsed.sampleSrc.toStdString();
+    programas.serialize = parsed.serializeSrc.toStdString();
 
     std::string err;
     if (!engine->compilar(programas, &err)) {
@@ -183,9 +189,11 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     m_sliderVars = std::move(sliderVars);
     m_name = parsed.name;
     m_playPosition = 0.0;
+    m_serializePresente.store(!parsed.serializeSrc.isEmpty(), std::memory_order_release);
 
-    // Se conserva el comportamiento historico: tras cargar se vacia la RAM y
-    // se vuelven a ejecutar @init/@slider con los valores por defecto.
+    // Se conserva el comportamiento historico: tras cargar se reinicia el
+    // estado. Con @serialize no vacio, REAPER no borra la RAM al ejecutar
+    // @init, asi que resetSinBloqueo respeta esa regla.
     resetSinBloqueo();
     return true;
 }
@@ -218,6 +226,39 @@ void NovaJsfxEffect::reset()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     resetSinBloqueo();
+}
+
+QByteArray NovaJsfxEffect::saveState()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine || !m_engine->tieneSerialize()) return {};
+
+    m_engine->setSampleRate(m_lastSampleRate);
+    m_engine->setSamplesBlock(m_lastSamplesBlock);
+    aplicarTransporteAlMotor();
+    m_engine->setNumChannels(2);
+
+    const std::string estado = m_engine->guardarEstado();
+    return QByteArray(estado.data(), static_cast<int>(estado.size()));
+}
+
+bool NovaJsfxEffect::loadState(const QByteArray& state)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine || !m_engine->tieneSerialize() || state.isEmpty()) return false;
+
+    m_engine->setSampleRate(m_lastSampleRate);
+    m_engine->setSamplesBlock(m_lastSamplesBlock);
+    aplicarTransporteAlMotor();
+    m_engine->setNumChannels(2);
+
+    // Orden de REAPER: @init con la RAM intacta, luego @serialize en lectura
+    // y por ultimo @slider. Los sliders se restauran antes de esta llamada.
+    m_engine->ejecutarInit();
+    const bool ok = m_engine->cargarEstado(
+        std::string(state.constData(), static_cast<size_t>(state.size())));
+    m_engine->ejecutarSlider();
+    return ok;
 }
 
 void NovaJsfxEffect::setTransport(double playPositionSeconds, double bpm, bool playing)
@@ -256,8 +297,12 @@ void NovaJsfxEffect::resetSinBloqueo()
     if (!m_engine) return;
 
     // Vaciar la RAM de los scripts es lo que hace el boton de reset: los
-    // buffers de delay vuelven a cero y @init los reconstruye.
-    m_engine->limpiarMemoria();
+    // buffers de delay vuelven a cero y @init los reconstruye. Un @serialize
+    // no vacio desactiva ese borrado, igual que en REAPER: el estado interno
+    // debe sobrevivir a los reinit (cambios de tasa, reactivacion, etc.).
+    if (!hasSerialize()) {
+        m_engine->limpiarMemoria();
+    }
     m_engine->setSampleRate(m_lastSampleRate);
     m_engine->setSamplesBlock(m_lastSamplesBlock);
     aplicarTransporteAlMotor();

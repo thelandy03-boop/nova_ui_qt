@@ -25,12 +25,23 @@ struct NovaPatchClipInfo {
     QString originalAudioPath; // Ruta física en disco antes de empaquetar
 };
 
+struct NovaPatchPluginInfo {
+    QString id;
+    QString name;
+    QString category;
+    QString script;             // Fuente JSFX (necesaria para plugins de usuario)
+    bool bypassed = false;
+    std::vector<float> sliders; // Valores de slider1..N en orden
+    QByteArray state;           // Blob de @serialize (float32 little-endian)
+};
+
 struct NovaPatchTrackInfo {
     QString name;
     QString color = QStringLiteral("#4A90E2");
     float gainDb = 0.0f;
     float pan = 0.0f;
     std::vector<NovaPatchClipInfo> clips;
+    std::vector<NovaPatchPluginInfo> plugins;
 };
 
 struct NovaPatchMetadata {

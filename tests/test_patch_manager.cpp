@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QDir>
 #include <QTemporaryDir>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -67,6 +68,21 @@ int main()
     clip.originalAudioPath = fakeAudioPath;
     track.clips.push_back(clip);
 
+    // Plugin con estado de @serialize: el parche debe llevarlo consigo.
+    NovaPatchPluginInfo plugin;
+    plugin.id = QStringLiteral("jsfx:user_demo");
+    plugin.name = QStringLiteral("Demo con estado");
+    plugin.category = QStringLiteral("JSFX");
+    plugin.script = QStringLiteral(
+        "desc: Demo con estado\n"
+        "slider1:2<0,10,0.1>Ganancia\n"
+        "@serialize\n"
+        "file_var(0, interno);\n");
+    plugin.bypassed = true;
+    plugin.sliders = {0.25f, 0.75f};
+    plugin.state = QByteArray::fromHex("0000803f"); // 1.0f en float32 LE
+    track.plugins.push_back(plugin);
+
     std::vector<NovaPatchTrackInfo> tracks;
     tracks.push_back(track);
 
@@ -103,8 +119,60 @@ int main()
             CHECK_NAMED("start_beat_coincide", meta.tracks[0].clips[0].startBeat == 16.0, "StartBeat del clip incorrecto");
             CHECK_NAMED("duracion_beats_coincide", meta.tracks[0].clips[0].lengthBeats == 8.0, "LengthBeats incorrecto");
         }
+        CHECK_NAMED("cantidad_plugins_coincide", meta.tracks[0].plugins.size() == 1,
+                    "Número incorrecto de plugins");
+        if (!meta.tracks[0].plugins.empty()) {
+            const NovaPatchPluginInfo &p = meta.tracks[0].plugins[0];
+            CHECK_NAMED("plugin_id_coincide", p.id == QStringLiteral("jsfx:user_demo"),
+                        "El id del plugin no coincide");
+            CHECK_NAMED("plugin_bypass_coincide", p.bypassed,
+                        "El bypass del plugin no coincide");
+            CHECK_NAMED("plugin_script_coincide",
+                        p.script.contains(QStringLiteral("@serialize")),
+                        "El script del plugin no se conservó");
+            CHECK_NAMED("plugin_sliders_coinciden",
+                        p.sliders.size() == 2
+                            && std::abs(p.sliders[0] - 0.25f) < 1e-6f
+                            && std::abs(p.sliders[1] - 0.75f) < 1e-6f,
+                        "Los valores de slider no coinciden");
+            CHECK_NAMED("plugin_estado_coincide",
+                        p.state == QByteArray::fromHex("0000803f"),
+                        "El estado binario de @serialize no coincide");
+        }
     }
     CHECK_NAMED("tamano_audio_coincide", totalAudioBytes == fakePcmData.size(), "Tamaño de audio informado incorrecto");
+
+    // Un parche sin plugins sigue siendo válido (compatibilidad hacia atrás).
+    {
+        NovaPatchTrackInfo sinPlugins;
+        sinPlugins.name = QStringLiteral("Pista antigua");
+        NovaPatchClipInfo clipSinPlugins = clip;
+        sinPlugins.clips.push_back(clipSinPlugins);
+
+        QString pathSinPlugins = tempDir.path() + QStringLiteral("/sin_plugins.novapatch");
+        QString errExport;
+        CHECK_NAMED("exporta_parche_sin_plugins",
+                    NovaPatchManager::exportPatch(pathSinPlugins,
+                                                  QStringLiteral("Antiguo"),
+                                                  QStringLiteral("Landy"),
+                                                  QString(),
+                                                  120.0,
+                                                  {sinPlugins},
+                                                  &errExport),
+                    errExport.toUtf8().constData());
+
+        NovaPatchMetadata metaSinPlugins;
+        qint64 bytesSinPlugins = 0;
+        QString errInspect;
+        CHECK_NAMED("inspecciona_parche_sin_plugins",
+                    NovaPatchManager::inspectPatch(pathSinPlugins, metaSinPlugins,
+                                                   bytesSinPlugins, &errInspect),
+                    errInspect.toUtf8().constData());
+        CHECK_NAMED("parche_sin_plugins_vacio",
+                    metaSinPlugins.tracks.size() == 1
+                        && metaSinPlugins.tracks[0].plugins.empty(),
+                    "Un parche sin plugins debe devolver una lista vacía");
+    }
 
     // 5. Probar extracción de audio
     QString extractDir = tempDir.path() + QStringLiteral("/extracted_audio");

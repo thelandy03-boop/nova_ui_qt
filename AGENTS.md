@@ -51,8 +51,11 @@ real de Cockos, vendorizado sin modificar en `third_party/wdl/`. El adaptador es
 `src/audio/dsp/jsfx/NovaJsfxWdlEngine.*`; `NovaJsfxEffect` sigue siendo la
 fachada que usa la UI. Se compila como librería C estática `nova_wdl_eel2` en
 modo portable (sin JIT), así que el mismo código vale en Linux y en Android.
-`@gfx` y `@serialize` quedan fuera de esta fase y el parser de cabecera los
-ignora.
+`@serialize` se ejecuta de verdad: `saveState()`/`loadState()` guardan el
+estado interno con `file_var`/`file_mem`/`file_avail`/`file_rewind` (handle 0)
+y el blob viaja en `.novapatch` junto al script, el bypass y los sliders.
+`@gfx` sigue fuera de esta fase y el parser de cabecera lo ignora; tampoco
+están implementados `file_open`, `file_close` ni `file_string`.
 
 ---
 

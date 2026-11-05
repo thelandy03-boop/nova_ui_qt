@@ -76,6 +76,21 @@ a ~60 FPS desde la sesión (o desde el reproductor de Oboe en Android) y el
 efecto lo aplica antes de `@block` y `@sample`. Sin transporte disponible,
 `tempo` vale 120 y `play_position` avanza con el reloj interno del efecto.
 
+## `@serialize`
+
+`NovaJsfxEffect` compila la sección `@serialize` y expone `saveState()` /
+`loadState()`. El host implementa `file_var(0, x)`, `file_mem(0, offset, len)`,
+`file_avail(0)` y `file_rewind(0)` sobre un buffer por VM. Los valores se
+guardan como float32 little-endian, igual que REAPER, y `file_avail(0) < 0`
+indica modo escritura.
+
+Los sliders no van dentro del blob: se guardan aparte (en `.novapatch`, junto
+al script, el bypass y sus valores). Un `@serialize` no vacío impide que
+`@init` borre la RAM, tal como documenta REAPER.
+
+Límite actual: `file_open()`, `file_close()` y `file_string()` no están
+implementados; `file_*` solo funciona con el handle 0 de `@serialize`.
+
 ## Licencia
 
 Todos los ficheros de EEL2, FFT y las cabeceras auxiliares llevan en su

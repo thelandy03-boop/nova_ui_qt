@@ -1,8 +1,12 @@
 #include "audio/dsp/jsfx/NovaJsfxWdlEngine.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 // WDL es C. Sus cabeceras ya llevan los guards de extern "C" donde toca.
 // eel_fft.h usa los tipos internos de ns-eel-int.h (__NSEEL_RAMAlloc), asi
@@ -19,6 +23,83 @@ namespace {
 std::mutex g_mutexWdl;
 
 std::once_flag g_funcionesRegistradas;
+
+/**
+ * Backend de file_var()/file_mem()/file_avail()/file_rewind() para @serialize.
+ *
+ * REAPER guarda el estado interno como valores de 32 bits en modo escritura
+ * y lo devuelve en modo lectura. El puntero a esta estructura se pasa a las
+ * funciones del host mediante NSEEL_VM_SetCustomFuncThis(), de modo que cada
+ * VM tiene su propio buffer y no hay estado global compartido.
+ */
+struct BackendSerializacion {
+    std::vector<unsigned char> datos;
+    size_t cursor = 0;
+    bool escribiendo = false;
+    bool activo = false;
+    NSEEL_VMCTX vm = nullptr;
+
+    void iniciarEscritura()
+    {
+        datos.clear();
+        cursor = 0;
+        escribiendo = true;
+        activo = true;
+    }
+
+    void iniciarLectura(const std::string &estado)
+    {
+        datos.assign(estado.begin(), estado.end());
+        cursor = 0;
+        escribiendo = false;
+        activo = true;
+    }
+
+    std::string finalizar()
+    {
+        activo = false;
+        if (datos.empty()) return {};
+        return std::string(reinterpret_cast<const char *>(datos.data()), datos.size());
+    }
+
+    bool escribir(EEL_F valor)
+    {
+        if (!escribiendo) return false;
+
+        const float compacto = static_cast<float>(valor);
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &compacto, sizeof(bits));
+        datos.push_back(static_cast<unsigned char>(bits & 0xffu));
+        datos.push_back(static_cast<unsigned char>((bits >> 8) & 0xffu));
+        datos.push_back(static_cast<unsigned char>((bits >> 16) & 0xffu));
+        datos.push_back(static_cast<unsigned char>((bits >> 24) & 0xffu));
+        cursor = datos.size();
+        return true;
+    }
+
+    bool leer(EEL_F *destino)
+    {
+        if (!destino || escribiendo || cursor + 4 > datos.size()) {
+            if (destino) *destino = 0.0;
+            if (!escribiendo) cursor = datos.size();
+            return false;
+        }
+
+        const std::uint32_t bits =
+            static_cast<std::uint32_t>(datos[cursor])
+            | (static_cast<std::uint32_t>(datos[cursor + 1]) << 8)
+            | (static_cast<std::uint32_t>(datos[cursor + 2]) << 16)
+            | (static_cast<std::uint32_t>(datos[cursor + 3]) << 24);
+        cursor += 4;
+
+        float compacto = 0.0f;
+        std::memcpy(&compacto, &bits, sizeof(compacto));
+        *destino = static_cast<EEL_F>(compacto);
+        return true;
+    }
+
+    void rewind() { cursor = 0; }
+};
 
 // Funciones que WDL no trae y que los scripts generados por asistentes usan
 // con frecuencia. Son funciones normales del host: reciben punteros a los
@@ -72,6 +153,79 @@ static EEL_F NSEEL_CGEN_CALL nova_lerp(void *, EEL_F *a, EEL_F *b, EEL_F *t)
     return *a + (*b - *a) * *t;
 }
 
+// ── @serialize: handle 0 apunta al buffer interno de la VM ──────────────
+
+static EEL_F NSEEL_CGEN_CALL nova_file_var(void *thisptr, EEL_F *handle, EEL_F *valor)
+{
+    auto *backend = static_cast<BackendSerializacion *>(thisptr);
+    if (!backend || !backend->activo || !valor) return 0.0;
+    if (static_cast<int>(std::lround(*handle)) != 0) return 0.0;
+
+    if (backend->escribiendo) {
+        return backend->escribir(*valor) ? 1.0 : 0.0;
+    }
+    return backend->leer(valor) ? 1.0 : 0.0;
+}
+
+static EEL_F NSEEL_CGEN_CALL nova_file_mem(void *thisptr, EEL_F *handle, EEL_F *offset,
+                                            EEL_F *longitud)
+{
+    auto *backend = static_cast<BackendSerializacion *>(thisptr);
+    if (!backend || !backend->activo || !backend->vm) return 0.0;
+    if (static_cast<int>(std::lround(*handle)) != 0) return 0.0;
+
+    const long offsetInicial = std::lround(*offset);
+    const long total = std::lround(*longitud);
+    if (offsetInicial < 0 || total <= 0) return 0.0;
+
+    long procesados = 0;
+    while (procesados < total) {
+        int disponibles = 0;
+        EEL_F *ram = NSEEL_VM_getramptr(
+            backend->vm,
+            static_cast<unsigned int>(offsetInicial + procesados),
+            &disponibles);
+        if (!ram || disponibles <= 0) break;
+
+        const long restantes = total - procesados;
+        const int lote = static_cast<int>(std::min<long>(restantes, disponibles));
+
+        if (backend->escribiendo) {
+            for (int i = 0; i < lote; ++i) {
+                if (!backend->escribir(ram[i])) return procesados;
+            }
+        } else {
+            for (int i = 0; i < lote; ++i) {
+                if (!backend->leer(&ram[i])) return procesados;
+            }
+        }
+        procesados += lote;
+    }
+
+    return static_cast<EEL_F>(procesados);
+}
+
+static EEL_F NSEEL_CGEN_CALL nova_file_avail(void *thisptr, EEL_F *handle)
+{
+    auto *backend = static_cast<BackendSerializacion *>(thisptr);
+    if (!backend || !backend->activo) return 0.0;
+    if (static_cast<int>(std::lround(*handle)) != 0) return 0.0;
+
+    // Negativo en escritura; bytes restantes en lectura, como REAPER.
+    if (backend->escribiendo) return -1.0;
+    return static_cast<EEL_F>(backend->datos.size() - backend->cursor);
+}
+
+static EEL_F *NSEEL_CGEN_CALL nova_file_rewind(void *thisptr, EEL_F *handle)
+{
+    auto *backend = static_cast<BackendSerializacion *>(thisptr);
+    if (!backend || !backend->activo) return handle;
+    if (static_cast<int>(std::lround(*handle)) != 0) return handle;
+
+    backend->rewind();
+    return handle;
+}
+
 } // extern "C"
 
 void registrarFuncionesGlobales()
@@ -93,6 +247,13 @@ void registrarFuncionesGlobales()
         // forman parte del JSFX clasico, pero no rompen ningun script valido.
         NSEEL_addfunc_retval("clamp", 3, NSEEL_PProc_THIS, &nova_clamp);
         NSEEL_addfunc_retval("lerp", 3, NSEEL_PProc_THIS, &nova_lerp);
+
+        // Estado interno de @serialize. El handle 0 apunta al buffer de la VM
+        // que ejecuta el codigo (NSEEL_PProc_THIS inyecta su backend).
+        NSEEL_addfunc_retval("file_var", 2, NSEEL_PProc_THIS, &nova_file_var);
+        NSEEL_addfunc_retval("file_mem", 3, NSEEL_PProc_THIS, &nova_file_mem);
+        NSEEL_addfunc_retval("file_avail", 1, NSEEL_PProc_THIS, &nova_file_avail);
+        NSEEL_addfunc_retptr("file_rewind", 1, NSEEL_PProc_THIS, &nova_file_rewind);
     });
 }
 
@@ -115,6 +276,9 @@ struct NovaJsfxWdlEngine::Impl {
     NSEEL_CODEHANDLE slider = nullptr;
     NSEEL_CODEHANDLE block = nullptr;
     NSEEL_CODEHANDLE sample = nullptr;
+    NSEEL_CODEHANDLE serialize = nullptr;
+
+    BackendSerializacion backendEstado;
 
     EEL_F *spl0 = nullptr;
     EEL_F *spl1 = nullptr;
@@ -132,6 +296,10 @@ struct NovaJsfxWdlEngine::Impl {
     {
         // Orden inverso al de compilacion: las funciones comunes de @init
         // pueden estar referenciadas por los code handles posteriores.
+        if (serialize) {
+            NSEEL_code_free(serialize);
+            serialize = nullptr;
+        }
         if (sample) {
             NSEEL_code_free(sample);
             sample = nullptr;
@@ -158,6 +326,11 @@ NovaJsfxWdlEngine::NovaJsfxWdlEngine()
 
     m_impl->vm = NSEEL_VM_alloc();
     if (!m_impl->vm) return;
+
+    // Las funciones de file_* reciben este puntero para leer/escribir el
+    // buffer de @serialize de esta VM concreta.
+    m_impl->backendEstado.vm = m_impl->vm;
+    NSEEL_VM_SetCustomFuncThis(m_impl->vm, &m_impl->backendEstado);
 
     m_impl->spl0 = NSEEL_VM_regvar(m_impl->vm, "spl0");
     m_impl->spl1 = NSEEL_VM_regvar(m_impl->vm, "spl1");
@@ -253,6 +426,12 @@ bool NovaJsfxWdlEngine::compilar(const Programas &programas, std::string *outErr
         return false;
     }
 
+    m_impl->serialize = compilarSeccion(programas.serialize, "@serialize");
+    if (!programas.serialize.empty() && !m_impl->serialize) {
+        m_impl->liberarProgramas();
+        return false;
+    }
+
     return true;
 }
 
@@ -297,6 +476,35 @@ void NovaJsfxWdlEngine::ejecutarSample()
 {
     if (!m_impl) return;
     if (m_impl->sample) NSEEL_code_execute(m_impl->sample);
+}
+
+std::string NovaJsfxWdlEngine::guardarEstado()
+{
+    if (!m_impl || !m_impl->vm || !m_impl->serialize) return {};
+
+    m_impl->backendEstado.iniciarEscritura();
+    NSEEL_code_execute(m_impl->serialize);
+    std::string estado = m_impl->backendEstado.finalizar();
+    NSEEL_VM_freeRAMIfCodeRequested(m_impl->vm);
+    return estado;
+}
+
+bool NovaJsfxWdlEngine::cargarEstado(const std::string &estado)
+{
+    if (!m_impl || !m_impl->vm || !m_impl->serialize || estado.empty()) {
+        return false;
+    }
+
+    m_impl->backendEstado.iniciarLectura(estado);
+    NSEEL_code_execute(m_impl->serialize);
+    m_impl->backendEstado.finalizar();
+    NSEEL_VM_freeRAMIfCodeRequested(m_impl->vm);
+    return true;
+}
+
+bool NovaJsfxWdlEngine::tieneSerialize() const
+{
+    return m_impl && m_impl->serialize;
 }
 
 bool NovaJsfxWdlEngine::tieneBlock() const

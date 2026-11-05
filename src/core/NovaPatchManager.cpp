@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDateTime>
+#include <utility>
 
 // Magic bytes identificadores de un archivo .novapatch: "NPTC" (Nova PaTCh)
 static const quint32 kNovaPatchMagic = 0x4E505443;
@@ -72,6 +73,30 @@ bool NovaPatchManager::exportPatch(const QString &targetFilePath,
             }
         }
         trackObj[QStringLiteral("clips")] = clipsArray;
+
+        QJsonArray pluginsArray;
+        for (const auto &plugin : trk.plugins) {
+            QJsonObject pluginObj;
+            pluginObj[QStringLiteral("id")] = plugin.id;
+            pluginObj[QStringLiteral("name")] = plugin.name;
+            pluginObj[QStringLiteral("category")] = plugin.category;
+            pluginObj[QStringLiteral("script")] = plugin.script;
+            pluginObj[QStringLiteral("bypassed")] = plugin.bypassed;
+
+            QJsonArray slidersArray;
+            for (const float valor : plugin.sliders) {
+                slidersArray.append(static_cast<double>(valor));
+            }
+            pluginObj[QStringLiteral("sliders")] = slidersArray;
+
+            // El estado de @serialize es binario: va en base64 para que el
+            // bloque de metadatos siga siendo JSON plano.
+            pluginObj[QStringLiteral("state")] =
+                QString::fromLatin1(plugin.state.toBase64());
+            pluginsArray.append(pluginObj);
+        }
+        trackObj[QStringLiteral("plugins")] = pluginsArray;
+
         tracksArray.append(trackObj);
     }
     rootObj[QStringLiteral("tracks")] = tracksArray;
@@ -205,6 +230,28 @@ bool NovaPatchManager::inspectPatch(const QString &patchFilePath,
             clip.audioKey = cObj.value(QStringLiteral("audioKey")).toString();
             trk.clips.push_back(clip);
         }
+
+        const QJsonArray pluginsArray = tObj.value(QStringLiteral("plugins")).toArray();
+        for (const auto &pVal : pluginsArray) {
+            const QJsonObject pObj = pVal.toObject();
+            NovaPatchPluginInfo plugin;
+            plugin.id = pObj.value(QStringLiteral("id")).toString();
+            plugin.name = pObj.value(QStringLiteral("name")).toString();
+            plugin.category = pObj.value(QStringLiteral("category")).toString();
+            plugin.script = pObj.value(QStringLiteral("script")).toString();
+            plugin.bypassed = pObj.value(QStringLiteral("bypassed")).toBool(false);
+
+            const QJsonArray slidersArray = pObj.value(QStringLiteral("sliders")).toArray();
+            plugin.sliders.reserve(static_cast<size_t>(slidersArray.size()));
+            for (const auto &sVal : slidersArray) {
+                plugin.sliders.push_back(static_cast<float>(sVal.toDouble()));
+            }
+
+            plugin.state = QByteArray::fromBase64(
+                pObj.value(QStringLiteral("state")).toString().toLatin1());
+            trk.plugins.push_back(std::move(plugin));
+        }
+
         outMetadata.tracks.push_back(trk);
     }
 
@@ -324,6 +371,7 @@ QVariantMap NovaPatchManager::metadataToVariant(const NovaPatchMetadata &meta, q
     map[QStringLiteral("trackCount")] = static_cast<int>(meta.tracks.size());
 
     int totalClips = 0;
+    int totalPlugins = 0;
     QVariantList tracksList;
     for (const auto &trk : meta.tracks) {
         QVariantMap tMap;
@@ -333,6 +381,20 @@ QVariantMap NovaPatchManager::metadataToVariant(const NovaPatchMetadata &meta, q
         tMap[QStringLiteral("pan")] = trk.pan;
         tMap[QStringLiteral("clipCount")] = static_cast<int>(trk.clips.size());
         totalClips += static_cast<int>(trk.clips.size());
+
+        QVariantList pluginsList;
+        for (const auto &p : trk.plugins) {
+            QVariantMap pMap;
+            pMap[QStringLiteral("id")] = p.id;
+            pMap[QStringLiteral("name")] = p.name;
+            pMap[QStringLiteral("category")] = p.category;
+            pMap[QStringLiteral("bypassed")] = p.bypassed;
+            pMap[QStringLiteral("hasState")] = !p.state.isEmpty();
+            pluginsList.append(pMap);
+        }
+        tMap[QStringLiteral("pluginCount")] = static_cast<int>(trk.plugins.size());
+        tMap[QStringLiteral("plugins")] = pluginsList;
+        totalPlugins += static_cast<int>(trk.plugins.size());
 
         QVariantList clipsList;
         for (const auto &c : trk.clips) {
@@ -348,6 +410,7 @@ QVariantMap NovaPatchManager::metadataToVariant(const NovaPatchMetadata &meta, q
     }
 
     map[QStringLiteral("clipCount")] = totalClips;
+    map[QStringLiteral("pluginCount")] = totalPlugins;
     map[QStringLiteral("tracks")] = tracksList;
     return map;
 }

@@ -1250,6 +1250,28 @@ bool NovaAudioEngine::exportPatch(const QString &targetFilePath,
         }
 
         if (!patchTrack.clips.empty() || !trackIndices.isEmpty()) {
+            // El parche viaja con los plugins de la pista: script, bypass,
+            // valores de sliders y estado interno de @serialize.
+            if (m_trackModel) {
+                const QVariantList plugins = m_trackModel->exportPluginsSnapshot(tIdx);
+                for (const QVariant &valor : plugins) {
+                    const QVariantMap mapa = valor.toMap();
+                    NovaPatchPluginInfo plugin;
+                    plugin.id = mapa.value(QStringLiteral("id")).toString();
+                    plugin.name = mapa.value(QStringLiteral("name")).toString();
+                    plugin.category = mapa.value(QStringLiteral("category")).toString();
+                    plugin.script = mapa.value(QStringLiteral("script")).toString();
+                    plugin.bypassed = mapa.value(QStringLiteral("bypassed")).toBool();
+                    plugin.state = mapa.value(QStringLiteral("state")).toByteArray();
+
+                    const QVariantList sliders = mapa.value(QStringLiteral("sliders")).toList();
+                    plugin.sliders.reserve(static_cast<size_t>(sliders.size()));
+                    for (const QVariant &slider : sliders) {
+                        plugin.sliders.push_back(slider.toFloat());
+                    }
+                    patchTrack.plugins.push_back(std::move(plugin));
+                }
+            }
             patchTracks.push_back(patchTrack);
         }
     }
@@ -1317,6 +1339,7 @@ bool NovaAudioEngine::applyPatch(const QString &patchFilePath, bool createNewTra
 
     for (const auto &trk : meta.tracks) {
         int targetTrackIdx = -1;
+        bool pistaCreada = false;
 
         if (!createNewTracks && m_trackModel) {
             for (int i = 0; i < m_trackModel->rowCount(); ++i) {
@@ -1335,7 +1358,36 @@ bool NovaAudioEngine::applyPatch(const QString &patchFilePath, bool createNewTra
             }
             m_trackModel->addAudioTrack(newTrkName);
             targetTrackIdx = m_trackModel->rowCount() - 1;
+            pistaCreada = true;
             tracksImported++;
+        }
+
+        // Los plugins se restauran en pistas nuevas o en pistas existentes
+        // que aun no tengan ninguno. Si ya tienen, se conservan los locales
+        // para no duplicar ni pisar nada.
+        if (targetTrackIdx >= 0 && m_trackModel && !trk.plugins.empty()) {
+            const bool pistaSinPlugins =
+                m_trackModel->trackPlugins(targetTrackIdx).isEmpty();
+            if (pistaCreada || pistaSinPlugins) {
+                QVariantList pluginsList;
+                for (const auto &plugin : trk.plugins) {
+                    QVariantMap mapa;
+                    mapa[QStringLiteral("id")] = plugin.id;
+                    mapa[QStringLiteral("name")] = plugin.name;
+                    mapa[QStringLiteral("category")] = plugin.category;
+                    mapa[QStringLiteral("script")] = plugin.script;
+                    mapa[QStringLiteral("bypassed")] = plugin.bypassed;
+                    mapa[QStringLiteral("state")] = plugin.state;
+
+                    QVariantList sliders;
+                    for (const float valor : plugin.sliders) {
+                        sliders.append(valor);
+                    }
+                    mapa[QStringLiteral("sliders")] = sliders;
+                    pluginsList.append(mapa);
+                }
+                m_trackModel->restorePluginsSnapshot(targetTrackIdx, pluginsList);
+            }
         }
 
         if (targetTrackIdx >= 0 && m_regionModel) {

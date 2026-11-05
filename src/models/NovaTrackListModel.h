@@ -74,6 +74,19 @@ public:
     Q_INVOKABLE QVariantList parseJsfxSliders(const QString &sourceCode) const;
     Q_INVOKABLE QString getJsfxDescription(const QString &sourceCode) const;
 
+    /**
+     * Instantanea completa de los plugins de una pista para guardarlos en un
+     * .novapatch: id, nombre, categoria, script, bypass, sliders y estado de
+     * @serialize.
+     */
+    Q_INVOKABLE QVariantList exportPluginsSnapshot(int trackRow) const;
+
+    /**
+     * Reemplaza los plugins de una pista con la instantanea dada. Se usa al
+     * aplicar un parche sobre una pista recien creada.
+     */
+    Q_INVOKABLE bool restorePluginsSnapshot(int trackRow, const QVariantList &plugins);
+
     /** Devuelve la cadena DSP activa para una pista dada. */
     class NovaDspChain* dspChainForTrack(int trackRow) const;
 

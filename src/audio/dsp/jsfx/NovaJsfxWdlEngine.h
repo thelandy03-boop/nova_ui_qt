@@ -9,7 +9,8 @@
  * Nova Studio mantiene su propia fachada (NovaJsfxEffect) y su parser de
  * cabecera (desc:, sliderN:). Este adaptador solo se encarga de lo que hace
  * el motor de verdad: crear una VM EEL2, compilar las secciones @init,
- * @slider, @block y @sample, y ejecutarlas con las variables del host.
+ * @slider, @block, @sample y @serialize, y ejecutarlas con las variables del
+ * host.
  *
  * La cabecera no incluye ningun fichero de WDL: los tipos C del motor
  * (NSEEL_VMCTX, NSEEL_CODEHANDLE, EEL_F) quedan encerrados en el .cpp.
@@ -22,6 +23,7 @@ public:
         std::string slider;
         std::string block;
         std::string sample;
+        std::string serialize;
     };
 
     NovaJsfxWdlEngine();
@@ -31,7 +33,7 @@ public:
     NovaJsfxWdlEngine &operator=(const NovaJsfxWdlEngine &) = delete;
 
     /**
-     * Compila las cuatro secciones. Las secciones vacias no generan codigo.
+     * Compila las cinco secciones. Las secciones vacias no generan codigo.
      * Devuelve false y deja el motor sin programas nuevos si alguna falla.
      */
     bool compilar(const Programas &programas, std::string *outError = nullptr);
@@ -45,6 +47,21 @@ public:
     void ejecutarSlider();
     void ejecutarBlock();
     void ejecutarSample();
+
+    /**
+     * Ejecuta @serialize en modo escritura y devuelve el estado interno.
+     * Los sliders no van aqui: se persisten aparte, como en REAPER.
+     * Devuelve una cadena vacia si el script no tiene @serialize.
+     */
+    std::string guardarEstado();
+
+    /**
+     * Ejecuta @serialize en modo lectura sobre el estado dado.
+     * Devuelve false si el script no tiene @serialize o el estado esta vacio.
+     */
+    bool cargarEstado(const std::string &estado);
+
+    bool tieneSerialize() const;
 
     bool tieneBlock() const;
     bool tieneSample() const;

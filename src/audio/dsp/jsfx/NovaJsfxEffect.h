@@ -2,6 +2,7 @@
 
 #include "audio/dsp/NovaDspEffect.h"
 #include "audio/dsp/jsfx/NovaJsfxWdlEngine.h"
+#include <QByteArray>
 #include <QString>
 #include <vector>
 #include <memory>
@@ -11,7 +12,8 @@
 /**
  * Efecto DSP que ejecuta scripts JSFX de Cockos REAPER.
  * Carga archivos de script JSFX (.jsfx / .txt), parsea sus sliders y evalúa
- * el código DSP (@init, @slider, @block, @sample) en tiempo real.
+ * el código DSP (@init, @slider, @block, @sample) en tiempo real y guarda el
+ * estado interno de @serialize.
  *
  * La fachada y el parser de cabecera son propios. El lenguaje EEL2 lo
  * ejecuta el motor real de Cockos (WDL) a través de NovaJsfxWdlEngine.
@@ -63,6 +65,23 @@ public:
     QString scriptSource() const { return m_scriptContent; }
     const std::vector<SliderMeta>& sliders() const { return m_sliders; }
 
+    /** true si el script declara una seccion @serialize con codigo. */
+    bool hasSerialize() const { return m_serializePresente.load(std::memory_order_acquire); }
+
+    /**
+     * Ejecuta @serialize en modo escritura y devuelve el estado interno.
+     * No incluye los sliders: esos se guardan aparte, como en REAPER.
+     * Devuelve un QByteArray vacio si el script no tiene @serialize.
+     */
+    QByteArray saveState();
+
+    /**
+     * Restaura el estado interno ejecutando @serialize en modo lectura.
+     * Orden: @init (con la RAM intacta) -> @serialize (lectura) -> @slider.
+     * Los sliders deben haberse restaurado antes de llamar a este metodo.
+     */
+    bool loadState(const QByteArray& state);
+
 private:
     struct ParsedScript {
         QString name;
@@ -71,6 +90,7 @@ private:
         QString sliderSrc;
         QString blockSrc;
         QString sampleSrc;
+        QString serializeSrc;
     };
 
     static ParsedScript parseSource(const QString& scriptContent, const QString& baseName);
@@ -89,6 +109,7 @@ private:
 
     std::vector<SliderMeta> m_sliders;
     std::vector<void*> m_sliderVars;
+    std::atomic<bool> m_serializePresente{false};
 
     double m_playPosition = 0.0;
     // Transporte de la sesion. Se escribe desde el hilo de la UI y se lee en

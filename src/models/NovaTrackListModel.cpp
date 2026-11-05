@@ -1081,6 +1081,127 @@ bool NovaTrackListModel::createCustomJsfxPlugin(int trackRow, const QString &nam
     return true;
 }
 
+QVariantList NovaTrackListModel::exportPluginsSnapshot(int trackRow) const
+{
+    QVariantList resultado;
+
+    const auto it = d_ptr->stubPlugins.constFind(trackRow);
+    if (it == d_ptr->stubPlugins.constEnd()) {
+        return resultado;
+    }
+
+    for (const auto &plugin : *it) {
+        QVariantMap mapa;
+        mapa[QStringLiteral("id")] = plugin.id;
+        mapa[QStringLiteral("name")] = plugin.name;
+        mapa[QStringLiteral("category")] = plugin.category;
+        mapa[QStringLiteral("bypassed")] = plugin.bypassed;
+
+        QVariantList sliders;
+        for (const QVariant &parametro : plugin.parameters) {
+            sliders.append(parametro.toMap().value(QStringLiteral("value")).toFloat());
+        }
+        mapa[QStringLiteral("sliders")] = sliders;
+
+        if (auto jsfx = std::dynamic_pointer_cast<NovaJsfxEffect>(plugin.dspEffect)) {
+            mapa[QStringLiteral("script")] = jsfx->scriptSource();
+            mapa[QStringLiteral("state")] = jsfx->saveState();
+        } else {
+            mapa[QStringLiteral("script")] = QString();
+            mapa[QStringLiteral("state")] = QByteArray();
+        }
+
+        resultado.append(mapa);
+    }
+
+    return resultado;
+}
+
+bool NovaTrackListModel::restorePluginsSnapshot(int trackRow, const QVariantList &plugins)
+{
+    if (trackRow < 0) {
+        return false;
+    }
+
+    // La instantanea sustituye la cadena completa de la pista. Se llama solo
+    // sobre pistas nuevas o existentes sin plugins, asi que no se pierde
+    // ningun plugin local.
+    if (!d_ptr->trackDspChains.contains(trackRow)) {
+        d_ptr->trackDspChains[trackRow] = std::make_shared<NovaDspChain>();
+    } else {
+        d_ptr->trackDspChains[trackRow]->clear();
+    }
+    d_ptr->stubPlugins[trackRow].clear();
+
+    for (const QVariant &valor : plugins) {
+        const QVariantMap mapa = valor.toMap();
+        const QString id = mapa.value(QStringLiteral("id")).toString();
+        const QString script = mapa.value(QStringLiteral("script")).toString();
+        const bool bypassed = mapa.value(QStringLiteral("bypassed")).toBool();
+        const QByteArray estado = mapa.value(QStringLiteral("state")).toByteArray();
+
+        const QVariantList sliders = mapa.value(QStringLiteral("sliders")).toList();
+
+        std::shared_ptr<NovaJsfxEffect> jsfx;
+        if (!script.isEmpty()) {
+            jsfx = std::make_shared<NovaJsfxEffect>();
+            QString error;
+            if (!jsfx->loadScript(script, &error)) {
+                qCWarning(novaCore) << "No se pudo restaurar el plugin JSFX del parche:"
+                                    << mapa.value(QStringLiteral("name")).toString()
+                                    << error;
+                jsfx.reset();
+            }
+        } else if (!id.isEmpty()) {
+            jsfx = NovaJsfxManager::instance().createEffect(id);
+        }
+
+        if (!jsfx) {
+            qCWarning(novaCore) << "Plugin del parche no disponible:" << id
+                                << mapa.value(QStringLiteral("name")).toString();
+            continue;
+        }
+
+        // Orden de restauracion: sliders primero, luego @init + @serialize
+        // (lectura) + @slider dentro de loadState.
+        const size_t limite = std::min<size_t>(sliders.size(), jsfx->sliders().size());
+        for (size_t i = 0; i < limite; ++i) {
+            jsfx->setParameter(static_cast<int>(i), sliders[static_cast<int>(i)].toFloat());
+        }
+        if (!estado.isEmpty()) {
+            jsfx->loadState(estado);
+        }
+        jsfx->setBypassed(bypassed);
+
+        NovaTrackListModelPrivate::PluginStubInfo stub;
+        stub.id = id;
+        stub.name = jsfx->name();
+        stub.category = mapa.value(QStringLiteral("category")).toString();
+        if (stub.category.isEmpty()) {
+            stub.category = jsfx->category();
+        }
+        stub.bypassed = bypassed;
+        stub.dspEffect = jsfx;
+
+        for (const auto &sl : jsfx->sliders()) {
+            QVariantMap pmap;
+            pmap[QStringLiteral("index")] = sl.index;
+            pmap[QStringLiteral("name")] = sl.name;
+            pmap[QStringLiteral("value")] = jsfx->getParameter(sl.index);
+            pmap[QStringLiteral("min")] = sl.minValue;
+            pmap[QStringLiteral("max")] = sl.maxValue;
+            pmap[QStringLiteral("unit")] = sl.unit;
+            stub.parameters.append(pmap);
+        }
+
+        d_ptr->trackDspChains[trackRow]->addEffect(jsfx);
+        d_ptr->stubPlugins[trackRow].append(stub);
+    }
+
+    Q_EMIT trackPluginsChanged(trackRow);
+    return true;
+}
+
 QString NovaTrackListModel::compileJsfxScript(const QString &sourceCode)
 {
     NovaJsfxEffect effect;

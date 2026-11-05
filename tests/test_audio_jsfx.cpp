@@ -7,7 +7,9 @@
 #include <QRegularExpression>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -30,6 +32,34 @@ struct PlantillaJsfx {
     QString nombre;
     QString codigo;
 };
+
+// Los blobs de @serialize guardan float32 little-endian, igual que REAPER.
+static float leerFloatLe(const QByteArray &datos, int desplazamiento)
+{
+    if (desplazamiento < 0 || desplazamiento + 4 > datos.size()) return 0.0f;
+
+    const std::uint32_t bits =
+        static_cast<std::uint32_t>(static_cast<unsigned char>(datos[desplazamiento]))
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(datos[desplazamiento + 1])) << 8)
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(datos[desplazamiento + 2])) << 16)
+        | (static_cast<std::uint32_t>(static_cast<unsigned char>(datos[desplazamiento + 3])) << 24);
+
+    float valor = 0.0f;
+    std::memcpy(&valor, &bits, sizeof(valor));
+    return valor;
+}
+
+static void escribirFloatLe(QByteArray &datos, int desplazamiento, float valor)
+{
+    if (desplazamiento < 0 || desplazamiento + 4 > datos.size()) return;
+
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &valor, sizeof(bits));
+    datos[desplazamiento] = static_cast<char>(bits & 0xffu);
+    datos[desplazamiento + 1] = static_cast<char>((bits >> 8) & 0xffu);
+    datos[desplazamiento + 2] = static_cast<char>((bits >> 16) & 0xffu);
+    datos[desplazamiento + 3] = static_cast<char>((bits >> 24) & 0xffu);
+}
 
 // JsfxTemplates.qml guarda cada script como concatenación de literales QML.
 // Se deshacen los escapes (\n, \", \\) para quedarse con el texto real.
@@ -437,7 +467,7 @@ int main()
                     "@block debe ver samplesblock=64 y aplicar 0.5");
     }
 
-    // 10. @gfx y @serialize se siguen ignorando, como en la fachada anterior.
+    // 10. @gfx se ignora y @serialize se compila sin ejecutarse en audio.
     {
         QString script = QStringLiteral(
             "desc: Con Gfx y Serialize\n"
@@ -455,8 +485,10 @@ int main()
         NovaJsfxEffect effect;
         QString err;
         bool ok = effect.loadScript(script, &err);
-        CHECK_NAMED("wdl_ignora_gfx_serialize", ok,
-                    (err.isEmpty() ? QStringLiteral("@gfx y @serialize deben ignorarse") : err.toUtf8().constData()));
+        CHECK_NAMED("wdl_gfx_ignorado_serialize_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("@gfx debe ignorarse y @serialize compilar") : err.toUtf8().constData()));
+        CHECK_NAMED("wdl_serialize_detectado", effect.hasSerialize(),
+                    "el efecto debe saber que el script tiene @serialize");
 
         std::vector<float> buffer(2 * kChannels, 1.0f);
         effect.process(buffer.data(), 2, kChannels, kSampleRate);
@@ -588,6 +620,187 @@ int main()
         CHECK_NAMED("transporte_sin_sesion_120",
                     std::abs(buffer[0] - 120.0f) < 1e-4f,
                     "sin transporte el tempo por defecto debe seguir siendo 120");
+    }
+
+    // 15. @serialize guarda y restaura variables y RAM con file_var/file_mem.
+    //     Los valores viajan como float32 little-endian, como en REAPER.
+    {
+        const QString script = QStringLiteral(
+            "desc: Estado interno\n"
+            "@init\n"
+            "estado = 7;\n"
+            "ram = 0;\n"
+            "ram[0] = 11;\n"
+            "ram[1] = 22;\n"
+            "@serialize\n"
+            "leyendo = file_avail(0) >= 0;\n"
+            "file_var(0, estado);\n"
+            "file_mem(0, ram, 2);\n"
+            "@sample\n"
+            "spl0 = estado + ram[0] + ram[1] + leyendo;\n"
+            "spl1 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        const bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("serialize_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("el script con @serialize debe compilar")
+                                   : err.toUtf8().constData()));
+
+        const QByteArray estado = effect.saveState();
+        CHECK_NAMED("serialize_guarda_blob", estado.size() == 12,
+                    "debe guardar 3 valores de 32 bits (estado + 2 de RAM)");
+        CHECK_NAMED("serialize_guarda_variable",
+                    std::abs(leerFloatLe(estado, 0) - 7.0f) < 1e-6f,
+                    "file_var debe guardar el valor de la variable");
+        CHECK_NAMED("serialize_guarda_memoria",
+                    std::abs(leerFloatLe(estado, 4) - 11.0f) < 1e-6f
+                        && std::abs(leerFloatLe(estado, 8) - 22.0f) < 1e-6f,
+                    "file_mem debe guardar los dos valores de RAM");
+        CHECK_NAMED("serialize_guardado_repetible", effect.saveState() == estado,
+                    "dos guardados seguidos deben producir el mismo blob");
+
+        QByteArray restaurado = estado;
+        escribirFloatLe(restaurado, 0, 99.0f);
+        escribirFloatLe(restaurado, 4, 33.0f);
+        escribirFloatLe(restaurado, 8, 44.0f);
+        CHECK_NAMED("serialize_carga_blob", effect.loadState(restaurado),
+                    "loadState debe aceptar un estado valido");
+
+        std::vector<float> buffer(2 * kChannels, 0.0f);
+        effect.process(buffer.data(), 2, kChannels, kSampleRate);
+        CHECK_NAMED("serialize_restaura_estado",
+                    std::abs(buffer[0] - 177.0f) < 1e-4f,
+                    "debe leer 99 + 33 + 44 + 1 (modo lectura)");
+    }
+
+    // 16. file_rewind(0) vuelve al principio del estado en modo lectura.
+    {
+        const QString script = QStringLiteral(
+            "desc: Rebobinar\n"
+            "@serialize\n"
+            "file_var(0, a);\n"
+            "file_rewind(0);\n"
+            "file_var(0, b);\n"
+            "@sample\n"
+            "spl0 = a + b;\n"
+            "spl1 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        CHECK_NAMED("serialize_rewind_compila", effect.loadScript(script, &err), err.toUtf8().constData());
+
+        QByteArray estado(4, '\0');
+        escribirFloatLe(estado, 0, 5.0f);
+        CHECK_NAMED("serialize_rewind_carga", effect.loadState(estado),
+                    "el estado de 4 bytes debe cargarse");
+
+        std::vector<float> buffer(2 * kChannels, 0.0f);
+        effect.process(buffer.data(), 2, kChannels, kSampleRate);
+        CHECK_NAMED("serialize_rewind_relee",
+                    std::abs(buffer[0] - 10.0f) < 1e-4f,
+                    "tras file_rewind debe volver a leer el primer valor");
+    }
+
+    // 17. Los sliders no entran en el blob: se guardan aparte.
+    {
+        const QString script = QStringLiteral(
+            "desc: Sliders aparte\n"
+            "slider1:2<0,10,0.1>Ganancia\n"
+            "@init\n"
+            "interno = 42;\n"
+            "@serialize\n"
+            "file_var(0, interno);\n"
+            "@sample\n"
+            "spl0 = slider1 + interno;\n"
+            "spl1 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        CHECK_NAMED("serialize_slider_compila", effect.loadScript(script, &err), err.toUtf8().constData());
+
+        const QByteArray estado = effect.saveState();
+        CHECK_NAMED("serialize_no_guarda_sliders", estado.size() == 4,
+                    "el blob solo debe contener el estado interno");
+        CHECK_NAMED("serialize_slider_intacto",
+                    std::abs(effect.getParameter(0) - 2.0f) < 1e-6f,
+                    "guardar el estado no debe tocar el slider");
+    }
+
+    // 18. Un script sin @serialize no produce estado y rechaza cargas.
+    {
+        const QString script = QStringLiteral(
+            "desc: Sin estado\n"
+            "slider1:1<0,10,0.1>Ganancia\n"
+            "@sample\n"
+            "spl0 = spl0 * slider1;\n"
+            "spl1 = spl1 * slider1;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        CHECK_NAMED("serialize_ausente_compila", effect.loadScript(script, &err), err.toUtf8().constData());
+        CHECK_NAMED("serialize_ausente_vacio", !effect.hasSerialize() && effect.saveState().isEmpty(),
+                    "sin @serialize no debe haber blob");
+
+        QByteArray estado(4, '\0');
+        escribirFloatLe(estado, 0, 1.0f);
+        CHECK_NAMED("serialize_ausente_rechaza_carga", !effect.loadState(estado),
+                    "sin @serialize loadState debe devolver false");
+    }
+
+    // 19. Un @serialize no vacio impide que @init borre la RAM; sin el,
+    //     el reset historico sigue vaciandola.
+    {
+        const QString conSerialize = QStringLiteral(
+            "desc: Conserva RAM\n"
+            "@init\n"
+            "ram = 0;\n"
+            "ram[0] = ram[0] + 1;\n"
+            "@serialize\n"
+            "file_var(0, marcador);\n"
+            "@sample\n"
+            "spl0 = ram[0];\n"
+            "spl1 = spl0;\n"
+        );
+        const QString sinSerialize = QStringLiteral(
+            "desc: Borra RAM\n"
+            "@init\n"
+            "ram = 0;\n"
+            "ram[0] = ram[0] + 1;\n"
+            "@sample\n"
+            "spl0 = ram[0];\n"
+            "spl1 = spl0;\n"
+        );
+
+        auto valorTrasProcesar = [](NovaJsfxEffect &effect) {
+            std::vector<float> buffer(2 * kChannels, 0.0f);
+            effect.process(buffer.data(), 2, kChannels, kSampleRate);
+            return buffer[0];
+        };
+
+        QString err;
+        NovaJsfxEffect conEstado;
+        CHECK_NAMED("serialize_ram_compila", conEstado.loadScript(conSerialize, &err), err.toUtf8().constData());
+        const float primeroCon = valorTrasProcesar(conEstado);
+        conEstado.reset();
+        const float segundoCon = valorTrasProcesar(conEstado);
+        CHECK_NAMED("serialize_conserva_ram",
+                    std::abs(segundoCon - (primeroCon + 1.0f)) < 1e-6f,
+                    "@init debe sumar sin borrar la RAM cuando hay @serialize");
+
+        NovaJsfxEffect sinEstado;
+        CHECK_NAMED("serialize_control_compila", sinEstado.loadScript(sinSerialize, &err), err.toUtf8().constData());
+        const float primeroSin = valorTrasProcesar(sinEstado);
+        sinEstado.reset();
+        const float segundoSin = valorTrasProcesar(sinEstado);
+        CHECK_NAMED("serialize_sin_estado_borra_ram",
+                    std::abs(primeroSin - 1.0f) < 1e-6f
+                        && std::abs(segundoSin - 1.0f) < 1e-6f,
+                    "sin @serialize el reset debe vaciar la RAM y dejarla en 1");
     }
 
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);
