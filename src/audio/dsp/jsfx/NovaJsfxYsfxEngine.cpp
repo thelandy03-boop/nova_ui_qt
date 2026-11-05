@@ -213,6 +213,15 @@ void NovaJsfxYsfxEngine::ejecutarInit()
 void NovaJsfxYsfxEngine::ejecutarSlider()
 {
     if (!m_impl->fx) return;
+    // asegurar que el transporte esta aplicado antes de @slider
+    ysfx_time_info_t ti{};
+    ti.tempo = static_cast<ysfx_real>(m_impl->tempo);
+    ti.playback_state = (m_impl->playState == 1) ? ysfx_playback_playing : ysfx_playback_stopped;
+    ti.time_position = static_cast<ysfx_real>(m_impl->playPos);
+    ti.beat_position = static_cast<ysfx_real>(m_impl->playPos * m_impl->tempo / 60.0);
+    ti.time_signature[0] = 4;
+    ti.time_signature[1] = 4;
+    ysfx_set_time_info(m_impl->fx, &ti);
     // ysfx_init deja must_compute_slider a true; si no hubo init reciente,
     // forzar la notificacion de al menos un slider para ejecutar @slider.
     if (!m_impl->sliderNumsOrden.empty()) {
@@ -279,8 +288,18 @@ bool NovaJsfxYsfxEngine::cargarEstado(const std::string &estado)
     st.data_size = estado.size();
     st.sliders = nullptr;
     st.slider_count = 0;
-    bool r = ysfx_load_serialized_state(m_impl->fx, &st);
-    fflush(stderr);
+    // Guardar sliders actuales (restaurados por el gestor de parches) para
+    // no perderlos: ysfx_load_state los reinicia a los valores por defecto.
+    std::vector<ysfx_real> slidersGuardados;
+    uint32_t nsl = 0;
+    for (uint32_t i = 0; i < ysfx_max_sliders; ++i)
+        if (ysfx_slider_exists(m_impl->fx, i)) ++nsl;
+    slidersGuardados.resize(nsl);
+    for (uint32_t i = 0; i < nsl; ++i)
+        slidersGuardados[i] = ysfx_slider_get_value(m_impl->fx, i);
+    bool r = ysfx_load_state(m_impl->fx, &st);
+    for (uint32_t i = 0; i < nsl; ++i)
+        ysfx_slider_set_value(m_impl->fx, i, slidersGuardados[i], false);
     return r;
 }
 
@@ -377,7 +396,6 @@ void NovaJsfxYsfxEngine::procesarBloque(float *interleavedBuffer, int numFrames,
 
     ysfx_process_float(m_impl->fx, ins.data(), outs.data(), nch, nch,
                        static_cast<uint32_t>(numFrames));
-
     // Reintercalar.
     for (int f = 0; f < numFrames; ++f) {
         for (uint32_t c = 0; c < nch; ++c) {
