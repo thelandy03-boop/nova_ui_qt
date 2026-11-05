@@ -290,7 +290,7 @@ bool NovaJsfxYsfxEngine::cargarEstado(const std::string &estado)
     st.data_size = buf.size();
     st.sliders = nullptr;
     st.slider_count = 0;
-    ysfx_delayed_init(m_impl->fx);
+    // ysfx_delayed_init(m_impl->fx); // disabled to avoid re-running @init after loadState
     bool r = ysfx_load_state(m_impl->fx, &st);
     return r;
 }
