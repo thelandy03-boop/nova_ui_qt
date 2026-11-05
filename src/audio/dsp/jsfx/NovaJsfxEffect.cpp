@@ -152,9 +152,12 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
 
     engine->setSampleRate(m_lastSampleRate);
     engine->setSamplesBlock(m_lastSamplesBlock);
-    engine->setTempo(120.0);
+    // El @init inicial ya ve el transporte real si la sesion se lo ha dado.
+    const bool hayTransporte = m_transporteActivo.load(std::memory_order_relaxed);
+    engine->setTempo(hayTransporte ? m_transporteBpm.load(std::memory_order_relaxed) : 120.0);
+    engine->setPlayPosition(hayTransporte ? m_transporteSegundos.load(std::memory_order_relaxed) : 0.0);
+    engine->setPlayState(hayTransporte && m_transporteReproduciendo.load(std::memory_order_relaxed) ? 1 : 0);
     engine->setNumChannels(2);
-    engine->setPlayPosition(0.0);
 
     NovaJsfxWdlEngine::Programas programas;
     programas.init = parsed.initSrc.toStdString();
@@ -196,7 +199,7 @@ void NovaJsfxEffect::setParameter(int paramIndex, float value)
 
     m_engine->setSampleRate(m_lastSampleRate);
     m_engine->setSamplesBlock(m_lastSamplesBlock);
-    m_engine->setPlayPosition(m_playPosition);
+    aplicarTransporteAlMotor();
     m_engine->asignarVariable(m_sliderVars[static_cast<size_t>(paramIndex)], value);
     // Ejecutar codigo de @slider
     m_engine->ejecutarSlider();
@@ -217,6 +220,34 @@ void NovaJsfxEffect::reset()
     resetSinBloqueo();
 }
 
+void NovaJsfxEffect::setTransport(double playPositionSeconds, double bpm, bool playing)
+{
+    m_transporteSegundos.store(playPositionSeconds, std::memory_order_relaxed);
+    m_transporteBpm.store(bpm > 0.0 ? bpm : 120.0, std::memory_order_relaxed);
+    m_transporteReproduciendo.store(playing, std::memory_order_relaxed);
+    m_transporteActivo.store(true, std::memory_order_release);
+}
+
+void NovaJsfxEffect::aplicarTransporteAlMotor()
+{
+    if (!m_engine) return;
+
+    if (m_transporteActivo.load(std::memory_order_acquire)) {
+        const double bpm = m_transporteBpm.load(std::memory_order_relaxed);
+        m_engine->setTempo(bpm);
+        m_engine->setPlayPosition(m_transporteSegundos.load(std::memory_order_relaxed));
+        m_engine->setPlayState(
+            m_transporteReproduciendo.load(std::memory_order_relaxed) ? 1 : 0);
+        return;
+    }
+
+    // Sin sesion (o sin transporte publicado) se conserva el comportamiento
+    // historico: 120 BPM y el reloj interno del propio efecto.
+    m_engine->setTempo(120.0);
+    m_engine->setPlayPosition(m_playPosition);
+    m_engine->setPlayState(0);
+}
+
 void NovaJsfxEffect::resetSinBloqueo()
 {
     m_playPosition = 0.0;
@@ -229,8 +260,7 @@ void NovaJsfxEffect::resetSinBloqueo()
     m_engine->limpiarMemoria();
     m_engine->setSampleRate(m_lastSampleRate);
     m_engine->setSamplesBlock(m_lastSamplesBlock);
-    m_engine->setTempo(120.0);
-    m_engine->setPlayPosition(0.0);
+    aplicarTransporteAlMotor();
     m_engine->setNumChannels(2);
 
     const size_t limite = std::min(m_sliders.size(), m_sliderVars.size());
@@ -260,7 +290,7 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
 
     m_lastSamplesBlock = numFrames;
     m_engine->setSamplesBlock(numFrames);
-    m_engine->setPlayPosition(m_playPosition);
+    aplicarTransporteAlMotor();
 
     // Ejecutar @block una vez por bloque de audio
     m_engine->ejecutarBlock();

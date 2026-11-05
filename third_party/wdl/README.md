@@ -65,6 +65,17 @@ La librería estática `nova_wdl_eel2` la define `CMakeLists.txt` con:
 `src/audio/dsp/jsfx/NovaJsfxWdlEngine.cpp` con un mutex global, porque WDL
 los necesita para proteger la memoria compartida entre VMs.
 
+## Variables del host
+
+`NovaJsfxWdlEngine` registra las variables que espera un JSFX: `srate`,
+`samplesblock`, `num_ch`, `spl0`, `spl1`, los `sliderN` y el transporte
+(`tempo`, `play_position`, `beat_position`, `play_state`).
+
+El transporte lo publica `NovaJsfxEffect::setTransport`: la UI lo actualiza
+a ~60 FPS desde la sesión (o desde el reproductor de Oboe en Android) y el
+efecto lo aplica antes de `@block` y `@sample`. Sin transporte disponible,
+`tempo` vale 120 y `play_position` avanza con el reloj interno del efecto.
+
 ## Licencia
 
 Todos los ficheros de EEL2, FFT y las cabeceras auxiliares llevan en su

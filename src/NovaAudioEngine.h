@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 #include "core/NovaSessionManager.h"
 #include "core/NovaTransportController.h"
@@ -222,6 +223,9 @@ private:
     // El controlador es el dueño: nadie más los instancia en Android.
     NovaAndroidAudioEngine m_androidEngine;
     NovaSpikeLoader m_androidLoader;
+    // En Android no hay sesion Ardour que mueva el transporte: este reloj
+    // refresca la posicion de los JSFX mientras el reproductor avanza.
+    QTimer m_androidTransporteTimer;
     bool m_androidMotorListo = false;
     bool m_androidParadaPedida = false;
     bool m_androidGrabando = false;
@@ -246,6 +250,8 @@ private:
     void importUltimaGrabacionAndroid();
     void androidAutoAdvance();
     void iniciarGrabacionAndroid();
+    // Publica tempo, posicion y estado de reproduccion en todas las cadenas DSP.
+    void actualizarTransporteDsp();
 #endif
 };
 

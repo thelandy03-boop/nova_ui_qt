@@ -542,6 +542,54 @@ int main()
         }
     }
 
+    // 14. El transporte real de la sesion llega a tempo, play_position,
+    //     beat_position y play_state, tanto en @slider como en @sample.
+    {
+        const QString script = QStringLiteral(
+            "desc: Transporte\n"
+            "slider1:0<0,1,0.01>Ganancia\n"
+            "@slider\n"
+            "transporte = tempo + play_position + beat_position + play_state;\n"
+            "@sample\n"
+            "spl0 = transporte;\n"
+            "spl1 = transporte;\n"
+        );
+
+        NovaJsfxEffect effect;
+        // 90 BPM, 2 s de reproduccion: beat_position = 3, play_state = 1.
+        effect.setTransport(2.0, 90.0, true);
+
+        QString err;
+        const bool ok = effect.loadScript(script, &err);
+        CHECK_NAMED("transporte_compila", ok,
+                    (err.isEmpty() ? QStringLiteral("el script debe compilar")
+                                   : err.toUtf8().constData()));
+
+        std::vector<float> buffer(4 * kChannels, 0.0f);
+        effect.process(buffer.data(), 4, kChannels, 48000);
+        CHECK_NAMED("transporte_tempo_posicion_estado",
+                    std::abs(buffer[0] - 96.0f) < 1e-4f,
+                    "90 BPM + 2 s + 3 beats + reproduciendo debe dar 96");
+
+        // Cambiar el transporte y forzar @slider: 120 BPM, 4 s, parado.
+        effect.setTransport(4.0, 120.0, false);
+        effect.setParameter(0, 0.5f);
+        buffer.assign(4 * kChannels, 0.0f);
+        effect.process(buffer.data(), 4, kChannels, 48000);
+        CHECK_NAMED("transporte_actualiza_slider",
+                    std::abs(buffer[0] - 132.0f) < 1e-4f,
+                    "120 BPM + 4 s + 8 beats + parado debe dar 132");
+
+        // Sin sesion se conserva el comportamiento historico: 120 BPM fijos.
+        NovaJsfxEffect sinTransporte;
+        sinTransporte.loadScript(script, &err);
+        buffer.assign(4 * kChannels, 0.0f);
+        sinTransporte.process(buffer.data(), 4, kChannels, 48000);
+        CHECK_NAMED("transporte_sin_sesion_120",
+                    std::abs(buffer[0] - 120.0f) < 1e-4f,
+                    "sin transporte el tempo por defecto debe seguir siendo 120");
+    }
+
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

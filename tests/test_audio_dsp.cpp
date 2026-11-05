@@ -6,6 +6,8 @@
 #include "audio/dsp/NovaStereoDelay.h"
 #include "audio/dsp/NovaReverb.h"
 
+#include <QString>
+
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -25,6 +27,31 @@ static int g_checks = 0;
                         __FILE__, __LINE__);                                    \
         }                                                                       \
     } while (0)
+
+// Efecto de prueba que solo anota lo que la cadena le publica.
+class EfectoTransporteFalso : public NovaDspEffect {
+public:
+    QString id() const override { return QStringLiteral("test:transporte"); }
+    QString name() const override { return QStringLiteral("Transporte falso"); }
+    QString category() const override { return QStringLiteral("Test"); }
+    void process(float*, int, int, int) override { ++procesados; }
+    void setParameter(int, float) override {}
+    float getParameter(int) const override { return 0.0f; }
+    void reset() override {}
+    void setTransport(double segundos, double bpm, bool reproduciendo) override
+    {
+        ++avisosTransporte;
+        ultimoSegundos = segundos;
+        ultimoBpm = bpm;
+        ultimaReproduccion = reproduciendo;
+    }
+
+    int procesados = 0;
+    int avisosTransporte = 0;
+    double ultimoSegundos = 0.0;
+    double ultimoBpm = 0.0;
+    bool ultimaReproduccion = false;
+};
 
 int main()
 {
@@ -154,6 +181,31 @@ int main()
         }
         CHECK_NAMED("reverb_spatial_tail", tailEnergy > 0.1f,
                     "el reverb debe generar una cola de reflexión espacial tras el impulso");
+    }
+
+    // 6. La cadena publica el transporte sin bloquear el callback de audio:
+    //    los valores se aplican al empezar el siguiente bloque.
+    {
+        NovaDspChain chain;
+        auto falso = std::make_shared<EfectoTransporteFalso>();
+        chain.addEffect(falso);
+
+        chain.setTransport(2.5, 90.0, true);
+        CHECK_NAMED("chain_transport_diferido", falso->avisosTransporte == 0,
+                    "publicar el transporte no debe tocar los efectos fuera del hilo de audio");
+
+        std::vector<float> buffer(kNumFrames * kChannels, 0.0f);
+        chain.process(buffer.data(), kNumFrames, kChannels, kSampleRate);
+
+        CHECK_NAMED("chain_transport_aplicado",
+                    falso->avisosTransporte == 1
+                        && std::abs(falso->ultimoSegundos - 2.5) < 1e-9
+                        && std::abs(falso->ultimoBpm - 90.0) < 1e-9
+                        && falso->ultimaReproduccion,
+                    "el bloque debe recibir posicion, tempo y estado de reproduccion");
+
+        CHECK_NAMED("chain_transport_procesa", falso->procesados == 1,
+                    "el efecto debe procesar el bloque ademas de recibir el transporte");
     }
 
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);

@@ -33,6 +33,22 @@ public:
     /** Obtiene el valor actual de un parámetro. */
     virtual float getParameter(int paramIndex) const = 0;
 
+    /**
+     * Informa del transporte del proyecto. Se llama desde el hilo de la UI
+     * (no desde el callback de audio) y debe ser barato: los efectos que no
+     * usan transporte lo ignoran.
+     *
+     * @param playPositionSeconds Posición del playhead en segundos.
+     * @param bpm                 Tempo del proyecto.
+     * @param playing             true si el transporte está reproduciendo.
+     */
+    virtual void setTransport(double playPositionSeconds, double bpm, bool playing)
+    {
+        (void)playPositionSeconds;
+        (void)bpm;
+        (void)playing;
+    }
+
     /** Reinicia buffers internos y estados de filtros. */
     virtual void reset() = 0;
 

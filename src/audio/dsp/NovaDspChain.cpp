@@ -60,11 +60,33 @@ void NovaDspChain::process(float* interleavedBuffer, int numFrames, int channels
         return;
     }
 
+    // El transporte se publica sin mutex; se aplica aquí, ya en el hilo de
+    // audio, antes de que los efectos ejecuten @block y @sample.
+    if (m_transporteActivo.load(std::memory_order_acquire)) {
+        const double segundos = m_transporteSegundos.load(std::memory_order_relaxed);
+        const double bpm = m_transporteBpm.load(std::memory_order_relaxed);
+        const bool reproduciendo =
+            m_transporteReproduciendo.load(std::memory_order_relaxed);
+        for (const auto& effect : m_effects) {
+            if (effect) {
+                effect->setTransport(segundos, bpm, reproduciendo);
+            }
+        }
+    }
+
     for (const auto& effect : m_effects) {
         if (effect && !effect->isBypassed()) {
             effect->process(interleavedBuffer, numFrames, channels, sampleRate);
         }
     }
+}
+
+void NovaDspChain::setTransport(double playPositionSeconds, double bpm, bool playing)
+{
+    m_transporteSegundos.store(playPositionSeconds, std::memory_order_relaxed);
+    m_transporteBpm.store(bpm > 0.0 ? bpm : 120.0, std::memory_order_relaxed);
+    m_transporteReproduciendo.store(playing, std::memory_order_relaxed);
+    m_transporteActivo.store(true, std::memory_order_release);
 }
 
 void NovaDspChain::reset()

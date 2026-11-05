@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 /**
  * Efecto DSP que ejecuta scripts JSFX de Cockos REAPER.
@@ -51,6 +52,7 @@ public:
     void process(float* interleavedBuffer, int numFrames, int channels, int sampleRate) override;
     void setParameter(int paramIndex, float value) override;
     float getParameter(int paramIndex) const override;
+    void setTransport(double playPositionSeconds, double bpm, bool playing) override;
     void reset() override;
 
     // Carga y recompilación en caliente de scripts
@@ -74,6 +76,9 @@ private:
     static ParsedScript parseSource(const QString& scriptContent, const QString& baseName);
     bool parseScript(const QString& scriptContent, QString* outError = nullptr);
     void resetSinBloqueo();
+    // Debe llamarse con m_mutex tomado: escribe en la VM del motor las
+    // variables de transporte que veran @block/@sample.
+    void aplicarTransporteAlMotor();
 
     QString m_id = QStringLiteral("jsfx:custom");
     QString m_name = QStringLiteral("JSFX Plugin");
@@ -86,6 +91,12 @@ private:
     std::vector<void*> m_sliderVars;
 
     double m_playPosition = 0.0;
+    // Transporte de la sesion. Se escribe desde el hilo de la UI y se lee en
+    // el callback de audio; los atomics evitan bloquear el procesado.
+    std::atomic<bool> m_transporteActivo{false};
+    std::atomic<double> m_transporteSegundos{0.0};
+    std::atomic<double> m_transporteBpm{120.0};
+    std::atomic<bool> m_transporteReproduciendo{false};
     int m_lastSampleRate = 48000;
     int m_lastSamplesBlock = 512;
     mutable std::mutex m_mutex;

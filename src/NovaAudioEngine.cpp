@@ -1,5 +1,6 @@
 #include "NovaAudioEngine.h"
 #include "core/NovaLogging.h"
+#include "audio/dsp/NovaDspChain.h"
 #include <QCoreApplication>
 #if defined(Q_OS_ANDROID)
 #include "core/platform/NovaAndroidStubs.h"
@@ -140,6 +141,22 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
     connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackFinished,
             this, &NovaAudioEngine::androidAutoAdvance);
 
+    // Reloj de UI para el transporte de los JSFX: en Android no hay sesion
+    // Ardour, asi que la posicion se lee del reproductor de Oboe.
+    m_androidTransporteTimer.setInterval(16); // ~60 FPS
+    connect(&m_androidTransporteTimer, &QTimer::timeout, this, [this]() {
+        actualizarTransporteDsp();
+    });
+    connect(&m_androidEngine, &NovaAndroidAudioEngine::playbackStateChanged, this,
+            [this](bool playing) {
+                if (playing) {
+                    m_androidTransporteTimer.start();
+                } else {
+                    m_androidTransporteTimer.stop();
+                }
+                actualizarTransporteDsp();
+            });
+
     // Cuando se eliminan clips de la sesión y no queda ninguno, detener motor de audio
     connect(m_regionModel, &NovaRegionModel::regionCountChanged, this, [this](int count) {
         if (count == 0) {
@@ -166,8 +183,21 @@ NovaAudioEngine::NovaAudioEngine(QObject *parent)
             auto* chain = m_trackModel->dspChainForTrack(trackRow);
             if (chain) {
                 m_androidEngine.setDspChain(chain);
+                actualizarTransporteDsp();
             }
         }
+    });
+
+    // Transporte real para los JSFX: tempo, posicion y estado de reproduccion.
+    // Solo se publica en Android, que es donde la cadena DSP procesa audio.
+    connect(&m_transport, &NovaTransportController::isPlayingChanged, this, [this]() {
+        actualizarTransporteDsp();
+    });
+    connect(&m_transport, &NovaTransportController::positionChanged, this, [this]() {
+        actualizarTransporteDsp();
+    });
+    connect(&m_transport, &NovaTransportController::bpmChanged, this, [this]() {
+        actualizarTransporteDsp();
     });
 #endif
 }
@@ -252,6 +282,7 @@ void NovaAudioEngine::play() {
                 if (chain) {
                     m_androidEngine.setDspChain(chain);
                 }
+                actualizarTransporteDsp();
             }
 
             // Split real: si el playhead cae dentro de una region, se
@@ -477,6 +508,33 @@ void NovaAudioEngine::setLoopRange(double startBeat, double endBeat) {
 #endif
 }
 void NovaAudioEngine::toggleLoop() { m_transport.toggleLoop(); }
+
+#if defined(Q_OS_ANDROID)
+void NovaAudioEngine::actualizarTransporteDsp()
+{
+    if (!m_trackModel) return;
+
+    const double bpmActual = m_transport.bpm() > 0.0 ? m_transport.bpm() : 120.0;
+
+    // Con un fichero cargado manda el reproductor de Oboe (posicion real de
+    // la reproduccion); si no, la posicion del transporte de la sesion.
+    double segundos = m_transport.currentBeat() * 60.0 / bpmActual;
+    if (m_androidEngine.tieneFicheroCargado()) {
+        const double tasa = m_androidEngine.tasaSalidaReal();
+        segundos = tasa > 0.0
+                       ? static_cast<double>(m_androidEngine.currentFrame()) / tasa
+                       : 0.0;
+    }
+
+    const bool reproduciendo = isPlaying();
+    const int filas = m_trackModel->rowCount();
+    for (int fila = 0; fila < filas; ++fila) {
+        if (auto* cadena = m_trackModel->dspChainForTrack(fila)) {
+            cadena->setTransport(segundos, bpmActual, reproduciendo);
+        }
+    }
+}
+#endif
 
 // ✂️ HERRAMIENTA SPLIT: Dividir clip en el punto exacto del Playhead
 bool NovaAudioEngine::splitAtPlayhead(int targetRegionIndex)
