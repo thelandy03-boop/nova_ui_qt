@@ -1130,6 +1130,26 @@ void NovaTrackListModel::sendMidiPitchBend(int trackRow, int pluginIndex, int va
     }
 }
 
+QString NovaTrackListModel::getPluginGmemName(int trackRow, int pluginIndex) const
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    return fx ? fx->gmemName() : QString();
+}
+
+double NovaTrackListModel::readPluginGmem(int trackRow, int pluginIndex, int index) const
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    return (fx && index >= 0) ? fx->readGmem(static_cast<uint32_t>(index)) : 0.0;
+}
+
+void NovaTrackListModel::writePluginGmem(int trackRow, int pluginIndex, int index, double value)
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    if (fx && index >= 0) {
+        fx->writeGmem(static_cast<uint32_t>(index), value);
+    }
+}
+
 QVariantList NovaTrackListModel::exportPluginsSnapshot(int trackRow) const
 {
     QVariantList resultado;

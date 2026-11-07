@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -939,6 +940,166 @@ int main()
             CHECK_NAMED("midi_velocidad_preservada", ev.data.size() >= 3 && ev.data[2] == 90,
                         "la velocidad original de 90 debe preservarse");
         }
+    }
+
+    // 22. Soporte de directiva @import y carga de muestras/impulsos filename:
+    {
+        // 22.1 @import de librerías .jsfx-inc
+        const std::string rutaInc = "/tmp/test_helper_math.jsfx-inc";
+        {
+            std::ofstream f(rutaInc);
+            f << "@init\n"
+              << "function multiplicaPorTres(val) (\n"
+              << "  val * 3;\n"
+              << ");\n";
+        }
+
+        const QString scriptImport = QStringLiteral(
+            "desc: Test Import\n"
+            "@import test_helper_math.jsfx-inc\n"
+            "@init\n"
+            "resultado = multiplicaPorTres(7);\n"
+            "@sample\n"
+            "spl0 = resultado;\n"
+            "spl1 = resultado;\n"
+        );
+
+        NovaJsfxEffect effectImport;
+        effectImport.setImportDirectory(QStringLiteral("/tmp"));
+        QString err;
+        bool okImport = effectImport.loadScript(scriptImport, &err);
+        CHECK_NAMED("import_compila", okImport, err.toUtf8().constData());
+
+        std::vector<float> bufImport(4, 0.0f);
+        effectImport.process(bufImport.data(), 2, 2, 48000);
+        CHECK_NAMED("import_evalua_funcion", std::abs(bufImport[0] - 21.0f) < 1e-4f,
+                    "multiplicaPorTres(7) debio retornar 21");
+        std::remove(rutaInc.c_str());
+
+        // 22.2 filename: carga de archivos de muestra WAV y consulta con file_riff
+        const std::string rutaWav = "/tmp/test_sample_audio.wav";
+        {
+            std::ofstream f(rutaWav, std::ios::binary);
+            uint32_t nsamples = 50;
+            uint16_t nch = 1;
+            uint32_t srate = 44100;
+            uint32_t dataSize = nsamples * nch * sizeof(int16_t);
+            uint32_t chunkSize = 36 + dataSize;
+            f.write("RIFF", 4);
+            f.write(reinterpret_cast<const char*>(&chunkSize), 4);
+            f.write("WAVEfmt ", 8);
+            uint32_t subchunk1Size = 16;
+            uint16_t audioFormat = 1; // PCM
+            uint16_t numChannels = nch;
+            uint32_t sampleRate = srate;
+            uint32_t byteRate = srate * nch * sizeof(int16_t);
+            uint16_t blockAlign = nch * sizeof(int16_t);
+            uint16_t bitsPerSample = 16;
+            f.write(reinterpret_cast<const char*>(&subchunk1Size), 4);
+            f.write(reinterpret_cast<const char*>(&audioFormat), 2);
+            f.write(reinterpret_cast<const char*>(&numChannels), 2);
+            f.write(reinterpret_cast<const char*>(&sampleRate), 4);
+            f.write(reinterpret_cast<const char*>(&byteRate), 4);
+            f.write(reinterpret_cast<const char*>(&blockAlign), 2);
+            f.write(reinterpret_cast<const char*>(&bitsPerSample), 2);
+            f.write("data", 4);
+            f.write(reinterpret_cast<const char*>(&dataSize), 4);
+            for (uint32_t i = 0; i < nsamples; ++i) {
+                int16_t s = 12000;
+                f.write(reinterpret_cast<const char*>(&s), sizeof(int16_t));
+            }
+        }
+
+        const QString scriptSample = QStringLiteral(
+            "desc: Test Audio Sample Filename\n"
+            "filename:0,test_sample_audio.wav\n"
+            "@init\n"
+            "h = file_open(0);\n"
+            "res = file_riff(h, nch, sr);\n"
+            "file_mem(h, 200, 5);\n"
+            "file_close(h);\n"
+            "@sample\n"
+            "spl0 = sr;\n"
+            "spl1 = nch;\n"
+        );
+
+        NovaJsfxEffect effectSample;
+        effectSample.setDataDirectory(QStringLiteral("/tmp"));
+        bool okSample = effectSample.loadScript(scriptSample, &err);
+        CHECK_NAMED("sample_filename_compila", okSample, err.toUtf8().constData());
+
+        std::vector<float> bufSample(4, 0.0f);
+        effectSample.process(bufSample.data(), 2, 2, 48000);
+        CHECK_NAMED("sample_srate_leido", std::abs(bufSample[0] - 44100.0f) < 1e-4f,
+                    "file_riff debio leer sr = 44100");
+        CHECK_NAMED("sample_nch_leido", std::abs(bufSample[1] - 1.0f) < 1e-4f,
+                    "file_riff debio leer nch = 1");
+        std::remove(rutaWav.c_str());
+    }
+
+    // 23. Memoria Global Compartida (options:gmem= y gmem[])
+    {
+        const QString scriptA = QStringLiteral(
+            "desc: Plugin A GMEM Escribe\n"
+            "options:gmem=NovaBusTest\n"
+            "@init\n"
+            "gmem[42] = 9876.5;\n"
+            "@sample\n"
+            "spl0 = spl0;\n"
+        );
+
+        const QString scriptB = QStringLiteral(
+            "desc: Plugin B GMEM Lee\n"
+            "options:gmem=NovaBusTest\n"
+            "@init\n"
+            "leido = 0.0;\n"
+            "@sample\n"
+            "leido = gmem[42];\n"
+            "spl0 = leido;\n"
+            "spl1 = leido;\n"
+        );
+
+        const QString scriptC = QStringLiteral(
+            "desc: Plugin C Espacio Aislado\n"
+            "options:gmem=OtroBus\n"
+            "@init\n"
+            "leido = 0.0;\n"
+            "@sample\n"
+            "leido = gmem[42];\n"
+            "spl0 = leido;\n"
+            "spl1 = leido;\n"
+        );
+
+        NovaJsfxEffect fxA, fxB, fxC;
+        QString err;
+        CHECK_NAMED("gmem_a_compila", fxA.loadScript(scriptA, &err), err.toUtf8().constData());
+        CHECK_NAMED("gmem_b_compila", fxB.loadScript(scriptB, &err), err.toUtf8().constData());
+        CHECK_NAMED("gmem_c_compila", fxC.loadScript(scriptC, &err), err.toUtf8().constData());
+
+        CHECK_NAMED("gmem_nombre_detectado", fxA.gmemName() == QStringLiteral("NovaBusTest"),
+                    "fxA debe tener nombre de gmem NovaBusTest");
+        CHECK_NAMED("gmem_tiene_gmem", fxA.hasGmem() && fxB.hasGmem(), "deben reportar hasGmem() verdadero");
+
+        // fxA escribió 9876.5 en gmem[42] durante @init
+        CHECK_NAMED("gmem_lectura_host", std::abs(fxA.readGmem(42) - 9876.5) < 1e-4,
+                    "el host debe leer el valor escrito por fxA en gmem[42]");
+
+        // fxB procesa y debe leer el valor escrito por fxA
+        std::vector<float> bufB(4, 0.0f);
+        fxB.process(bufB.data(), 2, 2, 48000);
+        CHECK_NAMED("gmem_compartido_entre_plugins", std::abs(bufB[0] - 9876.5f) < 1e-4f,
+                    "fxB debio leer 9876.5 de gmem[42] escrito por fxA");
+
+        // fxC pertenece a 'OtroBus', gmem[42] debe ser 0.0
+        std::vector<float> bufC(4, 0.0f);
+        fxC.process(bufC.data(), 2, 2, 48000);
+        CHECK_NAMED("gmem_aislamiento_espacios", std::abs(bufC[0] - 0.0f) < 1e-6f,
+                    "fxC no debe ver los datos de NovaBusTest");
+
+        // El host escribe en el espacio compartido a través de writeGmem
+        fxB.writeGmem(100, 31415.9);
+        CHECK_NAMED("gmem_escritura_host", std::abs(fxA.readGmem(100) - 31415.9) < 1e-4,
+                    "fxA debe ver el valor escrito en el host por fxB");
     }
 
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);

@@ -32,7 +32,7 @@ bool NovaJsfxEffect::loadScriptFile(const QString& filePath, QString* outError)
     file.close();
 
     m_id = QStringLiteral("jsfx:%1").arg(QFileInfo(filePath).baseName());
-    return loadScript(content, outError);
+    return loadScript(content, filePath, outError);
 }
 
 bool NovaJsfxEffect::recompile(const QString& newSource, QString* outError)
@@ -42,8 +42,13 @@ bool NovaJsfxEffect::recompile(const QString& newSource, QString* outError)
 
 bool NovaJsfxEffect::loadScript(const QString& scriptContent, QString* outError)
 {
+    return loadScript(scriptContent, QString(), outError);
+}
+
+bool NovaJsfxEffect::loadScript(const QString& scriptContent, const QString& originPath, QString* outError)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
-    return parseScript(scriptContent, outError);
+    return parseScript(scriptContent, originPath, outError);
 }
 
 NovaJsfxEffect::ParsedScript NovaJsfxEffect::parseSource(const QString& scriptContent,
@@ -136,7 +141,7 @@ NovaJsfxEffect::Metadata NovaJsfxEffect::parseMetadata(const QString& scriptCont
     return metadata;
 }
 
-bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError)
+bool NovaJsfxEffect::parseScript(const QString& scriptContent, const QString& originPath, QString* outError)
 {
     // El editor reabre el ultimo texto intentado, aunque el cuerpo no compile.
     m_scriptContent = scriptContent;
@@ -164,8 +169,15 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     engine->setPlayState(hayTransporte && m_transporteReproduciendo.load(std::memory_order_relaxed) ? 1 : 0);
     engine->setNumChannels(2);
 
+    if (!m_importDir.isEmpty()) {
+        engine->setImportRoot(m_importDir.toStdString());
+    }
+    if (!m_dataDir.isEmpty()) {
+        engine->setDataRoot(m_dataDir.toStdString());
+    }
+
     std::string err;
-    if (!engine->cargar(scriptContent.toStdString(), &err)) {
+    if (!engine->cargar(scriptContent.toStdString(), originPath.toStdString(), &err)) {
         if (outError) {
             *outError = QStringLiteral("Error en %1").arg(QString::fromStdString(err));
         }
@@ -450,6 +462,78 @@ int NovaJsfxEffect::requestedGfxFps() const
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_engine) return 30;
     return static_cast<int>(m_engine->fpsSolicitadosGfx());
+}
+
+void NovaJsfxEffect::setImportDirectory(const QString &dir)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_importDir = dir;
+    if (m_engine) {
+        m_engine->setImportRoot(dir.toStdString());
+    }
+}
+
+void NovaJsfxEffect::setDataDirectory(const QString &dir)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_dataDir = dir;
+    if (m_engine) {
+        m_engine->setDataRoot(dir.toStdString());
+    }
+}
+
+QString NovaJsfxEffect::importDirectory() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_importDir;
+}
+
+QString NovaJsfxEffect::dataDirectory() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_dataDir;
+}
+
+QString NovaJsfxEffect::gmemName() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return QString();
+    return QString::fromStdString(m_engine->espacioGmem());
+}
+
+bool NovaJsfxEffect::hasGmem() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return false;
+    return m_engine->tieneGmem();
+}
+
+void NovaJsfxEffect::attachGmem(const QString &name)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->adjuntarGmem(name.toStdString());
+}
+
+void NovaJsfxEffect::detachGmem()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->desacoplarGmem();
+}
+
+double NovaJsfxEffect::readGmem(uint32_t index) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return 0.0;
+    return m_engine->leerGmem(index);
+}
+
+void NovaJsfxEffect::writeGmem(uint32_t index, double value)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->escribirGmem(index, value);
 }
 
 

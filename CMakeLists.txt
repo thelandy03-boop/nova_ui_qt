@@ -263,7 +263,11 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
 
 # Common Qt libraries for all platforms
 target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui ysfx)
-target_include_directories(nova_ui_qt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include)
+target_include_directories(nova_ui_qt PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/sources
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/thirdparty/WDL/source
+)
 
 
 if(ANDROID)
@@ -521,7 +525,12 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/dsp/jsfx/NovaJsfxManager.cpp
     )
     target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core ysfx)
-    target_include_directories(test_audio_jsfx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include)
+    target_include_directories(test_audio_jsfx PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/sources
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/thirdparty/WDL/source
+    )
     # Las plantillas JSFX viven en QML; el test las lee del árbol fuente para
     # comprobar que siguen compilando con WDL.
     target_compile_definitions(test_audio_jsfx PRIVATE

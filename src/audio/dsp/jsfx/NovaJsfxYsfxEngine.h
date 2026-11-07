@@ -25,8 +25,28 @@ public:
     /**
      * Carga y compila el script completo (fuente .jsfx tal cual). Devuelve
      * false y deja el motor sin programa nuevo si falla.
+     * Si se pasa rutaOrigen, se usa su directorio para resolver @import y filename:.
      */
-    bool cargar(const std::string &fuente, std::string *outError = nullptr);
+    bool cargar(const std::string &fuente, const std::string &rutaOrigen = "", std::string *outError = nullptr);
+
+    /**
+     * Carga un archivo JSFX directamente desde disco.
+     */
+    bool cargarFichero(const std::string &rutaFichero, std::string *outError = nullptr);
+
+    // Directorios para resolver @import y muestras de audio (filename:)
+    void setImportRoot(const std::string &directorio);
+    void setDataRoot(const std::string &directorio);
+    std::string importRoot() const;
+    std::string dataRoot() const;
+
+    // Memoria Global Compartida (options:gmem= y gmem[])
+    std::string espacioGmem() const;
+    bool tieneGmem() const;
+    void adjuntarGmem(const std::string &nombre);
+    void desacoplarGmem();
+    double leerGmem(uint32_t indice) const;
+    void escribirGmem(uint32_t indice, double valor);
 
     // Variables del host. Solo se usan para los sliders (sliderN); el resto de
     // variables las gestiona YSFX internamente.

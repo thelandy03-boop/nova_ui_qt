@@ -1,6 +1,9 @@
 #include "audio/dsp/jsfx/NovaJsfxYsfxEngine.h"
 
 #include <ysfx.h>
+#include "ysfx_gmem.hpp"
+#include "WDL/eel2/ns-eel.h"
+#include "WDL/eel2/ns-eel-int.h"
 
 #include <algorithm>
 #include <cmath>
@@ -33,6 +36,9 @@ struct NovaJsfxYsfxEngine::Impl {
     double playPos = 0.0;
     int playState = 0;
     int numCh = 2;
+
+    std::string importRoot;
+    std::string dataRoot;
 
     std::vector<NovaMidiEvent> colaMidiEntrada;
     std::vector<NovaMidiEvent> colaMidiSalida;
@@ -117,10 +123,49 @@ NovaJsfxYsfxEngine::NovaJsfxYsfxEngine()
 
 NovaJsfxYsfxEngine::~NovaJsfxYsfxEngine() = default;
 
-bool NovaJsfxYsfxEngine::cargar(const std::string &fuente, std::string *outError)
+bool NovaJsfxYsfxEngine::cargar(const std::string &fuente, const std::string &rutaOrigen, std::string *outError)
 {
     m_impl->liberarFx();
     m_impl->ultimoError.clear();
+
+    // Determinar directorios de importacion y datos
+    std::string dirOrigen = ".";
+    if (!rutaOrigen.empty()) {
+        const size_t barra = rutaOrigen.find_last_of("/\\");
+        if (barra != std::string::npos) {
+            dirOrigen = rutaOrigen.substr(0, barra);
+        }
+    }
+
+    if (!m_impl->importRoot.empty()) {
+        ysfx_set_import_root(m_impl->config, m_impl->importRoot.c_str());
+    } else {
+        ysfx_set_import_root(m_impl->config, dirOrigen.c_str());
+    }
+
+    if (!m_impl->dataRoot.empty()) {
+        ysfx_set_data_root(m_impl->config, m_impl->dataRoot.c_str());
+    } else {
+        ysfx_set_data_root(m_impl->config, dirOrigen.c_str());
+    }
+
+    // Normalizar '@import' a 'import' de cabecera si el usuario uso la sintaxis con '@'
+    std::string fuenteNorm;
+    fuenteNorm.reserve(fuente.size());
+    std::istringstream stream(fuente);
+    std::string linea;
+    while (std::getline(stream, linea)) {
+        size_t pos = 0;
+        while (pos < linea.size() && (linea[pos] == ' ' || linea[pos] == '\t')) ++pos;
+        if (linea.compare(pos, 7, "@import") == 0 && (pos + 7 == linea.size() || linea[pos + 7] == ' ' || linea[pos + 7] == '\t')) {
+            fuenteNorm.append(linea.substr(0, pos));
+            fuenteNorm.append("import");
+            fuenteNorm.append(linea.substr(pos + 7));
+        } else {
+            fuenteNorm.append(linea);
+        }
+        fuenteNorm.push_back('\n');
+    }
 
     // YSFX solo carga desde fichero. Se vuelca la fuente a un temporal.
     char plantilla[] = "/tmp/nova_jsfx_XXXXXX";
@@ -131,15 +176,9 @@ bool NovaJsfxYsfxEngine::cargar(const std::string &fuente, std::string *outError
     }
     {
         std::ofstream out(plantilla, std::ios::binary | std::ios::trunc);
-        out.write(fuente.data(), static_cast<std::streamsize>(fuente.size()));
+        out.write(fuenteNorm.data(), static_cast<std::streamsize>(fuenteNorm.size()));
     }
     close(fd);
-
-    std::string dirTemporal = plantilla;
-    const size_t barra = dirTemporal.find_last_of("/\\");
-    if (barra != std::string::npos) dirTemporal = dirTemporal.substr(0, barra);
-    ysfx_set_import_root(m_impl->config, dirTemporal.c_str());
-    ysfx_set_data_root(m_impl->config, dirTemporal.c_str());
 
     m_impl->fx = ysfx_new(m_impl->config);
     if (!m_impl->fx) {
@@ -164,6 +203,133 @@ bool NovaJsfxYsfxEngine::cargar(const std::string &fuente, std::string *outError
         return false;
     }
     return true;
+}
+
+bool NovaJsfxYsfxEngine::cargarFichero(const std::string &rutaFichero, std::string *outError)
+{
+    m_impl->liberarFx();
+    m_impl->ultimoError.clear();
+
+    std::string dirOrigen = ".";
+    const size_t barra = rutaFichero.find_last_of("/\\");
+    if (barra != std::string::npos) {
+        dirOrigen = rutaFichero.substr(0, barra);
+    }
+
+    if (!m_impl->importRoot.empty()) {
+        ysfx_set_import_root(m_impl->config, m_impl->importRoot.c_str());
+    } else {
+        ysfx_set_import_root(m_impl->config, dirOrigen.c_str());
+    }
+
+    if (!m_impl->dataRoot.empty()) {
+        ysfx_set_data_root(m_impl->config, m_impl->dataRoot.c_str());
+    } else {
+        ysfx_set_data_root(m_impl->config, dirOrigen.c_str());
+    }
+
+    std::ifstream file(rutaFichero);
+    if (!file.is_open()) {
+        if (outError) *outError = "ysfx: no se pudo abrir el archivo: " + rutaFichero;
+        return false;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string fuente = buffer.str();
+    file.close();
+
+    m_impl->fx = ysfx_new(m_impl->config);
+    if (!m_impl->fx) {
+        if (outError) *outError = "ysfx: no se pudo crear el efecto";
+        return false;
+    }
+
+    const bool ok = ysfx_load_file(m_impl->fx, rutaFichero.c_str(), 0);
+    if (!ok) {
+        if (outError) {
+            *outError = m_impl->ultimoError.empty()
+                            ? "ysfx: no se pudo cargar el script"
+                            : m_impl->ultimoError;
+        }
+        m_impl->liberarFx();
+        return false;
+    }
+
+    if (!m_impl->finalizarCarga(fuente, outError)) {
+        return false;
+    }
+    return true;
+}
+
+void NovaJsfxYsfxEngine::setImportRoot(const std::string &directorio)
+{
+    m_impl->importRoot = directorio;
+    if (m_impl->config) {
+        ysfx_set_import_root(m_impl->config, directorio.c_str());
+    }
+}
+
+void NovaJsfxYsfxEngine::setDataRoot(const std::string &directorio)
+{
+    m_impl->dataRoot = directorio;
+    if (m_impl->config) {
+        ysfx_set_data_root(m_impl->config, directorio.c_str());
+    }
+}
+
+std::string NovaJsfxYsfxEngine::importRoot() const
+{
+    return m_impl->importRoot;
+}
+
+std::string NovaJsfxYsfxEngine::dataRoot() const
+{
+    return m_impl->dataRoot;
+}
+
+std::string NovaJsfxYsfxEngine::espacioGmem() const
+{
+    if (!m_impl->fx) return "";
+    return get_gmem_identifier(m_impl->fx);
+}
+
+bool NovaJsfxYsfxEngine::tieneGmem() const
+{
+    if (!m_impl->fx) return false;
+    return !get_gmem_identifier(m_impl->fx).empty();
+}
+
+void NovaJsfxYsfxEngine::adjuntarGmem(const std::string &nombre)
+{
+    if (!m_impl->fx) return;
+    ysfx_gmem_attach(m_impl->fx, nombre);
+}
+
+void NovaJsfxYsfxEngine::desacoplarGmem()
+{
+    if (!m_impl->fx) return;
+    ysfx_gmem_detach(m_impl->fx);
+}
+
+double NovaJsfxYsfxEngine::leerGmem(uint32_t indice) const
+{
+    if (!m_impl->fx) return 0.0;
+    void **slot = get_gmem_address(m_impl->fx);
+    auto blocks = slot ? reinterpret_cast<EEL_F ***>(slot) : nullptr;
+    EEL_F *ptr = __NSEEL_RAMAllocGMEM(blocks, indice);
+    if (!ptr || ptr == &nseel_ramalloc_onfail) return 0.0;
+    return static_cast<double>(*ptr);
+}
+
+void NovaJsfxYsfxEngine::escribirGmem(uint32_t indice, double valor)
+{
+    if (!m_impl->fx) return;
+    void **slot = get_gmem_address(m_impl->fx);
+    auto blocks = slot ? reinterpret_cast<EEL_F ***>(slot) : nullptr;
+    EEL_F *ptr = __NSEEL_RAMAllocGMEM(blocks, indice);
+    if (ptr && ptr != &nseel_ramalloc_onfail) {
+        *ptr = static_cast<EEL_F>(valor);
+    }
 }
 
 void *NovaJsfxYsfxEngine::registrarVariable(const std::string &nombre)

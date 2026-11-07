@@ -77,6 +77,9 @@ public:
     Q_INVOKABLE void sendMidiNote(int trackRow, int pluginIndex, int note, int velocity, int channel = 0);
     Q_INVOKABLE void sendMidiControlChange(int trackRow, int pluginIndex, int controller, int value, int channel = 0);
     Q_INVOKABLE void sendMidiPitchBend(int trackRow, int pluginIndex, int value, int channel = 0);
+    Q_INVOKABLE QString getPluginGmemName(int trackRow, int pluginIndex) const;
+    Q_INVOKABLE double readPluginGmem(int trackRow, int pluginIndex, int index) const;
+    Q_INVOKABLE void writePluginGmem(int trackRow, int pluginIndex, int index, double value);
     Q_INVOKABLE QString getJsfxDescription(const QString &sourceCode) const;
 
     /**

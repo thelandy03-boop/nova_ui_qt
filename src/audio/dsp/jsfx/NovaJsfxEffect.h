@@ -62,8 +62,23 @@ public:
 
     // Carga y recompilación en caliente de scripts
     bool loadScript(const QString& scriptContent, QString* outError = nullptr);
+    bool loadScript(const QString& scriptContent, const QString& originPath, QString* outError = nullptr);
     bool loadScriptFile(const QString& filePath, QString* outError = nullptr);
     bool recompile(const QString& newSource, QString* outError = nullptr);
+
+    // Directorios para resolver @import y muestras de audio (filename:)
+    void setImportDirectory(const QString &dir);
+    void setDataDirectory(const QString &dir);
+    QString importDirectory() const;
+    QString dataDirectory() const;
+
+    // Memoria Global Compartida (options:gmem= y gmem[])
+    QString gmemName() const;
+    bool hasGmem() const;
+    void attachGmem(const QString &name);
+    void detachGmem();
+    double readGmem(uint32_t index) const;
+    void writeGmem(uint32_t index, double value);
 
     QString scriptSource() const { return m_scriptContent; }
     const std::vector<SliderMeta>& sliders() const { return m_sliders; }
@@ -114,7 +129,7 @@ private:
     };
 
     static ParsedScript parseSource(const QString& scriptContent, const QString& baseName);
-    bool parseScript(const QString& scriptContent, QString* outError = nullptr);
+    bool parseScript(const QString& scriptContent, const QString& originPath = QString(), QString* outError = nullptr);
     void resetSinBloqueo();
     // Debe llamarse con m_mutex tomado: escribe en la VM del motor las
     // variables de transporte que veran @block/@sample.
@@ -142,6 +157,9 @@ private:
     int m_lastSampleRate = 48000;
     int m_lastSamplesBlock = 512;
     mutable std::mutex m_mutex;
+
+    QString m_importDir;
+    QString m_dataDir;
 
     mutable std::mutex m_midiMutex;
     std::vector<NovaMidiEvent> m_pendingMidiIn;
