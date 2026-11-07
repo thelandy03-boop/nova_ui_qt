@@ -803,6 +803,43 @@ int main()
                     "sin @serialize el reset debe vaciar la RAM y dejarla en 1");
     }
 
+    // 20. Soporte de capa grafica (@gfx): compilacion, dimensiones, renderizado de pixeles.
+    {
+        const QString scriptGfx = QStringLiteral(
+            "desc: Test Grafico\n"
+            "@init\n"
+            "color = 1.0;\n"
+            "@gfx 320 240\n"
+            "gfx_r = color;\n"
+            "gfx_g = 0.5;\n"
+            "gfx_b = 0.25;\n"
+            "gfx_rect(0, 0, 10, 10, 1);\n"
+            "@sample\n"
+            "spl0 = spl0;\n"
+        );
+
+        NovaJsfxEffect effect;
+        QString err;
+        CHECK_NAMED("gfx_compila", effect.loadScript(scriptGfx, &err), err.toUtf8().constData());
+        CHECK_NAMED("gfx_detectado", effect.hasGfx(), "@gfx debe ser detectado");
+
+        int ancho = 0, alto = 0;
+        bool tieneDim = effect.getGfxDimensions(ancho, alto);
+        CHECK_NAMED("gfx_dimensiones", tieneDim && ancho == 320 && alto == 240,
+                    "debe devolver las dimensiones 320x240");
+
+        // Preparar buffer de pixeles (BGRA 320x240)
+        std::vector<uint8_t> pixeles(320 * 240 * 4, 0);
+        effect.setupGfx(pixeles.data(), 320, 240, 320 * 4, 1.0);
+        bool renderOk = effect.renderGfx();
+        CHECK_NAMED("gfx_renderiza", renderOk, "debe renderizar el frame grafico");
+
+        // Al dibujar un rectangulo en 0,0,10,10, los primeros pixeles no deben ser negros
+        uint32_t primerPixel = *reinterpret_cast<const uint32_t*>(pixeles.data());
+        CHECK_NAMED("gfx_pixeles_dibujados", primerPixel != 0,
+                    "el rectangulo dibujado debe modificar el buffer de pixeles");
+    }
+
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

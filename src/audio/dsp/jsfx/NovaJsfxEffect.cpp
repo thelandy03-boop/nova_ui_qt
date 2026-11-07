@@ -183,6 +183,7 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     m_name = parsed.name;
     m_playPosition = 0.0;
     m_serializePresente.store(!parsed.serializeSrc.isEmpty(), std::memory_order_release);
+    m_gfxPresente.store(m_engine->tieneGfx(), std::memory_order_release);
 
     // Se conserva el comportamiento historico: tras cargar se reinicia el
     // estado. Con @serialize no vacio, REAPER no borra la RAM al ejecutar
@@ -341,4 +342,54 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
     int effChannels = std::min(channels, 2);
     m_engine->procesarBloque(interleavedBuffer, numFrames, effChannels > 0 ? effChannels : 1);
 }
+
+bool NovaJsfxEffect::getGfxDimensions(int &width, int &height) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine || !m_engine->tieneGfx()) return false;
+    uint32_t w = 0, h = 0;
+    if (m_engine->obtenerDimensionesGfx(w, h)) {
+        width = static_cast<int>(w);
+        height = static_cast<int>(h);
+        return true;
+    }
+    return false;
+}
+
+void NovaJsfxEffect::setupGfx(uint8_t *pixels, int width, int height, int stride, double scaleFactor)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->configurarGfx(pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+                            static_cast<uint32_t>(stride), scaleFactor);
+}
+
+bool NovaJsfxEffect::renderGfx()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return false;
+    return m_engine->renderizarGfx();
+}
+
+void NovaJsfxEffect::updateGfxMouse(uint32_t mods, int x, int y, uint32_t buttons, double wheelV, double wheelH)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->actualizarRatonGfx(mods, x, y, buttons, wheelV, wheelH);
+}
+
+void NovaJsfxEffect::setGfxWindowState(bool hasFocus, bool visible, bool mouseOver)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return;
+    m_engine->setEstadoVentanaGfx(hasFocus, visible, mouseOver);
+}
+
+int NovaJsfxEffect::requestedGfxFps() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_engine) return 30;
+    return static_cast<int>(m_engine->fpsSolicitadosGfx());
+}
+
 

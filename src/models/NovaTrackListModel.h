@@ -72,6 +72,8 @@ public:
     Q_INVOKABLE bool createCustomJsfxPlugin(int trackRow, const QString &name, const QString &sourceCode);
     Q_INVOKABLE QString compileJsfxScript(const QString &sourceCode);
     Q_INVOKABLE QVariantList parseJsfxSliders(const QString &sourceCode) const;
+    Q_INVOKABLE bool hasJsfxGfx(int trackRow, int pluginIndex) const;
+    std::shared_ptr<class NovaJsfxEffect> getJsfxEffect(int trackRow, int pluginIndex) const;
     Q_INVOKABLE QString getJsfxDescription(const QString &sourceCode) const;
 
     /**

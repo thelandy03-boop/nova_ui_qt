@@ -82,6 +82,15 @@ public:
      */
     bool loadState(const QByteArray& state);
 
+    /** true si el script declara una seccion @gfx con codigo compilado. */
+    bool hasGfx() const { return m_gfxPresente.load(std::memory_order_acquire); }
+    bool getGfxDimensions(int &width, int &height) const;
+    void setupGfx(uint8_t *pixels, int width, int height, int stride, double scaleFactor);
+    bool renderGfx();
+    void updateGfxMouse(uint32_t mods, int x, int y, uint32_t buttons, double wheelV = 0.0, double wheelH = 0.0);
+    void setGfxWindowState(bool hasFocus, bool visible, bool mouseOver);
+    int requestedGfxFps() const;
+
 private:
     struct ParsedScript {
         QString name;
@@ -110,6 +119,7 @@ private:
     std::vector<SliderMeta> m_sliders;
     std::vector<void*> m_sliderVars;
     std::atomic<bool> m_serializePresente{false};
+    std::atomic<bool> m_gfxPresente{false};
 
     double m_playPosition = 0.0;
     // Transporte de la sesion. Se escribe desde el hilo de la UI y se lee en

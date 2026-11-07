@@ -1081,6 +1081,21 @@ bool NovaTrackListModel::createCustomJsfxPlugin(int trackRow, const QString &nam
     return true;
 }
 
+std::shared_ptr<NovaJsfxEffect> NovaTrackListModel::getJsfxEffect(int trackRow, int pluginIndex) const
+{
+    const auto it = d_ptr->stubPlugins.constFind(trackRow);
+    if (it == d_ptr->stubPlugins.constEnd() || pluginIndex < 0 || pluginIndex >= it->size()) {
+        return nullptr;
+    }
+    return std::dynamic_pointer_cast<NovaJsfxEffect>((*it)[pluginIndex].dspEffect);
+}
+
+bool NovaTrackListModel::hasJsfxGfx(int trackRow, int pluginIndex) const
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    return fx && fx->hasGfx();
+}
+
 QVariantList NovaTrackListModel::exportPluginsSnapshot(int trackRow) const
 {
     QVariantList resultado;

@@ -60,6 +60,15 @@ public:
     // Compatibilidad con la API anterior (un fotograma).
     void procesarMuestra(float *izquierda, float *derecha);
 
+    // Soporte de la capa gráfica (@gfx)
+    bool tieneGfx() const;
+    bool obtenerDimensionesGfx(uint32_t &ancho, uint32_t &alto) const;
+    void configurarGfx(uint8_t *pixeles, uint32_t ancho, uint32_t alto, uint32_t stride, double factorEscala);
+    bool renderizarGfx();
+    void actualizarRatonGfx(uint32_t modificadores, int32_t x, int32_t y, uint32_t botones, double ruedaV, double ruedaH);
+    void setEstadoVentanaGfx(bool foco, bool visible, bool ratonEncima);
+    uint32_t fpsSolicitadosGfx() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

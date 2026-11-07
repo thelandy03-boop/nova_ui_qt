@@ -85,12 +85,15 @@ struct NovaJsfxYsfxEngine::Impl {
     bool finalizarCarga(const std::string &fuente, std::string *outError)
     {
         ultimoError.clear();
-        if (!ysfx_compile(fx, ysfx_compile_no_gfx)) {
-            if (outError) {
-                *outError = ultimoError.empty() ? "ysfx: error de compilacion" : ultimoError;
+        if (!ysfx_compile(fx, 0)) {
+            ultimoError.clear();
+            if (!ysfx_compile(fx, ysfx_compile_no_gfx)) {
+                if (outError) {
+                    *outError = ultimoError.empty() ? "ysfx: error de compilacion" : ultimoError;
+                }
+                liberarFx();
+                return false;
             }
-            liberarFx();
-            return false;
         }
 
             sliderNumsOrden = extraerSliders(fuente);
@@ -405,3 +408,59 @@ void NovaJsfxYsfxEngine::procesarMuestra(float *izquierda, float *derecha)
     *izquierda = buf[0];
     if (derecha) *derecha = buf[1];
 }
+
+bool NovaJsfxYsfxEngine::tieneGfx() const
+{
+    return m_impl->fx && ysfx_has_section(m_impl->fx, ysfx_section_gfx);
+}
+
+bool NovaJsfxYsfxEngine::obtenerDimensionesGfx(uint32_t &ancho, uint32_t &alto) const
+{
+    if (!m_impl->fx) return false;
+    uint32_t dim[2] = {0, 0};
+    if (ysfx_get_gfx_dim(m_impl->fx, dim)) {
+        ancho = dim[0];
+        alto = dim[1];
+        return true;
+    }
+    return false;
+}
+
+void NovaJsfxYsfxEngine::configurarGfx(uint8_t *pixeles, uint32_t ancho, uint32_t alto, uint32_t stride, double factorEscala)
+{
+    if (!m_impl->fx || !pixeles || ancho == 0 || alto == 0) return;
+    ysfx_gfx_config_t gc{};
+    gc.pixels = pixeles;
+    gc.pixel_width = ancho;
+    gc.pixel_height = alto;
+    gc.pixel_stride = stride > 0 ? stride : (ancho * 4);
+    gc.scale_factor = factorEscala > 0.0 ? factorEscala : 1.0;
+    ysfx_gfx_setup(m_impl->fx, &gc);
+}
+
+bool NovaJsfxYsfxEngine::renderizarGfx()
+{
+    if (!m_impl->fx) return false;
+    return ysfx_gfx_run(m_impl->fx);
+}
+
+void NovaJsfxYsfxEngine::actualizarRatonGfx(uint32_t modificadores, int32_t x, int32_t y, uint32_t botones, double ruedaV, double ruedaH)
+{
+    if (!m_impl->fx) return;
+    ysfx_gfx_update_mouse(m_impl->fx, modificadores, x, y, botones,
+                          static_cast<ysfx_real>(ruedaV), static_cast<ysfx_real>(ruedaH));
+}
+
+void NovaJsfxYsfxEngine::setEstadoVentanaGfx(bool foco, bool visible, bool ratonEncima)
+{
+    if (!m_impl->fx) return;
+    ysfx_gfx_set_window_state(m_impl->fx, foco, visible, ratonEncima);
+}
+
+uint32_t NovaJsfxYsfxEngine::fpsSolicitadosGfx() const
+{
+    if (!m_impl->fx) return 30;
+    uint32_t fps = ysfx_get_requested_framerate(m_impl->fx);
+    return (fps > 0 && fps <= 120) ? fps : 30;
+}
+
