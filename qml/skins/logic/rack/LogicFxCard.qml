@@ -11,6 +11,10 @@ Rectangle {
     property color accentColor: "#3B82F6"
     property bool isJsfx: false
     property bool showHeaderActions: true
+    property bool hasGfx: false
+    property bool showGfxView: hasGfx
+    property int preferredGfxWidth: 360
+    property int preferredGfxHeight: 220
 
     signal toggled(bool isEnabled)
     signal removeRequested()
@@ -19,8 +23,8 @@ Rectangle {
 
     default property alias content: contentSlot.data
 
-    implicitWidth: Math.max(190, contentSlot.childrenRect.width + 24)
-    implicitHeight: 165
+    implicitWidth: root.showGfxView ? Math.max(340, root.preferredGfxWidth + 20) : Math.max(190, contentSlot.childrenRect.width + 24)
+    implicitHeight: root.showGfxView ? Math.max(220, root.preferredGfxHeight + 46) : 165
     radius: 10
     color: "#161820"
     border.color: root.enabledFx ? "#2A2E3D" : "#1F212A"
@@ -66,6 +70,37 @@ Rectangle {
                 elide: Text.ElideRight
             }
 
+            // Botón conmutador Gráficos / Controles
+            Rectangle {
+                visible: root.hasGfx && root.showHeaderActions
+                Layout.preferredHeight: 18
+                Layout.preferredWidth: gfxToggleText.implicitWidth + 12
+                radius: 4
+                color: root.showGfxView ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.25) : "#20232C"
+                border.color: root.showGfxView ? root.accentColor : "#333846"
+                border.width: 1
+
+                Text {
+                    id: gfxToggleText
+                    anchors.centerIn: parent
+                    text: root.showGfxView ? "Gráficos" : "Controles"
+                    color: root.showGfxView ? root.accentColor : "#94A3B8"
+                    font.pixelSize: 8
+                    font.bold: true
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
+                            AudioEngine.hapticFeedback()
+                        }
+                        root.showGfxView = !root.showGfxView
+                    }
+                }
+            }
+
             // Botón de opciones (3 puntos ⋮) con submenú contextual
             Rectangle {
                 id: moreBtn
@@ -107,6 +142,12 @@ Rectangle {
                         text: "Ver / Editar código JSFX"
                         visible: root.isJsfx
                         onTriggered: root.editCodeRequested()
+                    }
+
+                    MenuItem {
+                        text: root.showGfxView ? "Mostrar controles deslizantes" : "Mostrar interfaz gráfica"
+                        visible: root.hasGfx
+                        onTriggered: root.showGfxView = !root.showGfxView
                     }
 
                     MenuItem {

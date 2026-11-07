@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import NovaStudio 1.0
 import "../../rack"
 
 /**
@@ -21,6 +22,7 @@ Rectangle {
     property string pluginTitle: "Plug-in"
     property string pluginCategory: "DSP"
     property bool isBypassed: false
+    property bool hasGfx: false
     property var slidersList: []
 
     signal editCodeRequested()
@@ -54,6 +56,7 @@ Rectangle {
 
         // 1. Si el plug-in está asignado en una pista, verificar que el script del editor coincida
         if (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0 && root.pluginIndex >= 0) {
+            root.hasGfx = AudioEngine.tracks.hasJsfxGfx(root.trackIndex, root.pluginIndex)
             try {
                 var trackPlugins = AudioEngine.tracks.trackPlugins(root.trackIndex)
                 if (!trackPlugins || root.pluginIndex >= trackPlugins.length) {
@@ -238,7 +241,8 @@ Rectangle {
                 }
                 enabledFx: !root.isBypassed
                 isJsfx: true
-                showHeaderActions: false
+                hasGfx: root.hasGfx
+                showHeaderActions: true
 
                 onEditCodeRequested: {
                     root.editCodeRequested()
@@ -256,12 +260,27 @@ Rectangle {
                     root.resetAllSliders()
                 }
 
+                // Interfaz gráfica interactiva (@gfx con motor YSFX / LICE de Cockos REAPER)
+                JsfxGfxView {
+                    id: dockGfxView
+                    anchors.fill: parent
+                    visible: fxCard.hasGfx && fxCard.showGfxView
+                    trackIndex: root.trackIndex
+                    pluginIndex: root.pluginIndex
+                    clip: true
+
+                    onPreferredDimensionsChanged: {
+                        if (preferredWidth > 0) fxCard.preferredGfxWidth = preferredWidth
+                        if (preferredHeight > 0) fxCard.preferredGfxHeight = preferredHeight
+                    }
+                }
+
                 // Sliders dinámicos idénticos a los del Rack de FX
                 Row {
                     id: slidersRow
                     anchors.centerIn: parent
                     spacing: 10
-                    visible: root.slidersList.length > 0
+                    visible: (!fxCard.hasGfx || !fxCard.showGfxView) && root.slidersList.length > 0
 
                     Repeater {
                         model: root.slidersList
@@ -308,7 +327,7 @@ Rectangle {
                 // Mensaje en caso de no exponer sliders ajustables
                 Text {
                     anchors.centerIn: parent
-                    visible: root.slidersList.length === 0
+                    visible: (!fxCard.hasGfx || !fxCard.showGfxView) && root.slidersList.length === 0
                     text: "Plug-in activo y procesando señal"
                     color: "#64748B"
                     font.pixelSize: 10

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import NovaStudio 1.0
 
 Rectangle {
     id: root
@@ -307,6 +308,7 @@ Rectangle {
                             }
                             enabledFx: !modelData.bypassed && !root.masterBypass
                             isJsfx: true
+                            hasGfx: (typeof AudioEngine !== "undefined" && AudioEngine.tracks && root.trackIndex >= 0) ? AudioEngine.tracks.hasJsfxGfx(root.trackIndex, modelData.index) : false
 
                             onEditCodeRequested: {
                                 root.editJsfxRequested(root.trackIndex, modelData.index, modelData.name)
@@ -335,11 +337,26 @@ Rectangle {
                                 }
                             }
 
+                            // Interfaz gráfica interactiva (@gfx con motor YSFX / LICE de Cockos REAPER)
+                            JsfxGfxView {
+                                id: gfxView
+                                anchors.fill: parent
+                                visible: cardDelegate.hasGfx && cardDelegate.showGfxView
+                                trackIndex: root.trackIndex
+                                pluginIndex: modelData.index
+                                clip: true
+
+                                onPreferredDimensionsChanged: {
+                                    if (preferredWidth > 0) cardDelegate.preferredGfxWidth = preferredWidth
+                                    if (preferredHeight > 0) cardDelegate.preferredGfxHeight = preferredHeight
+                                }
+                            }
+
                             // Sliders dinámicos según los parámetros reales del plug-in
                             Row {
                                 anchors.centerIn: parent
                                 spacing: 10
-                                visible: modelData.parameters && modelData.parameters.length > 0
+                                visible: (!cardDelegate.hasGfx || !cardDelegate.showGfxView) && modelData.parameters && modelData.parameters.length > 0
 
                                 Repeater {
                                     model: modelData.parameters
@@ -364,7 +381,7 @@ Rectangle {
                             // Mensaje si el plugin no expone sliders
                             Text {
                                 anchors.centerIn: parent
-                                visible: !modelData.parameters || modelData.parameters.length === 0
+                                visible: (!cardDelegate.hasGfx || !cardDelegate.showGfxView) && (!modelData.parameters || modelData.parameters.length === 0)
                                 text: "Plug-in activo y procesando señal"
                                 color: "#64748B"
                                 font.pixelSize: 10
