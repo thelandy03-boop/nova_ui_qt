@@ -184,6 +184,13 @@ if [ -d "${BUILD_DIR}/android-build" ]; then
         echo "  ⚠️ No se encontró el directorio de jars de Qt: ${QT_ANDROID_DIR}/jar"
     fi
 
+    # 🔒 Keystore oficial: si existe en android/, se copia al staging para que
+    # Gradle firme siempre con la clave oficial de produccion.
+    if [ -f "android/nova-release.keystore" ]; then
+        cp -f android/nova-release.keystore ${BUILD_DIR}/android-build/
+        echo "  - Keystore oficial copiado a staging"
+    fi
+
     # 🔒 El staging arrastra el build.gradle del proyecto, que fija
     # abiFilters 'arm64-v8a', 'armeabi-v7a': el APK se empaquetaría con las
     # libs de otro ABI. Se reescribe en el staging (no en el fuente, que
