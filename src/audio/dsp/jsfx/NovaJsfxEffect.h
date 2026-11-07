@@ -52,6 +52,9 @@ public:
     QString category() const override { return QStringLiteral("JSFX"); }
 
     void process(float* interleavedBuffer, int numFrames, int channels, int sampleRate) override;
+    void processWithMidi(float* interleavedBuffer, int numFrames, int channels, int sampleRate,
+                         const std::vector<NovaMidiEvent>& midiIn,
+                         std::vector<NovaMidiEvent>& midiOut) override;
     void setParameter(int paramIndex, float value) override;
     float getParameter(int paramIndex) const override;
     void setTransport(double playPositionSeconds, double bpm, bool playing) override;
@@ -90,6 +93,14 @@ public:
     void updateGfxMouse(uint32_t mods, int x, int y, uint32_t buttons, double wheelV = 0.0, double wheelH = 0.0);
     void setGfxWindowState(bool hasFocus, bool visible, bool mouseOver);
     int requestedGfxFps() const;
+
+    // Métodos para envío y recepción directa de eventos MIDI
+    void sendMidiEvent(const NovaMidiEvent &event);
+    void sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint32_t frameOffset = 0);
+    void sendMidiNoteOff(uint8_t channel, uint8_t note, uint8_t velocity = 0, uint32_t frameOffset = 0);
+    void sendMidiControlChange(uint8_t channel, uint8_t cc, uint8_t value, uint32_t frameOffset = 0);
+    void sendMidiPitchBend(uint8_t channel, uint16_t value, uint32_t frameOffset = 0);
+    std::vector<NovaMidiEvent> takeOutputMidiEvents();
 
 private:
     struct ParsedScript {
@@ -131,4 +142,8 @@ private:
     int m_lastSampleRate = 48000;
     int m_lastSamplesBlock = 512;
     mutable std::mutex m_mutex;
+
+    mutable std::mutex m_midiMutex;
+    std::vector<NovaMidiEvent> m_pendingMidiIn;
+    std::vector<NovaMidiEvent> m_pendingMidiOut;
 };

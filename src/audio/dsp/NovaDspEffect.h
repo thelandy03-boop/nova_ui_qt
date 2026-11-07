@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/dsp/NovaMidiEvent.h"
 #include <QString>
 #include <atomic>
 #include <vector>
@@ -26,6 +27,19 @@ public:
      * @param sampleRate        Frecuencia de muestreo en Hz (ej. 48000).
      */
     virtual void process(float* interleavedBuffer, int numFrames, int channels, int sampleRate) = 0;
+
+    /**
+     * Procesa audio y eventos MIDI de forma sincronizada dentro del bloque.
+     * La implementación base redirige a process() ignorando el MIDI.
+     */
+    virtual void processWithMidi(float* interleavedBuffer, int numFrames, int channels, int sampleRate,
+                                 const std::vector<NovaMidiEvent>& midiIn,
+                                 std::vector<NovaMidiEvent>& midiOut)
+    {
+        (void)midiIn;
+        (void)midiOut;
+        process(interleavedBuffer, numFrames, channels, sampleRate);
+    }
 
     /** Ajusta un parámetro del efecto según su índice. */
     virtual void setParameter(int paramIndex, float value) = 0;

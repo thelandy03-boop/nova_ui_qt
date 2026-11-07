@@ -316,6 +316,14 @@ void NovaJsfxEffect::resetSinBloqueo()
 
 void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channels, int sampleRate)
 {
+    std::vector<NovaMidiEvent> emptyIn, emptyOut;
+    processWithMidi(interleavedBuffer, numFrames, channels, sampleRate, emptyIn, emptyOut);
+}
+
+void NovaJsfxEffect::processWithMidi(float* interleavedBuffer, int numFrames, int channels, int sampleRate,
+                                     const std::vector<NovaMidiEvent>& midiIn,
+                                     std::vector<NovaMidiEvent>& midiOut)
+{
     if (!interleavedBuffer || numFrames <= 0 || channels <= 0) return;
 
     std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
@@ -337,10 +345,62 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
         m_playPosition += static_cast<double>(numFrames) / static_cast<double>(sampleRate);
     }
 
-    if (!m_engine->tieneSample()) return;
+    if (!m_engine->tieneSample() && !m_engine->tieneBlock()) return;
 
+    // Recoger eventos MIDI pendientes de la cola thread-safe interna + los de midiIn
+    std::vector<NovaMidiEvent> bloqueMidiIn;
+    {
+        std::lock_guard<std::mutex> mlock(m_midiMutex);
+        bloqueMidiIn.reserve(m_pendingMidiIn.size() + midiIn.size());
+        bloqueMidiIn.insert(bloqueMidiIn.end(), m_pendingMidiIn.begin(), m_pendingMidiIn.end());
+        m_pendingMidiIn.clear();
+        bloqueMidiIn.insert(bloqueMidiIn.end(), midiIn.begin(), midiIn.end());
+    }
+
+    std::vector<NovaMidiEvent> bloqueMidiOut;
     int effChannels = std::min(channels, 2);
-    m_engine->procesarBloque(interleavedBuffer, numFrames, effChannels > 0 ? effChannels : 1);
+    m_engine->procesarBloque(interleavedBuffer, numFrames, effChannels > 0 ? effChannels : 1,
+                             &bloqueMidiIn, &bloqueMidiOut);
+
+    if (!bloqueMidiOut.empty()) {
+        midiOut.insert(midiOut.end(), bloqueMidiOut.begin(), bloqueMidiOut.end());
+        std::lock_guard<std::mutex> mlock(m_midiMutex);
+        m_pendingMidiOut.insert(m_pendingMidiOut.end(), bloqueMidiOut.begin(), bloqueMidiOut.end());
+    }
+}
+
+void NovaJsfxEffect::sendMidiEvent(const NovaMidiEvent &event)
+{
+    std::lock_guard<std::mutex> lock(m_midiMutex);
+    m_pendingMidiIn.push_back(event);
+}
+
+void NovaJsfxEffect::sendMidiNoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint32_t frameOffset)
+{
+    sendMidiEvent(NovaMidiEvent::noteOn(channel, note, velocity, frameOffset));
+}
+
+void NovaJsfxEffect::sendMidiNoteOff(uint8_t channel, uint8_t note, uint8_t velocity, uint32_t frameOffset)
+{
+    sendMidiEvent(NovaMidiEvent::noteOff(channel, note, velocity, frameOffset));
+}
+
+void NovaJsfxEffect::sendMidiControlChange(uint8_t channel, uint8_t cc, uint8_t value, uint32_t frameOffset)
+{
+    sendMidiEvent(NovaMidiEvent::controlChange(channel, cc, value, frameOffset));
+}
+
+void NovaJsfxEffect::sendMidiPitchBend(uint8_t channel, uint16_t value, uint32_t frameOffset)
+{
+    sendMidiEvent(NovaMidiEvent::pitchBend(channel, value, frameOffset));
+}
+
+std::vector<NovaMidiEvent> NovaJsfxEffect::takeOutputMidiEvents()
+{
+    std::lock_guard<std::mutex> lock(m_midiMutex);
+    std::vector<NovaMidiEvent> out = std::move(m_pendingMidiOut);
+    m_pendingMidiOut.clear();
+    return out;
 }
 
 bool NovaJsfxEffect::getGfxDimensions(int &width, int &height) const

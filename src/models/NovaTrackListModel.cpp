@@ -1096,6 +1096,40 @@ bool NovaTrackListModel::hasJsfxGfx(int trackRow, int pluginIndex) const
     return fx && fx->hasGfx();
 }
 
+void NovaTrackListModel::sendMidiNote(int trackRow, int pluginIndex, int note, int velocity, int channel)
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    if (fx) {
+        if (velocity > 0) {
+            fx->sendMidiNoteOn(static_cast<uint8_t>(channel & 0x0F),
+                               static_cast<uint8_t>(note & 0x7F),
+                               static_cast<uint8_t>(velocity & 0x7F));
+        } else {
+            fx->sendMidiNoteOff(static_cast<uint8_t>(channel & 0x0F),
+                                static_cast<uint8_t>(note & 0x7F), 0);
+        }
+    }
+}
+
+void NovaTrackListModel::sendMidiControlChange(int trackRow, int pluginIndex, int controller, int value, int channel)
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    if (fx) {
+        fx->sendMidiControlChange(static_cast<uint8_t>(channel & 0x0F),
+                                  static_cast<uint8_t>(controller & 0x7F),
+                                  static_cast<uint8_t>(value & 0x7F));
+    }
+}
+
+void NovaTrackListModel::sendMidiPitchBend(int trackRow, int pluginIndex, int value, int channel)
+{
+    auto fx = getJsfxEffect(trackRow, pluginIndex);
+    if (fx) {
+        fx->sendMidiPitchBend(static_cast<uint8_t>(channel & 0x0F),
+                              static_cast<uint16_t>(value & 0x3FFF));
+    }
+}
+
 QVariantList NovaTrackListModel::exportPluginsSnapshot(int trackRow) const
 {
     QVariantList resultado;

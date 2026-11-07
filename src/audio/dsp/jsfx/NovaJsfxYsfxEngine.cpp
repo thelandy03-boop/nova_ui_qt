@@ -34,6 +34,9 @@ struct NovaJsfxYsfxEngine::Impl {
     int playState = 0;
     int numCh = 2;
 
+    std::vector<NovaMidiEvent> colaMidiEntrada;
+    std::vector<NovaMidiEvent> colaMidiSalida;
+
     Impl()
     {
         config = ysfx_config_new();
@@ -66,6 +69,8 @@ struct NovaJsfxYsfxEngine::Impl {
         }
         sliderNumToIndex.clear();
         sliderNumsOrden.clear();
+        colaMidiEntrada.clear();
+        colaMidiSalida.clear();
     }
 
     // Extrae los numeros de slider ("sliderN:") en orden de aparicion.
@@ -356,10 +361,33 @@ void NovaJsfxYsfxEngine::setPlayState(int estado)
     }
 }
 
-void NovaJsfxYsfxEngine::procesarBloque(float *interleavedBuffer, int numFrames, int channels)
+void NovaJsfxYsfxEngine::procesarBloque(float *interleavedBuffer, int numFrames, int channels,
+                                        const std::vector<NovaMidiEvent> *midiIn,
+                                        std::vector<NovaMidiEvent> *midiOut)
 {
     fflush(stderr);
     if (!m_impl->fx || !interleavedBuffer || numFrames <= 0) return;
+
+    // Enviar eventos MIDI de entrada a YSFX antes de procesar el bloque
+    if (midiIn) {
+        for (const auto &ev : *midiIn) {
+            ysfx_midi_event_t yev{};
+            yev.bus = ev.bus;
+            yev.offset = std::min(ev.offset, static_cast<uint32_t>(numFrames - 1));
+            yev.size = static_cast<uint32_t>(ev.data.size());
+            yev.data = ev.data.data();
+            ysfx_send_midi(m_impl->fx, &yev);
+        }
+    }
+    for (const auto &ev : m_impl->colaMidiEntrada) {
+        ysfx_midi_event_t yev{};
+        yev.bus = ev.bus;
+        yev.offset = std::min(ev.offset, static_cast<uint32_t>(numFrames - 1));
+        yev.size = static_cast<uint32_t>(ev.data.size());
+        yev.data = ev.data.data();
+        ysfx_send_midi(m_impl->fx, &yev);
+    }
+    m_impl->colaMidiEntrada.clear();
 
     const int effCh = std::min(channels, m_impl->numCh);
     const uint32_t nch = static_cast<uint32_t>(std::max(1, effCh));
@@ -391,12 +419,61 @@ void NovaJsfxYsfxEngine::procesarBloque(float *interleavedBuffer, int numFrames,
 
     ysfx_process_float(m_impl->fx, ins.data(), outs.data(), nch, nch,
                        static_cast<uint32_t>(numFrames));
+
+    // Recoger eventos MIDI generados por el script (@block: midisend)
+    ysfx_midi_event_t yev{};
+    while (ysfx_receive_midi(m_impl->fx, &yev)) {
+        NovaMidiEvent outEv;
+        outEv.bus = yev.bus;
+        outEv.offset = yev.offset;
+        if (yev.data && yev.size > 0) {
+            outEv.data.assign(yev.data, yev.data + yev.size);
+        }
+        if (midiOut) {
+            midiOut->push_back(outEv);
+        }
+        m_impl->colaMidiSalida.push_back(std::move(outEv));
+    }
+
     // Reintercalar.
     for (int f = 0; f < numFrames; ++f) {
         for (uint32_t c = 0; c < nch; ++c) {
             interleavedBuffer[f * channels + c] = outBufs[c][f];
         }
     }
+}
+
+void NovaJsfxYsfxEngine::enviarMidi(const NovaMidiEvent &evento)
+{
+    m_impl->colaMidiEntrada.push_back(evento);
+}
+
+void NovaJsfxYsfxEngine::enviarMidi(uint32_t offset, const uint8_t *data, uint32_t size, uint32_t bus)
+{
+    if (data && size > 0) {
+        m_impl->colaMidiEntrada.emplace_back(offset, data, size, bus);
+    }
+}
+
+bool NovaJsfxYsfxEngine::recibirMidi(NovaMidiEvent &evento)
+{
+    if (m_impl->colaMidiSalida.empty()) return false;
+    evento = std::move(m_impl->colaMidiSalida.front());
+    m_impl->colaMidiSalida.erase(m_impl->colaMidiSalida.begin());
+    return true;
+}
+
+std::vector<NovaMidiEvent> NovaJsfxYsfxEngine::obtenerMidiSalida()
+{
+    std::vector<NovaMidiEvent> out = std::move(m_impl->colaMidiSalida);
+    m_impl->colaMidiSalida.clear();
+    return out;
+}
+
+void NovaJsfxYsfxEngine::limpiarMidi()
+{
+    m_impl->colaMidiEntrada.clear();
+    m_impl->colaMidiSalida.clear();
 }
 
 void NovaJsfxYsfxEngine::procesarMuestra(float *izquierda, float *derecha)

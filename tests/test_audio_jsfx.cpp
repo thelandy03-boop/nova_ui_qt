@@ -840,6 +840,107 @@ int main()
                     "el rectangulo dibujado debe modificar el buffer de pixeles");
     }
 
+    // 21. Soporte de eventos MIDI (midirecv, midisend y encadenamiento)
+    {
+        // 21.1 midirecv: sintetizador que recibe notas MIDI y produce audio
+        const QString scriptSinte = QStringLiteral(
+            "desc: MIDI Synth Receiver\n"
+            "in_pin: left input\n"
+            "in_pin: right input\n"
+            "out_pin: left output\n"
+            "out_pin: right output\n"
+            "@init\n"
+            "freq = 0.0;\n"
+            "gain = 0.0;\n"
+            "phase = 0.0;\n"
+            "@block\n"
+            "while (midirecv(offset, msg1, msg2, msg3)) (\n"
+            "  status = msg1 & 240;\n"
+            "  (status == 144 && msg3 > 0) ? (\n"
+            "    freq = 440.0 * 2.0 ^ ((msg2 - 69.0) / 12.0);\n"
+            "    gain = msg3 / 127.0;\n"
+            "  );\n"
+            "  (status == 128 || (status == 144 && msg3 == 0)) ? (\n"
+            "    gain = 0.0;\n"
+            "  );\n"
+            ");\n"
+            "@sample\n"
+            "gain > 0.0 ? (\n"
+            "  s = sin(phase) * gain;\n"
+            "  phase += 2.0 * 3.141592653589793 * freq / srate;\n"
+            "  spl0 = s;\n"
+            "  spl1 = s;\n"
+            ") : (\n"
+            "  spl0 = 0.0;\n"
+            "  spl1 = 0.0;\n"
+            ");\n"
+        );
+
+        NovaJsfxEffect sinte;
+        QString err;
+        CHECK_NAMED("midi_sinte_compila", sinte.loadScript(scriptSinte, &err), err.toUtf8().constData());
+
+        // Antes de recibir nota, con buffer de silencio, la salida debe ser silencio
+        std::vector<float> audioBuf(128, 0.0f);
+        sinte.process(audioBuf.data(), 64, 2, 48000);
+        float picoInicial = 0.0f;
+        for (float s : audioBuf) picoInicial = std::max(picoInicial, std::abs(s));
+        CHECK_NAMED("midi_silencio_inicial", picoInicial < 1e-6f, "sin nota debe salir silencio");
+
+        // Enviar Note On (A4, 440Hz, vel 100)
+        sinte.sendMidiNoteOn(0, 69, 100, 0);
+        std::fill(audioBuf.begin(), audioBuf.end(), 0.0f);
+        sinte.process(audioBuf.data(), 64, 2, 48000);
+
+        float picoSonido = 0.0f;
+        for (float s : audioBuf) picoSonido = std::max(picoSonido, std::abs(s));
+        CHECK_NAMED("midi_nota_on_produce_audio", picoSonido > 0.1f,
+                    "al recibir Note On el script debe sintetizar senoidal");
+
+        // Enviar Note Off
+        sinte.sendMidiNoteOff(0, 69, 0, 0);
+        std::fill(audioBuf.begin(), audioBuf.end(), 0.0f);
+        sinte.process(audioBuf.data(), 64, 2, 48000);
+        float picoApagado = 0.0f;
+        for (float s : audioBuf) picoApagado = std::max(picoApagado, std::abs(s));
+        CHECK_NAMED("midi_nota_off_silencia", picoApagado < 1e-6f,
+                    "al recibir Note Off debe volver al silencio");
+
+        // 21.2 midisend: procesador que transpone notas MIDI (+12 semitonos)
+        const QString scriptTransp = QStringLiteral(
+            "desc: MIDI Transposer\n"
+            "@block\n"
+            "while (midirecv(offset, msg1, msg2, msg3)) (\n"
+            "  status = msg1 & 240;\n"
+            "  (status == 144 || status == 128) ? (\n"
+            "    midisend(offset, msg1, msg2 + 12, msg3);\n"
+            "  ) : (\n"
+            "    midisend(offset, msg1, msg2, msg3);\n"
+            "  );\n"
+            ");\n"
+        );
+
+        NovaJsfxEffect transposer;
+        CHECK_NAMED("midi_transp_compila", transposer.loadScript(scriptTransp, &err), err.toUtf8().constData());
+
+        // Inyectamos Note On (canal 0, nota 60 = C4, vel 90) en frame offset 10
+        std::vector<NovaMidiEvent> midiIn = { NovaMidiEvent::noteOn(0, 60, 90, 10) };
+        std::vector<NovaMidiEvent> midiOut;
+        std::vector<float> dummyBuf(64, 0.0f);
+        transposer.processWithMidi(dummyBuf.data(), 32, 2, 48000, midiIn, midiOut);
+
+        CHECK_NAMED("midi_salida_generada", midiOut.size() == 1, "el script debio emitir un evento con midisend");
+        if (midiOut.size() == 1) {
+            const auto &ev = midiOut[0];
+            CHECK_NAMED("midi_offset_preservado", ev.offset == 10, "offset temporal preservado");
+            CHECK_NAMED("midi_status_note_on", ev.data.size() >= 3 && ev.data[0] == 0x90, "debe ser Note On");
+            CHECK_NAMED("midi_nota_transpuesta", ev.data.size() >= 3 && ev.data[1] == 72,
+                        "la nota 60 transpuesta +12 debe ser 72");
+            CHECK_NAMED("midi_velocidad_preservada", ev.data.size() >= 3 && ev.data[2] == 90,
+                        "la velocidad original de 90 debe preservarse");
+        }
+    }
+
     std::printf("\nResultado: %d comprobaciones, %d fallos.\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -29,6 +29,13 @@ public:
     void process(float* interleavedBuffer, int numFrames, int channels, int sampleRate);
 
     /**
+     * Procesa secuencialmente el buffer y encadena los eventos MIDI a través de los efectos.
+     */
+    void processWithMidi(float* interleavedBuffer, int numFrames, int channels, int sampleRate,
+                         const std::vector<NovaMidiEvent>& midiIn,
+                         std::vector<NovaMidiEvent>& midiOut);
+
+    /**
      * Publica el estado del transporte. No toma el mutex de la cadena: los
      * valores se aplican al inicio del siguiente bloque de audio, de modo que
      * la UI nunca bloquea ni hace perder un bloque al callback de audio.

@@ -237,6 +237,7 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/NovaSpikeLoader.cpp
     src/audio/NovaTapeStop.h
     src/audio/NovaTapeStop.cpp
+    src/audio/dsp/NovaMidiEvent.h
     src/audio/dsp/NovaDspEffect.h
     src/audio/dsp/NovaDspChain.h
     src/audio/dsp/NovaDspChain.cpp

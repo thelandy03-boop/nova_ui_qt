@@ -50,6 +50,14 @@ std::shared_ptr<NovaDspEffect> NovaDspChain::effectAt(int index) const
 
 void NovaDspChain::process(float* interleavedBuffer, int numFrames, int channels, int sampleRate)
 {
+    std::vector<NovaMidiEvent> inMidi, outMidi;
+    processWithMidi(interleavedBuffer, numFrames, channels, sampleRate, inMidi, outMidi);
+}
+
+void NovaDspChain::processWithMidi(float* interleavedBuffer, int numFrames, int channels, int sampleRate,
+                                   const std::vector<NovaMidiEvent>& midiIn,
+                                   std::vector<NovaMidiEvent>& midiOut)
+{
     if (!interleavedBuffer || numFrames <= 0 || channels <= 0 || sampleRate <= 0) {
         return;
     }
@@ -74,11 +82,18 @@ void NovaDspChain::process(float* interleavedBuffer, int numFrames, int channels
         }
     }
 
+    std::vector<NovaMidiEvent> corrienteMidiActual = midiIn;
     for (const auto& effect : m_effects) {
         if (effect && !effect->isBypassed()) {
-            effect->process(interleavedBuffer, numFrames, channels, sampleRate);
+            std::vector<NovaMidiEvent> salidaDelEfecto;
+            effect->processWithMidi(interleavedBuffer, numFrames, channels, sampleRate,
+                                    corrienteMidiActual, salidaDelEfecto);
+            if (!salidaDelEfecto.empty()) {
+                corrienteMidiActual = std::move(salidaDelEfecto);
+            }
         }
     }
+    midiOut = std::move(corrienteMidiActual);
 }
 
 void NovaDspChain::setTransport(double playPositionSeconds, double bpm, bool playing)

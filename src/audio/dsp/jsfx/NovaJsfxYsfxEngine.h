@@ -1,7 +1,9 @@
 #pragma once
 
+#include "audio/dsp/NovaMidiEvent.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 /**
  * Adaptador RAII sobre YSFX (JoepVanlier/ysfx). YSFX es el motor JSFX real
@@ -55,7 +57,16 @@ public:
     void setPlayState(int estado);
 
     // Procesa un bloque completo de audio (ejecuta @block y @sample).
-    void procesarBloque(float *interleavedBuffer, int numFrames, int channels);
+    void procesarBloque(float *interleavedBuffer, int numFrames, int channels,
+                        const std::vector<NovaMidiEvent> *midiIn = nullptr,
+                        std::vector<NovaMidiEvent> *midiOut = nullptr);
+
+    // Eventos MIDI directos (@block: midirecv y midisend)
+    void enviarMidi(const NovaMidiEvent &evento);
+    void enviarMidi(uint32_t offset, const uint8_t *data, uint32_t size, uint32_t bus = 0);
+    bool recibirMidi(NovaMidiEvent &evento);
+    std::vector<NovaMidiEvent> obtenerMidiSalida();
+    void limpiarMidi();
 
     // Compatibilidad con la API anterior (un fotograma).
     void procesarMuestra(float *izquierda, float *derecha);

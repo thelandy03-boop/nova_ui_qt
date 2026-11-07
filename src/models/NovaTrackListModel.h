@@ -74,6 +74,9 @@ public:
     Q_INVOKABLE QVariantList parseJsfxSliders(const QString &sourceCode) const;
     Q_INVOKABLE bool hasJsfxGfx(int trackRow, int pluginIndex) const;
     std::shared_ptr<class NovaJsfxEffect> getJsfxEffect(int trackRow, int pluginIndex) const;
+    Q_INVOKABLE void sendMidiNote(int trackRow, int pluginIndex, int note, int velocity, int channel = 0);
+    Q_INVOKABLE void sendMidiControlChange(int trackRow, int pluginIndex, int controller, int value, int channel = 0);
+    Q_INVOKABLE void sendMidiPitchBend(int trackRow, int pluginIndex, int value, int channel = 0);
     Q_INVOKABLE QString getJsfxDescription(const QString &sourceCode) const;
 
     /**
