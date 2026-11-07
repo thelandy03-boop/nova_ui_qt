@@ -2,4 +2,6 @@
 <paths>
     <cache-path name="apks" path="." />
     <external-cache-path name="external_apks" path="." />
+    <files-path name="internal_files" path="." />
+    <external-files-path name="external_files" path="." />
 </paths>

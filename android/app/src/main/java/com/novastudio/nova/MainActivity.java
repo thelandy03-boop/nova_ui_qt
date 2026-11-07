@@ -244,12 +244,31 @@ public class MainActivity extends QtActivityBase {
                 Log.e(TAG, "installApk: no activity available");
                 return;
             }
-            java.io.File apkFile = new java.io.File(apkPath);
-            if (!apkFile.exists()) {
+            File sourceFile = new File(apkPath);
+            if (!sourceFile.exists()) {
                 Log.e(TAG, "installApk: file not found: " + apkPath);
                 return;
             }
-            android.net.Uri apkUri;
+
+            // Preparar archivo en externalCacheDir si está disponible para máxima compatibilidad con instaladores del sistema
+            File apkFile = sourceFile;
+            try {
+                File extCache = activity.getExternalCacheDir();
+                if (extCache != null) {
+                    File extApk = new File(extCache, "nova_update.apk");
+                    if (!extApk.getAbsolutePath().equals(sourceFile.getAbsolutePath())) {
+                        copyFile(sourceFile, extApk);
+                        apkFile = extApk;
+                    }
+                }
+            } catch (Exception copyEx) {
+                Log.w(TAG, "No se pudo copiar APK a external cache, usando origen", copyEx);
+                apkFile = sourceFile;
+            }
+
+            apkFile.setReadable(true, false);
+
+            Uri apkUri;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 apkUri = androidx.core.content.FileProvider.getUriForFile(
                     activity,
@@ -257,11 +276,13 @@ public class MainActivity extends QtActivityBase {
                     apkFile
                 );
             } else {
-                apkUri = android.net.Uri.fromFile(apkFile);
+                apkUri = Uri.fromFile(apkFile);
             }
+
             Intent installIntent = new Intent(Intent.ACTION_VIEW);
             installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
             installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
             try {
@@ -275,10 +296,35 @@ public class MainActivity extends QtActivityBase {
                 Log.w(TAG, "grantUriPermission warning", ex);
             }
 
+            // Conceder también a instaladores conocidos por si PackageManager filtra la lista por visibilidad de paquetes
+            String[] knownInstallers = new String[] {
+                "com.google.android.packageinstaller",
+                "com.android.packageinstaller",
+                "com.samsung.android.packageinstaller",
+                "com.miui.packageinstaller"
+            };
+            for (String installerPkg : knownInstallers) {
+                try {
+                    activity.grantUriPermission(installerPkg, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception ignored) {}
+            }
+
             activity.startActivity(installIntent);
-            Log.i(TAG, "installApk: launched installer for " + apkPath);
+            Log.i(TAG, "installApk: launched installer for " + apkFile.getAbsolutePath());
         } catch (Exception e) {
             Log.e(TAG, "installApk: failed", e);
+        }
+    }
+
+    private static void copyFile(File src, File dst) throws java.io.IOException {
+        try (InputStream in = new FileInputStream(src);
+             OutputStream out = new FileOutputStream(dst)) {
+            byte[] buf = new byte[65536];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            out.flush();
         }
     }
 
