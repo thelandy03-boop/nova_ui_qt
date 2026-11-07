@@ -5,6 +5,8 @@
 #include "WDL/eel2/ns-eel.h"
 #include "WDL/eel2/ns-eel-int.h"
 
+#include "audio/NovaAudioDecoder.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -20,6 +22,100 @@
 #include <vector>
 
 #include <unistd.h>
+
+namespace {
+
+struct NovaYsfxAudioReader {
+    NovaDecodedAudio audio;
+    size_t samplePos = 0;
+};
+
+static bool nova_ysfx_audio_can_handle(const char *path)
+{
+    if (!path) return false;
+    std::string p(path);
+    std::string ext;
+    const size_t dot = p.find_last_of('.');
+    if (dot != std::string::npos) {
+        ext = p.substr(dot);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    }
+    if (ext == ".mp3" || ext == ".ogg" || ext == ".oga") {
+        return true;
+    }
+    if (ext != ".wav" && ext != ".flac") {
+        NovaDecodedAudio probe;
+        QString err;
+        return decodeAudioFile(QString::fromUtf8(path), probe, &err);
+    }
+    return false;
+}
+
+static ysfx_audio_reader_t *nova_ysfx_audio_open(const char *path)
+{
+    if (!path) return nullptr;
+    auto *r = new NovaYsfxAudioReader();
+    QString err;
+    if (!decodeAudioFile(QString::fromUtf8(path), r->audio, &err) || r->audio.samples.empty()) {
+        delete r;
+        return nullptr;
+    }
+    r->samplePos = 0;
+    return reinterpret_cast<ysfx_audio_reader_t*>(r);
+}
+
+static void nova_ysfx_audio_close(ysfx_audio_reader_t *reader_)
+{
+    auto *r = reinterpret_cast<NovaYsfxAudioReader*>(reader_);
+    delete r;
+}
+
+static ysfx_audio_file_info_t nova_ysfx_audio_info(ysfx_audio_reader_t *reader_)
+{
+    auto *r = reinterpret_cast<NovaYsfxAudioReader*>(reader_);
+    ysfx_audio_file_info_t info{};
+    info.channels = static_cast<uint32_t>(r->audio.channels);
+    info.sample_rate = static_cast<ysfx_real>(r->audio.sampleRate);
+    return info;
+}
+
+static uint64_t nova_ysfx_audio_avail(ysfx_audio_reader_t *reader_)
+{
+    auto *r = reinterpret_cast<NovaYsfxAudioReader*>(reader_);
+    const size_t total = r->audio.samples.size();
+    return (r->samplePos < total) ? static_cast<uint64_t>(total - r->samplePos) : 0;
+}
+
+static void nova_ysfx_audio_rewind(ysfx_audio_reader_t *reader_)
+{
+    auto *r = reinterpret_cast<NovaYsfxAudioReader*>(reader_);
+    r->samplePos = 0;
+}
+
+static uint64_t nova_ysfx_audio_read(ysfx_audio_reader_t *reader_, ysfx_real *samples, uint64_t count)
+{
+    auto *r = reinterpret_cast<NovaYsfxAudioReader*>(reader_);
+    const size_t total = r->audio.samples.size();
+    const size_t disponible = (r->samplePos < total) ? (total - r->samplePos) : 0;
+    const size_t aLeer = std::min(disponible, static_cast<size_t>(count));
+    for (size_t i = 0; i < aLeer; ++i) {
+        samples[i] = static_cast<ysfx_real>(r->audio.samples[r->samplePos + i]);
+    }
+    r->samplePos += aLeer;
+    return static_cast<uint64_t>(aLeer);
+}
+
+static const ysfx_audio_format_t s_novaAudioFormat = {
+    &nova_ysfx_audio_can_handle,
+    &nova_ysfx_audio_open,
+    &nova_ysfx_audio_close,
+    &nova_ysfx_audio_info,
+    &nova_ysfx_audio_avail,
+    &nova_ysfx_audio_rewind,
+    &nova_ysfx_audio_read,
+};
+
+} // namespace
 
 struct NovaJsfxYsfxEngine::Impl {
     struct SliderHandle { int sliderNum = 0; };
@@ -49,6 +145,7 @@ struct NovaJsfxYsfxEngine::Impl {
         ysfx_set_import_root(config, ".");
         ysfx_set_data_root(config, ".");
         ysfx_register_builtin_audio_formats(config);
+        ysfx_register_audio_format(config, const_cast<ysfx_audio_format_t*>(&s_novaAudioFormat));
         ysfx_set_log_reporter(config, &Impl::logReporter);
         ysfx_set_user_data(config, reinterpret_cast<intptr_t>(this));
     }

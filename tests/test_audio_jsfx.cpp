@@ -944,21 +944,31 @@ int main()
 
     // 22. Soporte de directiva @import y carga de muestras/impulsos filename:
     {
-        // 22.1 @import de librerías .jsfx-inc
-        const std::string rutaInc = "/tmp/test_helper_math.jsfx-inc";
+        // 22.1 @import de librerías .jsfx-inc (incluyendo import anidado/recursivo)
+        const std::string rutaIncBase = "/tmp/test_lib_base.jsfx-inc";
         {
-            std::ofstream f(rutaInc);
+            std::ofstream f(rutaIncBase);
             f << "@init\n"
-              << "function multiplicaPorTres(val) (\n"
-              << "  val * 3;\n"
+              << "function sumarBase(a, b) (\n"
+              << "  a + b;\n"
+              << ");\n";
+        }
+
+        const std::string rutaIncDeriv = "/tmp/test_lib_derivada.jsfx-inc";
+        {
+            std::ofstream f(rutaIncDeriv);
+            f << "import test_lib_base.jsfx-inc\n"
+              << "@init\n"
+              << "function calcularConBase(x) (\n"
+              << "  sumarBase(x, 100);\n"
               << ");\n";
         }
 
         const QString scriptImport = QStringLiteral(
-            "desc: Test Import\n"
-            "@import test_helper_math.jsfx-inc\n"
+            "desc: Test Import Anidado\n"
+            "@import test_lib_derivada.jsfx-inc\n"
             "@init\n"
-            "resultado = multiplicaPorTres(7);\n"
+            "resultado = calcularConBase(25);\n"
             "@sample\n"
             "spl0 = resultado;\n"
             "spl1 = resultado;\n"
@@ -972,9 +982,10 @@ int main()
 
         std::vector<float> bufImport(4, 0.0f);
         effectImport.process(bufImport.data(), 2, 2, 48000);
-        CHECK_NAMED("import_evalua_funcion", std::abs(bufImport[0] - 21.0f) < 1e-4f,
-                    "multiplicaPorTres(7) debio retornar 21");
-        std::remove(rutaInc.c_str());
+        CHECK_NAMED("import_anidado_evalua_funcion", std::abs(bufImport[0] - 125.0f) < 1e-4f,
+                    "calcularConBase(25) debio retornar 125 (25 + 100)");
+        std::remove(rutaIncDeriv.c_str());
+        std::remove(rutaIncBase.c_str());
 
         // 22.2 filename: carga de archivos de muestra WAV y consulta con file_riff
         const std::string rutaWav = "/tmp/test_sample_audio.wav";
@@ -1035,6 +1046,92 @@ int main()
         CHECK_NAMED("sample_nch_leido", std::abs(bufSample[1] - 1.0f) < 1e-4f,
                     "file_riff debio leer nch = 1");
         std::remove(rutaWav.c_str());
+
+        // 22.3 Decodificación de audio MP3 mediante filename:
+        const QString scriptMp3 = QStringLiteral(
+            "desc: Test Carga MP3\n"
+            "filename:0,tono-1s-44100-mono.mp3\n"
+            "@init\n"
+            "h = file_open(0);\n"
+            "file_riff(h, nch, sr);\n"
+            "avail = file_avail(h);\n"
+            "file_close(h);\n"
+            "@sample\n"
+            "spl0 = sr;\n"
+            "spl1 = avail > 1000;\n"
+        );
+
+        NovaJsfxEffect effectMp3;
+        effectMp3.setDataDirectory(QStringLiteral(NOVA_FIXTURES));
+        bool okMp3 = effectMp3.loadScript(scriptMp3, &err);
+        CHECK_NAMED("sample_mp3_compila", okMp3, err.toUtf8().constData());
+
+        std::vector<float> bufMp3(4, 0.0f);
+        effectMp3.process(bufMp3.data(), 2, 2, 48000);
+        CHECK_NAMED("sample_mp3_srate_y_avail",
+                    std::abs(bufMp3[0] - 44100.0f) < 1e-4f && std::abs(bufMp3[1] - 1.0f) < 1e-4f,
+                    "el decodificador universal debio decodificar el MP3 (44100Hz)");
+
+        // 22.4 Decodificación de audio OGG mediante filename:
+        const QString scriptOgg = QStringLiteral(
+            "desc: Test Carga OGG\n"
+            "filename:0,tono-1s-44100-mono.ogg\n"
+            "@init\n"
+            "h = file_open(0);\n"
+            "file_riff(h, nch, sr);\n"
+            "avail = file_avail(h);\n"
+            "file_close(h);\n"
+            "@sample\n"
+            "spl0 = sr;\n"
+            "spl1 = avail > 1000;\n"
+        );
+
+        NovaJsfxEffect effectOgg;
+        effectOgg.setDataDirectory(QStringLiteral(NOVA_FIXTURES));
+        bool okOgg = effectOgg.loadScript(scriptOgg, &err);
+        CHECK_NAMED("sample_ogg_compila", okOgg, err.toUtf8().constData());
+
+        std::vector<float> bufOgg(4, 0.0f);
+        effectOgg.process(bufOgg.data(), 2, 2, 48000);
+        CHECK_NAMED("sample_ogg_srate_y_avail",
+                    std::abs(bufOgg[0] - 44100.0f) < 1e-4f && std::abs(bufOgg[1] - 1.0f) < 1e-4f,
+                    "el decodificador universal debio decodificar el OGG Vorbis (44100Hz)");
+
+        // 22.5 Carga de archivos de texto con file_text, file_var y file_rewind
+        const std::string rutaTxt = "/tmp/test_tabla_datos.txt";
+        {
+            std::ofstream f(rutaTxt);
+            f << "123.45\n"
+              << "678.90\n";
+        }
+
+        const QString scriptTxt = QStringLiteral(
+            "desc: Test Archivo Texto\n"
+            "filename:0,test_tabla_datos.txt\n"
+            "@init\n"
+            "h = file_open(0);\n"
+            "es_texto = file_text(h);\n"
+            "file_var(h, v1);\n"
+            "file_var(h, v2);\n"
+            "file_rewind(h);\n"
+            "file_var(h, v1_bis);\n"
+            "file_close(h);\n"
+            "@sample\n"
+            "spl0 = es_texto;\n"
+            "spl1 = (v1 == 123.45) && (v2 == 678.90) && (v1_bis == 123.45);\n"
+        );
+
+        NovaJsfxEffect effectTxt;
+        effectTxt.setDataDirectory(QStringLiteral("/tmp"));
+        bool okTxt = effectTxt.loadScript(scriptTxt, &err);
+        CHECK_NAMED("sample_txt_compila", okTxt, err.toUtf8().constData());
+
+        std::vector<float> bufTxt(4, 0.0f);
+        effectTxt.process(bufTxt.data(), 2, 2, 48000);
+        CHECK_NAMED("sample_txt_valores_leidos",
+                    std::abs(bufTxt[0] - 1.0f) < 1e-4f && std::abs(bufTxt[1] - 1.0f) < 1e-4f,
+                    "file_text y file_var deben leer correctamente los valores de texto");
+        std::remove(rutaTxt.c_str());
     }
 
     // 23. Memoria Global Compartida (options:gmem= y gmem[])

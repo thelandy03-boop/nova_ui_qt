@@ -523,6 +523,11 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         src/audio/dsp/jsfx/NovaJsfxYsfxEngine.cpp
         src/audio/dsp/jsfx/NovaJsfxEffect.cpp
         src/audio/dsp/jsfx/NovaJsfxManager.cpp
+        src/audio/NovaAudioDecoder.cpp
+        src/audio/NovaWavReader.cpp
+        src/audio/NovaMp3Decoder.cpp
+        src/audio/NovaFlacDecoder.cpp
+        src/audio/NovaOggDecoder.cpp
     )
     target_link_libraries(test_audio_jsfx PRIVATE Qt6::Core ysfx)
     target_include_directories(test_audio_jsfx PRIVATE
@@ -530,11 +535,13 @@ if(BUILD_TESTING AND NOT ANDROID AND NOT WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/sources
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/thirdparty/WDL/source
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/minimp3
     )
     # Las plantillas JSFX viven en QML; el test las lee del árbol fuente para
     # comprobar que siguen compilando con WDL.
     target_compile_definitions(test_audio_jsfx PRIVATE
         NOVA_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        NOVA_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
     )
     add_test(NAME audio_jsfx COMMAND test_audio_jsfx)
 
