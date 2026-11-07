@@ -1,7 +1,7 @@
 #pragma once
 
 #include "audio/dsp/NovaDspEffect.h"
-#include "audio/dsp/jsfx/NovaJsfxWdlEngine.h"
+#include "audio/dsp/jsfx/NovaJsfxYsfxEngine.h"
 #include <QByteArray>
 #include <QString>
 #include <vector>
@@ -105,7 +105,7 @@ private:
     QString m_description;
     QString m_scriptContent;
 
-    std::unique_ptr<NovaJsfxWdlEngine> m_engine;
+    std::unique_ptr<NovaJsfxYsfxEngine> m_engine;
 
     std::vector<SliderMeta> m_sliders;
     std::vector<void*> m_sliderVars;

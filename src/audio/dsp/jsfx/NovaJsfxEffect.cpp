@@ -7,7 +7,7 @@
 #include <string>
 
 NovaJsfxEffect::NovaJsfxEffect()
-    : m_engine(std::make_unique<NovaJsfxWdlEngine>())
+    : m_engine(std::make_unique<NovaJsfxYsfxEngine>())
 {
 }
 
@@ -145,7 +145,7 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
 
     // El motor se construye aparte y solo se publica si todas las secciones
     // compilan. Asi un script roto no deja el efecto anterior a medias.
-    auto engine = std::make_unique<NovaJsfxWdlEngine>();
+    auto engine = std::make_unique<NovaJsfxYsfxEngine>();
 
     std::vector<void*> sliderVars;
     sliderVars.reserve(parsed.sliders.size());
@@ -164,15 +164,8 @@ bool NovaJsfxEffect::parseScript(const QString& scriptContent, QString* outError
     engine->setPlayState(hayTransporte && m_transporteReproduciendo.load(std::memory_order_relaxed) ? 1 : 0);
     engine->setNumChannels(2);
 
-    NovaJsfxWdlEngine::Programas programas;
-    programas.init = parsed.initSrc.toStdString();
-    programas.slider = parsed.sliderSrc.toStdString();
-    programas.block = parsed.blockSrc.toStdString();
-    programas.sample = parsed.sampleSrc.toStdString();
-    programas.serialize = parsed.serializeSrc.toStdString();
-
     std::string err;
-    if (!engine->compilar(programas, &err)) {
+    if (!engine->cargar(scriptContent.toStdString(), &err)) {
         if (outError) {
             *outError = QStringLiteral("Error en %1").arg(QString::fromStdString(err));
         }
@@ -339,28 +332,13 @@ void NovaJsfxEffect::process(float* interleavedBuffer, int numFrames, int channe
     m_engine->setSamplesBlock(numFrames);
     aplicarTransporteAlMotor();
 
-    // Ejecutar @block una vez por bloque de audio
-    m_engine->ejecutarBlock();
-
     if (sampleRate > 0) {
         m_playPosition += static_cast<double>(numFrames) / static_cast<double>(sampleRate);
     }
 
-    // Si no hay código en @sample, no hay nada que procesar
     if (!m_engine->tieneSample()) return;
 
     int effChannels = std::min(channels, 2);
-
-    // Ejecutar @sample por cada fotograma de audio
-    for (int frame = 0; frame < numFrames; ++frame) {
-        int idxL = frame * channels;
-
-        if (effChannels > 1) {
-            m_engine->procesarMuestra(&interleavedBuffer[idxL], &interleavedBuffer[idxL + 1]);
-        } else {
-            float descartado = interleavedBuffer[idxL];
-            m_engine->procesarMuestra(&interleavedBuffer[idxL], &descartado);
-        }
-    }
+    m_engine->procesarBloque(interleavedBuffer, numFrames, effChannels > 0 ? effChannels : 1);
 }
 

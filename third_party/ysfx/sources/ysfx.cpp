@@ -1244,10 +1244,10 @@ ysfx_real ysfx_get_sample_rate(ysfx_t *fx)
 
 void ysfx_set_block_size(ysfx_t *fx, uint32_t blocksize)
 {
-    if (fx->block_size != blocksize) {
-        fx->block_size = blocksize;
-        fx->must_compute_init = true;
-    }
+    // NOVA: no re-ejecutar @init al cambiar el tamaño de bloque. El motor WDL
+    // anterior no lo hacia y los scripts esperan que el estado persista entre
+    // bloques de distinto tamaño (los tests de @serialize lo verifican).
+    fx->block_size = blocksize;
 }
 
 void ysfx_set_sample_rate(ysfx_t *fx, ysfx_real samplerate)
@@ -1301,6 +1301,12 @@ void ysfx_init(ysfx_t *fx)
     }
 
     ysfx_clear_files(fx);
+
+    // NOVA: limpiar la RAM del script cuando no hay @serialize, para que
+    // `ram[0] = ram[0] + 1` no acumule entre resets.
+    if (!fx->has_serialize) {
+        NSEEL_VM_freeRAM(fx->vm.get());
+    }
 
     for (size_t i = 0; i < fx->code.init.size(); ++i)
     {

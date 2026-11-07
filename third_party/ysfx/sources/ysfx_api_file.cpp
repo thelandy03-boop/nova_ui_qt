@@ -312,6 +312,7 @@ int32_t ysfx_serializer_t::avail()
 
 void ysfx_serializer_t::rewind()
 {
+    m_pos = 0;
 }
 
 bool ysfx_serializer_t::var(ysfx_real *var)
