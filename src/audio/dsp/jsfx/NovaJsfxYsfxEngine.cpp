@@ -21,7 +21,8 @@
 #include <string>
 #include <vector>
 
-#include <unistd.h>
+#include <QDir>
+#include <QTemporaryFile>
 
 namespace {
 
@@ -265,26 +266,25 @@ bool NovaJsfxYsfxEngine::cargar(const std::string &fuente, const std::string &ru
     }
 
     // YSFX solo carga desde fichero. Se vuelca la fuente a un temporal.
-    char plantilla[] = "/tmp/nova_jsfx_XXXXXX";
-    int fd = mkstemp(plantilla);
-    if (fd < 0) {
+    QTemporaryFile tempFile(QDir::tempPath() + QStringLiteral("/nova_jsfx_XXXXXX"));
+    tempFile.setAutoRemove(false);
+    if (!tempFile.open()) {
         if (outError) *outError = "ysfx: no se pudo crear el fichero temporal";
         return false;
     }
-    {
-        std::ofstream out(plantilla, std::ios::binary | std::ios::trunc);
-        out.write(fuenteNorm.data(), static_cast<std::streamsize>(fuenteNorm.size()));
-    }
-    close(fd);
+    tempFile.write(fuenteNorm.data(), static_cast<qint64>(fuenteNorm.size()));
+    const std::string plantilla = tempFile.fileName().toStdString();
+    tempFile.close();
 
     m_impl->fx = ysfx_new(m_impl->config);
     if (!m_impl->fx) {
-        std::remove(plantilla);
+        std::remove(plantilla.c_str());
         if (outError) *outError = "ysfx: no se pudo crear el efecto";
         return false;
     }
 
-    const bool ok = ysfx_load_file(m_impl->fx, plantilla, 0);
+    const bool ok = ysfx_load_file(m_impl->fx, plantilla.c_str(), 0);
+    std::remove(plantilla.c_str());
     // std::remove(plantilla);
     if (!ok) {
         if (outError) {

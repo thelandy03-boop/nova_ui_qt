@@ -2,8 +2,10 @@
 #include "core/NovaLogging.h"
 #include "audio/dsp/NovaDspChain.h"
 #include <QCoreApplication>
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
 #include "core/platform/NovaAndroidStubs.h"
+#endif
+#if defined(Q_OS_ANDROID)
 #include <QPermissions>
 #endif
 #include <QTimer>

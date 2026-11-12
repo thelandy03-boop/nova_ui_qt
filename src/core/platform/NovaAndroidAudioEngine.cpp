@@ -569,7 +569,12 @@ void NovaAndroidAudioEngine::setRecording(bool enabled) {
             auto now = std::chrono::system_clock::now();
             auto time_t = std::chrono::system_clock::to_time_t(now);
             struct tm tmBuf;
+#if defined(_WIN32)
+            localtime_s(&tmBuf, &time_t);
+            struct tm* tm = &tmBuf;
+#else
             struct tm* tm = localtime_r(&time_t, &tmBuf);
+#endif
             char timestamp[64];
             strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm);
             m_tomaGrabacionTimestamp = timestamp;
