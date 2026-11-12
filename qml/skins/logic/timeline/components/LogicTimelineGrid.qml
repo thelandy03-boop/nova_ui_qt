@@ -100,9 +100,10 @@ Item {
                     opacity: 0.4
                 }
 
-                // Sub-divisiones (Beats 2, 3, 4)
+                // Sub-divisiones (Beats 2, 3, 4) - atenuadas u ocultas al alejar zoom para evitar ruido visual
                 Row {
                     anchors.fill: parent
+                    visible: root.barWidth >= 48.0
 
                     Repeater {
                         model: 4
@@ -116,7 +117,7 @@ Item {
                                 anchors.bottom: parent.bottom
                                 width: 1
                                 color: "#252833"
-                                opacity: index === 0 ? 0.0 : 0.25
+                                opacity: index === 0 ? 0.0 : (root.barWidth >= 75.0 ? 0.25 : 0.12)
                             }
                         }
                     }

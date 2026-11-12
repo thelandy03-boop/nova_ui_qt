@@ -121,6 +121,7 @@ Item {
             height: 20
             color: root.isLiveRecording ? "#50000000" : (root.isSelected ? "#30FFFFFF" : "#25000000")
             radius: 3
+            clip: true
             z: 20
 
             // Clic en la barra selecciona el clip y ancla los tips al punto del clic
@@ -205,7 +206,7 @@ Item {
                 color: autoGainMouseArea.containsMouse || autoGainMouseArea.pressed ? "#80FFCC00" : "#30FFFFFF"
                 border.color: autoGainMouseArea.containsMouse || autoGainMouseArea.pressed ? "#FFCC00" : "transparent"
                 border.width: 1
-                visible: !root.isLiveRecording
+                visible: !root.isLiveRecording && root.width >= 150
 
                 Text {
                     anchors.centerIn: parent

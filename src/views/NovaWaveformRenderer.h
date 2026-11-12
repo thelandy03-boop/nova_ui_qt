@@ -82,6 +82,8 @@ private:
     double m_pixelsPerBeat = 100.0;
     int m_width = 640;
     int m_height = 120;
+    double m_itemWidth = 0.0;
+    double m_itemHeight = 0.0;
 
     std::vector<PeakPoint> m_peaks;
     std::vector<PeakPoint> m_overview;

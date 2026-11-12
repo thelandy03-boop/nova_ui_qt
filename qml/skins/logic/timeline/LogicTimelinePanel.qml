@@ -9,7 +9,9 @@ Rectangle {
     property real barWidth: 80.0          // Ancho base de cada compás (80px)
     property real minBarWidth: 35.0       // Zoom máximo alejado
     property real maxBarWidth: 240.0      // Zoom máximo acercado
-    property real currentPlayheadX: 0     // Inicia en el Compás 1 (x = 0)
+    property real currentPlayheadX: (typeof AudioEngine !== "undefined")
+                                    ? AudioEngine.beatToPixel(AudioEngine.currentBeat || 0.0, root.barWidth)
+                                    : 0.0
 
     property alias scrollY: gridFlickable.contentY
 
@@ -18,7 +20,6 @@ Rectangle {
         target: typeof AudioEngine !== "undefined" ? AudioEngine : null
 
         function onPositionChanged() {
-            root.currentPlayheadX = AudioEngine.beatToPixel(AudioEngine.currentBeat, root.barWidth);
             root.followPlayhead();
         }
     }
@@ -126,10 +127,20 @@ Rectangle {
 
                     onWheel: (wheel) => {
                         if (wheel.modifiers & Qt.ControlModifier) {
-                            // Zoom horizontal con Ctrl + Rueda
+                            // Zoom horizontal con Ctrl + Rueda centrado suavemente en el cursor del raton
                             var zoomFactor = wheel.angleDelta.y > 0 ? 1.15 : 0.88
-                            var updatedBarWidth = root.barWidth * zoomFactor
-                            root.barWidth = Math.max(root.minBarWidth, Math.min(root.maxBarWidth, updatedBarWidth))
+                            var oldBarWidth = root.barWidth
+                            var updatedBarWidth = Math.max(root.minBarWidth, Math.min(root.maxBarWidth, oldBarWidth * zoomFactor))
+                            if (Math.abs(updatedBarWidth - oldBarWidth) > 0.01) {
+                                var mouseX = wheel.x
+                                var mouseContentX = mouseX + gridFlickable.contentX
+                                var beatAtMouse = AudioEngine.pixelToBeat(mouseContentX, oldBarWidth)
+                                root.barWidth = updatedBarWidth
+                                var newMouseContentX = AudioEngine.beatToPixel(beatAtMouse, updatedBarWidth)
+                                var targetContentX = newMouseContentX - mouseX
+                                var maxContentX = Math.max(0, timelineGrid.width - gridFlickable.width)
+                                gridFlickable.contentX = Math.max(0, Math.min(maxContentX, targetContentX))
+                            }
                         } else if (wheel.modifiers & Qt.ShiftModifier) {
                             // Desplazamiento Vertical
                             var newY = gridFlickable.contentY - wheel.angleDelta.y
@@ -204,7 +215,16 @@ Rectangle {
                         if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
                             AudioEngine.hapticFeedback()
                         }
-                        root.barWidth = Math.max(root.minBarWidth, root.barWidth * 0.8)
+                        var oldW = root.barWidth
+                        var newW = Math.max(root.minBarWidth, oldW * 0.8)
+                        if (Math.abs(newW - oldW) > 0.01) {
+                            var centerContentX = gridFlickable.contentX + gridFlickable.width / 2
+                            var beatAtCenter = AudioEngine.pixelToBeat(centerContentX, oldW)
+                            root.barWidth = newW
+                            var newCenterX = AudioEngine.beatToPixel(beatAtCenter, newW)
+                            var maxContentX = Math.max(0, timelineGrid.width - gridFlickable.width)
+                            gridFlickable.contentX = Math.max(0, Math.min(maxContentX, newCenterX - gridFlickable.width / 2))
+                        }
                     }
                 }
             }
@@ -260,7 +280,16 @@ Rectangle {
                         if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
                             AudioEngine.hapticFeedback()
                         }
-                        root.barWidth = Math.min(root.maxBarWidth, root.barWidth * 1.25)
+                        var oldW2 = root.barWidth
+                        var newW2 = Math.min(root.maxBarWidth, oldW2 * 1.25)
+                        if (Math.abs(newW2 - oldW2) > 0.01) {
+                            var centerContentX2 = gridFlickable.contentX + gridFlickable.width / 2
+                            var beatAtCenter2 = AudioEngine.pixelToBeat(centerContentX2, oldW2)
+                            root.barWidth = newW2
+                            var newCenterX2 = AudioEngine.beatToPixel(beatAtCenter2, newW2)
+                            var maxContentX2 = Math.max(0, timelineGrid.width - gridFlickable.width)
+                            gridFlickable.contentX = Math.max(0, Math.min(maxContentX2, newCenterX2 - gridFlickable.width / 2))
+                        }
                     }
                 }
             }

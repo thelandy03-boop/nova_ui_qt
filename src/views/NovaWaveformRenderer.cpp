@@ -200,7 +200,13 @@ void NovaWaveformRenderer::rebuildGeometry() {
     m_vertices.clear();
     m_indices.clear();
 
-    const auto &peaks = (m_pixelsPerBeat > 2.0) ? m_peaks : m_overview;
+    // 🛡️ Al alejar el zoom (m_pixelsPerBeat <= 2.0), usamos m_overview si existe para
+    // aligerar el renderizado. Si m_overview está vacía (p.ej. grabación en vivo o pistas
+    // recién importadas sin overview precalculado), usamos m_peaks para evitar que la
+    // forma de onda desaparezca completamente al hacer des-zoom.
+    const auto &peaks = (!m_overview.empty() && m_pixelsPerBeat <= 2.0)
+                            ? m_overview
+                            : (!m_peaks.empty() ? m_peaks : m_overview);
 
     int count = static_cast<int>(peaks.size());
     float gain = std::pow(10.0f, static_cast<float>(m_gainDb) / 20.0f);
@@ -417,6 +423,7 @@ void NovaWaveformRenderer::render() {
         glEnableVertexAttribArray_(0);
         glVertexAttribPointer_(0, 2, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
         glEnableVertexAttribArray_(1);
+        glVertexAttribPointer_(1, 1, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)(2 * sizeof(float)));
         m_glFuncs->glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
         if (m_glFuncs) {
             m_glFuncs->glDisableVertexAttribArray(0);
@@ -463,11 +470,11 @@ void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {
         m_gainDb = wf->clipGainDb();
         changed = true;
     }
-    const int w = static_cast<int>(wf->width());
-    const int h = static_cast<int>(wf->height());
-    if (w > 0 && h > 0 && (w != m_width || h != m_height)) {
-        m_width = w;
-        m_height = h;
+    const double w = wf->width();
+    const double h = wf->height();
+    if (w > 0.0 && h > 0.0 && (!qFuzzyCompare(w, m_itemWidth) || !qFuzzyCompare(h, m_itemHeight))) {
+        m_itemWidth = w;
+        m_itemHeight = h;
         changed = true;
     }
 
