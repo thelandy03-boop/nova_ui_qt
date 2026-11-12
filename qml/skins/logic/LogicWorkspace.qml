@@ -7,6 +7,7 @@ import "timeline"
 import "dialogs"
 import "rack"
 import "dock"
+import "../../dialogs"
 
 Rectangle {
     id: root
@@ -111,6 +112,9 @@ Rectangle {
                     onScriptApplied: {
                         if (fxRackPanel) fxRackPanel.refreshPlugins()
                     }
+                    onReapackRequested: {
+                        jsfxPackageBrowserDialog.open()
+                    }
 
                     Behavior on Layout.preferredHeight {
                         NumberAnimation { duration: 180; easing.type: Easing.InOutQuad }
@@ -134,6 +138,9 @@ Rectangle {
             onEditJsfxRequested: (trkIdx, plgIdx, plgNm) => {
                 root.showJsfxDock = true
                 jsfxDock.openForPlugin(trkIdx, plgIdx, plgNm)
+            }
+            onReapackRequested: {
+                jsfxPackageBrowserDialog.open()
             }
 
             Behavior on Layout.preferredHeight {
@@ -183,6 +190,20 @@ Rectangle {
 
         onLinkCopied: (link) => {
             console.log(" Enlace copiado al portapapeles:", link)
+        }
+    }
+
+    // DIÁLOGO MODAL EXPLORADOR DE PAQUETES JSFX (REAPACK)
+    JsfxPackageBrowserDialog {
+        id: jsfxPackageBrowserDialog
+        anchors.fill: parent
+        z: 99999
+
+        onOpenCodeRequested: (code, name) => {
+            root.showJsfxDock = true
+            if (jsfxDock) {
+                jsfxDock.loadCustomScriptCode(code, name)
+            }
         }
     }
 }

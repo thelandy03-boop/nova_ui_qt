@@ -46,6 +46,7 @@ Rectangle {
 
     signal closeRequested()
     signal scriptApplied()
+    signal reapackRequested()
 
     color: "#181A20"
     border.color: "#141518"
@@ -121,6 +122,7 @@ Rectangle {
             onRevertClicked: root.loadFileByName(root.selectedFile)
             onViewModeChanged: (mode) => root.activeView = mode
             onToggleMaximizeClicked: root.isMaximized = !root.isMaximized
+            onReapackClicked: root.reapackRequested()
         }
 
         // 2. Barra de búsqueda desplegable
@@ -424,6 +426,20 @@ Rectangle {
 
     function formatScript() {
         editorArea.text = templates.formatScript(editorArea.text)
+    }
+
+    function loadCustomScriptCode(code, name) {
+        fileTree.cancelRename()
+        root.pluginIndex = -1
+        root.pluginName = (name.indexOf(".jsfx") !== -1) ? name : (name + ".jsfx")
+        root.selectedFile = root.pluginName
+        if (!root.customFileScripts) root.customFileScripts = ({})
+        root.customFileScripts[root.selectedFile] = code
+        editorArea.loadContent(code)
+        root.isModified = false
+        root.statusMessage = "Cargado plugin ReaPack: " + name
+        root.hasError = false
+        controlsView.refreshSliders()
     }
 
     Component.onCompleted: {

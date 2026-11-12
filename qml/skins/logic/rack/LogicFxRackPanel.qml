@@ -14,6 +14,7 @@ Rectangle {
 
     signal closeRequested()
     signal editJsfxRequested(int trackIndex, int pluginIndex, string pluginName)
+    signal reapackRequested()
 
     color: "#121319"
     border.color: "#252834"
@@ -519,10 +520,42 @@ Rectangle {
                     }
                 }
 
-                Text {
-                    text: "Selecciona un efecto nativo para conectarlo a la pista en tiempo real:"
-                    color: "#94A3B8"
-                    font.pixelSize: 11
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "Selecciona un efecto o descarga desde la comunidad:"
+                        color: "#94A3B8"
+                        font.pixelSize: 11
+                        Layout.fillWidth: true
+                    }
+
+                    Rectangle {
+                        Layout.preferredHeight: 24
+                        Layout.preferredWidth: reapackBtnRow.implicitWidth + 16
+                        radius: 4
+                        color: reapackMouse.containsMouse ? "#2563EB" : "#1D4ED8"
+
+                        Row {
+                            id: reapackBtnRow
+                            anchors.centerIn: parent
+                            spacing: 4
+                            Text { text: "📦"; font.pixelSize: 11 }
+                            Text { text: "Explorador ReaPack..."; color: "#FFFFFF"; font.pixelSize: 10; font.bold: true }
+                        }
+
+                        MouseArea {
+                            id: reapackMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.showAddDialog = false
+                                root.reapackRequested()
+                            }
+                        }
+                    }
                 }
 
 

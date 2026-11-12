@@ -12,6 +12,7 @@
 #include "core/NovaTimeUtils.h"
 #include "models/NovaTrackListModel.h"
 #include "models/NovaRegionModel.h"
+#include "audio/dsp/jsfx/NovaJsfxPackageManager.h"
 
 #if defined(Q_OS_ANDROID)
 #include "core/platform/NovaAndroidAudioEngine.h"
@@ -34,6 +35,7 @@ class NovaAudioEngine : public QObject
     Q_PROPERTY(NovaTrackListModel* tracks READ tracks NOTIFY tracksChanged)
     Q_PROPERTY(NovaRegionModel* regions READ regions NOTIFY regionsChanged)
     Q_PROPERTY(NovaAudioDeviceManager* deviceManager READ deviceManager CONSTANT)
+    Q_PROPERTY(NovaJsfxPackageManager* packages READ packages CONSTANT)
 
     Q_PROPERTY(bool loopEnabled READ loopEnabled WRITE setLoopEnabled NOTIFY loopEnabledChanged)
     Q_PROPERTY(double loopStartBeat READ loopStartBeat NOTIFY loopRangeChanged)
@@ -164,6 +166,7 @@ public:
     NovaTrackListModel* tracks() const { return m_trackModel; }
     NovaRegionModel* regions() const { return m_regionModel; }
     NovaAudioDeviceManager* deviceManager() { return &m_deviceManager; }
+    NovaJsfxPackageManager* packages() const { return NovaJsfxPackageManager::instance(); }
 
     bool loopEnabled() const { return m_transport.loopEnabled(); }
     double loopStartBeat() const { return m_transport.loopStartBeat(); }

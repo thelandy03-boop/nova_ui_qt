@@ -28,6 +28,7 @@ Rectangle {
     signal revertClicked()
     signal viewModeChanged(string mode)
     signal toggleMaximizeClicked()
+    signal reapackClicked()
 
     Layout.fillWidth: true
     Layout.preferredHeight: (Qt.platform.os === "android") ? 38 : 34
@@ -426,6 +427,32 @@ Rectangle {
                 ToolTip.text: "Pegar texto del portapapeles (Ctrl+V)"
                 ToolTip.delay: 300
                 onClicked: root.pasteClicked()
+            }
+        }
+
+        // Botón 📦 ReaPack Packages
+        Rectangle {
+            Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24
+            Layout.preferredWidth: reapackBtnRow.implicitWidth + 18
+            radius: 3
+            color: reapackTabMouse.containsMouse ? "#323846" : "#252832"
+            border.color: "#383E4F"
+            border.width: 1
+
+            Row {
+                id: reapackBtnRow
+                anchors.centerIn: parent
+                spacing: 5
+                Text { text: "📦"; font.pixelSize: 11 }
+                Text { text: "ReaPack"; color: "#E8EAED"; font.pixelSize: 11; font.family: "Segoe UI, Inter, Sans-serif" }
+            }
+
+            MouseArea {
+                id: reapackTabMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.reapackClicked()
             }
         }
 

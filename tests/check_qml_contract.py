@@ -21,6 +21,7 @@ OBJECTS = {
     "AudioEngine.tracks": SRC / "models" / "NovaTrackListModel.h",
     "AudioEngine.regions": SRC / "models" / "NovaRegionModel.h",
     "AudioEngine.deviceManager": SRC / "core" / "NovaAudioDeviceManager.h",
+    "AudioEngine.packages": SRC / "audio" / "dsp" / "jsfx" / "NovaJsfxPackageManager.h",
     # El controlador del spike de Android (pagina qml/spike/SpikePage.qml):
     # motor de audio, picos y posicion del cabezal.
     "spikeController": SRC / "core" / "platform" / "NovaSpikeController.h",

@@ -48,7 +48,7 @@ if(NOT CMAKE_PREFIX_PATH)
   set(CMAKE_PREFIX_PATH "C:/QtAndroid/6.8.0/android_arm64_v8a")
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL Qml Quick QuickControls2)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL Qml Quick QuickControls2 Network)
 
 # El moc de Qt. Qt6 ya fija CMAKE_AUTOMOC_EXECUTABLE en su propio paquete
 # (que es el que vale en cada plataforma: el de Qt para Android en Android, el
@@ -255,6 +255,8 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
     src/audio/dsp/jsfx/NovaJsfxEffect.cpp
     src/audio/dsp/jsfx/NovaJsfxManager.h
     src/audio/dsp/jsfx/NovaJsfxManager.cpp
+    src/audio/dsp/jsfx/NovaJsfxPackageManager.h
+    src/audio/dsp/jsfx/NovaJsfxPackageManager.cpp
     src/audio/dsp/jsfx/NovaJsfxYsfxEngine.h
     src/audio/dsp/jsfx/NovaJsfxYsfxEngine.cpp
     third_party/minimp3/minimp3.h
@@ -262,7 +264,7 @@ qt_add_executable(nova_ui_qt ${WINDOWS_FLAG}
 )
 
 # Common Qt libraries for all platforms
-target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui ysfx)
+target_link_libraries(nova_ui_qt PRIVATE Qt6::OpenGL Qt6::Quick Qt6::Qml Qt6::Core Qt6::QuickControls2 Qt6::Gui Qt6::Network ysfx)
 target_include_directories(nova_ui_qt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ysfx/sources
