@@ -641,9 +641,11 @@ bool NovaAudioEngine::newProjectInternal(const QString &name, const QString &par
 
     if (session) {
         connectSessionSignals();
+        if (m_trackModel && m_trackModel->rowCount() == 0) {
+            m_trackModel->addAudioTrack(QStringLiteral("Audio 1"));
+        }
         return true;
     }
-
     qCCritical(novaCore) << "❌ No se pudo crear el proyecto:" << name
                          << "(puede que ya exista un proyecto guardado con ese nombre)";
     return false;

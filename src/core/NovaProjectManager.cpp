@@ -72,21 +72,21 @@ bool NovaProjectManager::saveProject(void *session)
     } catch (const std::exception &e) {
         qCCritical(novaCore) << "Excepción crítica durante el guardado:" << e.what();
     }
-#elif defined(Q_OS_ANDROID)
+#elif defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
     {
         ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
         QString path = sanitizePath(QString::fromStdString(ardourSession->path()));
         QString name = QString::fromStdString(ardourSession->name());
         if (name.isEmpty()) name = QFileInfo(path).fileName();
         QDir().mkpath(path);
-        // Marcador de proyecto Android (no hay .ardour; se guarda metadata minima).
-        QFile marker(path + QStringLiteral("/.nova_android"));
+        // Marcador de proyecto stub (no hay .ardour; se guarda metadata minima).
+        QFile marker(path + QStringLiteral("/.nova_project"));
         if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             marker.write(name.toUtf8());
             marker.close();
         }
         addProjectToRecent(name, path);
-        qCDebug(novaCore) << "💾 [Android] Proyecto guardado:" << path;
+        qCDebug(novaCore) << "💾 [Stub] Proyecto guardado:" << path;
         return true;
     }
 #endif
@@ -100,7 +100,8 @@ bool NovaProjectManager::isDirty(void *session)
     ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
     return ardourSession->dirty();
 #else
-    return false;
+    ARDOUR::Session *stubSession = static_cast<ARDOUR::Session*>(session);
+    return stubSession ? stubSession->dirty() : false;
 #endif
 }
 
@@ -155,12 +156,11 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
     }
 #endif
 
-#if defined(Q_OS_ANDROID)
-    // Fase 2a: en Android no hay Ardour, pero creamos una sesion stub para que
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
+    // En Android y Windows usamos la sesion stub para que
     // el modelo de pistas/regiones y el transporte tengan un contenedor valido.
-    // El audio real (Oboe) se cablea en la Fase 2b.
     {
-        ARDOUR::AudioEngine *androidEngine = static_cast<ARDOUR::AudioEngine*>(engine);
+        ARDOUR::AudioEngine *stubEngine = static_cast<ARDOUR::AudioEngine*>(engine);
         QString targetParentDir = parentDir.isEmpty() ? NovaPlatformUtils::getProjectsDirectory() : sanitizePath(parentDir);
         QString sessionDir = targetParentDir + "/" + projectName;
         QDir().mkpath(targetParentDir);
@@ -168,11 +168,11 @@ void* NovaProjectManager::createProject(void *engine, const QString &projectName
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = std::make_unique<ARDOUR::Session>(*androidEngine, sessionDir.toStdString(),
+        auto session = std::make_unique<ARDOUR::Session>(*stubEngine, sessionDir.toStdString(),
                                           projectName.toStdString(), &bus_profile, "", true);
         if (session) {
-            androidEngine->set_session(session.get());
-            qCDebug(novaCore) << "📱 [Android] Sesion stub creada:" << sessionDir;
+            stubEngine->set_session(session.get());
+            qCDebug(novaCore) << "📱 [Stub] Sesion stub creada:" << sessionDir;
             return session.release();
         }
     }
@@ -236,9 +236,9 @@ void* NovaProjectManager::openProject(void *engine, const QString &sessionPath)
     }
 #endif
 
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) || defined(Q_OS_WIN)
     {
-        ARDOUR::AudioEngine *androidEngine = static_cast<ARDOUR::AudioEngine*>(engine);
+        ARDOUR::AudioEngine *stubEngine = static_cast<ARDOUR::AudioEngine*>(engine);
         QString cleanPath = sanitizePath(sessionPath);
         QFileInfo info(cleanPath);
         QString name = info.isDir() ? info.fileName() : info.completeBaseName();
@@ -250,12 +250,12 @@ void* NovaProjectManager::openProject(void *engine, const QString &sessionPath)
         ARDOUR::BusProfile bus_profile;
         bus_profile.master_out_channels = 2;
 
-        auto session = std::make_unique<ARDOUR::Session>(*androidEngine, sessionDir.toStdString(),
+        auto session = std::make_unique<ARDOUR::Session>(*stubEngine, sessionDir.toStdString(),
                                           name.toStdString(), &bus_profile, "", false);
         if (session) {
-            androidEngine->set_session(session.get());
+            stubEngine->set_session(session.get());
             addProjectToRecent(name, sessionDir);
-            qCDebug(novaCore) << "📂 [Android] Proyecto abierto:" << sessionDir;
+            qCDebug(novaCore) << "📂 [Stub] Proyecto abierto:" << sessionDir;
             return session.release();
         }
     }
@@ -346,7 +346,8 @@ QString NovaProjectManager::discardableProjectPath(void *session)
     ARDOUR::Session *ardourSession = static_cast<ARDOUR::Session*>(session);
     QString path = sanitizePath(QString::fromStdString(ardourSession->path()));
 #else
-    QString path = "";
+    ARDOUR::Session *stubSession = static_cast<ARDOUR::Session*>(session);
+    QString path = stubSession ? sanitizePath(QString::fromStdString(stubSession->path())) : QString();
 #endif
 
     if (path.isEmpty()) {
