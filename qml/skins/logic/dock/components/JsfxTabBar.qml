@@ -350,6 +350,33 @@ Rectangle {
             }
         }
 
+        // Botón ⌨ Ocultar Teclado (Específico de Android)
+        Rectangle {
+            visible: (Qt.platform.os === "android")
+            Layout.preferredHeight: 28
+            Layout.preferredWidth: hideKbRow.implicitWidth + 18
+            radius: 3
+            color: hideKbMouse.containsMouse ? "#323846" : "#252832"
+            border.color: "#3B82F6"
+            border.width: 1
+
+            Row {
+                id: hideKbRow
+                anchors.centerIn: parent
+                spacing: 5
+                Text { text: "⌨▾"; color: "#60A5FA"; font.pixelSize: 12; font.bold: true }
+                Text { text: "Teclado"; color: "#E8EAED"; font.pixelSize: 11; font.family: "Segoe UI, Inter, Sans-serif" }
+            }
+
+            MouseArea {
+                id: hideKbMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: Qt.inputMethod.hide()
+            }
+        }
+
         // Botón 📋 Pegar
         Rectangle {
             Layout.preferredHeight: (Qt.platform.os === "android") ? 28 : 24

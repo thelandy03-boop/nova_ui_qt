@@ -36,7 +36,7 @@ Rectangle {
 
     property bool searchVisible: false
     property string activeView: "code" // "code" o "ui"
-    property bool isMaximized: false
+    property bool isMaximized: (Qt.platform.os === "android")
 
     onActiveViewChanged: {
         if (activeView === "ui") {
