@@ -64,6 +64,7 @@ public:
     Q_INVOKABLE void syncRepositories();
     Q_INVOKABLE void addRepository(const QString &url);
     Q_INVOKABLE void removeRepository(const QString &url);
+    Q_INVOKABLE void clearRepositories();
     Q_INVOKABLE void resetDefaultRepositories();
 
     Q_INVOKABLE QVariantList searchPackages(const QString &filterText = QString(),

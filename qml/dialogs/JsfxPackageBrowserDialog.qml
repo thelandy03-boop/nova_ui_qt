@@ -27,9 +27,9 @@ Rectangle {
         root.visible = true
         root.forceActiveFocus()
         refreshPackages()
-        // Si no hay paquetes en caché, iniciar sincronización automática
+        // Solo sincronizar si hay repositorios configurados y la lista está vacía
         if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
-            if (AudioEngine.packages.totalPackagesCount === 0) {
+            if (AudioEngine.packages.repositories.length > 0 && AudioEngine.packages.totalPackagesCount === 0) {
                 AudioEngine.packages.syncRepositories()
             }
         }
@@ -103,9 +103,14 @@ Rectangle {
                         font.family: "Segoe UI, Inter, Sans-serif"
                     }
                     Text {
-                        text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.isSyncing)
-                              ? AudioEngine.packages.statusMessage
-                              : ((typeof AudioEngine !== "undefined" && AudioEngine.packages ? AudioEngine.packages.totalPackagesCount : 0) + " plugins disponibles (ReaTeam)")
+                        text: {
+                            if (typeof AudioEngine === "undefined" || !AudioEngine.packages) return ""
+                            if (AudioEngine.packages.isSyncing) return AudioEngine.packages.statusMessage
+                            if (AudioEngine.packages.repositories.length === 0) {
+                                return "Sin repositorios configurados"
+                            }
+                            return AudioEngine.packages.totalPackagesCount + " plugins disponibles (" + AudioEngine.packages.repositories.length + (AudioEngine.packages.repositories.length === 1 ? " repositorio)" : " repositorios)")
+                        }
                         color: "#94A3B8"
                         font.pixelSize: 11
                         font.family: "Segoe UI, Inter, Sans-serif"
@@ -205,7 +210,7 @@ Rectangle {
             // PANEL DESPLEGABLE DE REPOSITORIOS
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.showRepoConfig ? 110 : 0
+                Layout.preferredHeight: root.showRepoConfig ? (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length > 0 ? 150 : 110) : 0
                 visible: root.showRepoConfig
                 clip: true
                 color: "#1E222D"
@@ -218,11 +223,26 @@ Rectangle {
                     anchors.margins: 10
                     spacing: 6
 
-                    Text {
-                        text: "Gestión de Repositorios ReaPack (URL index.xml):"
-                        color: "#93C5FD"
-                        font.pixelSize: 11
-                        font.bold: true
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Gestión de Repositorios ReaPack (URL index.xml):"
+                            color: "#93C5FD"
+                            font.pixelSize: 11
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: "Pegar URL ReaTeam"
+                            color: "#60A5FA"
+                            font.pixelSize: 10
+                            font.underline: true
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: newRepoInput.text = "https://github.com/ReaTeam/JSFX/raw/master/index.xml"
+                            }
+                        }
                     }
 
                     RowLayout {
@@ -260,14 +280,14 @@ Rectangle {
 
                         // Botón Añadir Repositorio
                         Rectangle {
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: 110
                             Layout.preferredHeight: 32
                             radius: 4
                             color: addRepoMouse.containsMouse ? "#2563EB" : "#1D4ED8"
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "+ Añadir URL"
+                                text: "+ Importar"
                                 color: "#FFFFFF"
                                 font.pixelSize: 11
                                 font.bold: true
@@ -287,42 +307,100 @@ Rectangle {
                             }
                         }
 
-                        // Botón Restaurar ReaTeam
+                        // Botón Borrar todos los repositorios
                         Rectangle {
-                            Layout.preferredWidth: 130
+                            visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length > 0
+                            Layout.preferredWidth: 90
                             Layout.preferredHeight: 32
                             radius: 4
-                            color: resetRepoMouse.containsMouse ? "#374151" : "#282E3D"
-                            border.color: "#4B5563"
+                            color: clearRepoMouse.containsMouse ? "#7F1D1D" : "#451A1A"
+                            border.color: "#991B1B"
                             border.width: 1
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "Restaurar ReaTeam"
-                                color: "#E2E8F0"
+                                text: "Borrar todos"
+                                color: "#FECACA"
                                 font.pixelSize: 11
                             }
 
                             MouseArea {
-                                id: resetRepoMouse
+                                id: clearRepoMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
-                                        AudioEngine.packages.resetDefaultRepositories()
+                                        AudioEngine.packages.clearRepositories()
                                     }
                                 }
                             }
                         }
                     }
 
-                    Text {
-                        text: "Repositorio actual: " + (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length > 0 ? AudioEngine.packages.repositories[0] : "ReaTeam")
-                        color: "#64748B"
-                        font.pixelSize: 10
-                        elide: Text.ElideMiddle
+                    // Lista de repositorios añadidos
+                    Flickable {
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: repoListCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        Column {
+                            id: repoListCol
+                            width: parent.width
+                            spacing: 4
+
+                            Repeater {
+                                model: (typeof AudioEngine !== "undefined" && AudioEngine.packages) ? AudioEngine.packages.repositories : []
+                                delegate: Rectangle {
+                                    width: repoListCol.width
+                                    height: 24
+                                    color: "#161922"
+                                    radius: 3
+                                    border.color: "#282C3A"
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 6
+
+                                        Text {
+                                            text: "🔗 " + modelData
+                                            color: "#CBD5E1"
+                                            font.pixelSize: 10
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            text: "Eliminar"
+                                            color: "#EF4444"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                                        AudioEngine.packages.removeRepository(modelData)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0
+                                text: "No hay ningún repositorio configurado. Introduce una URL arriba para importar paquetes."
+                                color: "#64748B"
+                                font.pixelSize: 10
+                            }
+                        }
                     }
                 }
             }
@@ -699,19 +777,74 @@ Rectangle {
 
                         Column {
                             anchors.centerIn: parent
-                            spacing: 8
-                            Text {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: "📦"
-                                font.pixelSize: 32
-                            }
+                            spacing: 10
+                            width: Math.min(parent.width - 40, 480)
+
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.isSyncing)
-                                      ? "Descargando índice de paquetes ReaTeam..."
-                                      : "No se encontraron plugins con ese criterio."
+                                      ? "⏳"
+                                      : ((typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0) ? "🌐" : "📦")
+                                font.pixelSize: 36
+                            }
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: {
+                                    if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                        if (AudioEngine.packages.isSyncing) return AudioEngine.packages.statusMessage
+                                        if (AudioEngine.packages.repositories.length === 0) {
+                                            return "No hay repositorios importados"
+                                        }
+                                    }
+                                    return "No se encontraron plugins con ese criterio"
+                                }
+                                color: "#FFFFFF"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                horizontalAlignment: Text.AlignHCenter
+                                text: {
+                                    if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                        if (AudioEngine.packages.isSyncing) return "Por favor, espera un momento mientras se descarga el catálogo."
+                                        if (AudioEngine.packages.repositories.length === 0) {
+                                            return "NOVA Studio no precarga repositorios por defecto.\nPulsa en 'Repositorios' arriba y pega la URL de un repositorio ReaPack (ej: ReaTeam) para importar sus plugins."
+                                        }
+                                    }
+                                    return "Prueba con otra búsqueda o selecciona 'Todas' las categorías."
+                                }
                                 color: "#94A3B8"
-                                font.pixelSize: 13
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                width: parent.width
+                            }
+
+                            Rectangle {
+                                visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing && AudioEngine.packages.repositories.length === 0
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 180
+                                height: 32
+                                radius: 4
+                                color: emptyBtnMouse.containsMouse ? "#2563EB" : "#1D4ED8"
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "🌐 Configurar Repositorios"
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+
+                                MouseArea {
+                                    id: emptyBtnMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.showRepoConfig = true
+                                }
                             }
                         }
                     }

@@ -14,7 +14,6 @@
 #include <QRegularExpression>
 #include <set>
 
-static const char *kDefaultReaTeamRepo = "https://raw.githubusercontent.com/ReaTeam/JSFX/master/index.xml";
 
 static NovaJsfxPackageManager *s_packageManagerInstance = nullptr;
 
@@ -63,11 +62,14 @@ QString NovaJsfxPackageManager::localPackagePath(const QString &category, const 
 void NovaJsfxPackageManager::loadRepositoriesSettings()
 {
     QSettings settings("NovaStudio", "JSFX");
-    m_repositories = settings.value("repositories").toStringList();
-    if (m_repositories.isEmpty()) {
-        m_repositories.append(QString::fromLatin1(kDefaultReaTeamRepo));
-        settings.setValue("repositories", m_repositories);
+    // Sin repositorios precargados por defecto
+    if (!settings.contains("empty_default_repositories_v1")) {
+        settings.setValue("empty_default_repositories_v1", true);
+        settings.setValue("repositories", QStringList());
+        m_repositories.clear();
+        return;
     }
+    m_repositories = settings.value("repositories").toStringList();
 }
 
 void NovaJsfxPackageManager::saveRepositoriesSettings()
@@ -102,17 +104,32 @@ void NovaJsfxPackageManager::removeRepository(const QString &url)
 {
     if (m_repositories.removeAll(url.trimmed()) > 0) {
         saveRepositoriesSettings();
-        // Limpiar paquetes pertenecientes a ese repositorio
-        syncRepositories();
+        if (m_repositories.isEmpty()) {
+            m_packages.clear();
+            m_cachedCategories.clear();
+            m_statusMessage = QStringLiteral("No hay repositorios configurados.");
+            Q_EMIT statusMessageChanged(m_statusMessage);
+            Q_EMIT packageListChanged();
+        } else {
+            syncRepositories();
+        }
     }
+}
+
+void NovaJsfxPackageManager::clearRepositories()
+{
+    m_repositories.clear();
+    saveRepositoriesSettings();
+    m_packages.clear();
+    m_cachedCategories.clear();
+    m_statusMessage = QStringLiteral("No hay repositorios configurados.");
+    Q_EMIT statusMessageChanged(m_statusMessage);
+    Q_EMIT packageListChanged();
 }
 
 void NovaJsfxPackageManager::resetDefaultRepositories()
 {
-    m_repositories.clear();
-    m_repositories.append(QString::fromLatin1(kDefaultReaTeamRepo));
-    saveRepositoriesSettings();
-    syncRepositories();
+    clearRepositories();
 }
 
 QStringList NovaJsfxPackageManager::categories() const
@@ -136,6 +153,12 @@ QStringList NovaJsfxPackageManager::categories() const
 
 void NovaJsfxPackageManager::loadCachedIndex()
 {
+    if (m_repositories.isEmpty()) {
+        m_packages.clear();
+        m_cachedCategories.clear();
+        return;
+    }
+
     QString cacheDir = getLocalJsfxRoot() + QStringLiteral("/cache");
     QDir dir(cacheDir);
     if (!dir.exists()) return;
@@ -146,7 +169,7 @@ void NovaJsfxPackageManager::loadCachedIndex()
         if (f.open(QIODevice::ReadOnly)) {
             QByteArray data = f.readAll();
             f.close();
-            parseIndexXml(data, QStringLiteral("ReaTeam"));
+            parseIndexXml(data, QStringLiteral("ReaPack"));
         }
     }
     m_cachedCategories.clear();
@@ -250,10 +273,13 @@ void NovaJsfxPackageManager::syncRepositories()
     Q_EMIT statusMessageChanged(m_statusMessage);
 
     if (m_repositories.isEmpty()) {
+        m_packages.clear();
+        m_cachedCategories.clear();
         m_isSyncing = false;
         m_statusMessage = QStringLiteral("No hay repositorios configurados.");
         Q_EMIT syncingChanged(m_isSyncing);
         Q_EMIT statusMessageChanged(m_statusMessage);
+        Q_EMIT packageListChanged();
         return;
     }
 
