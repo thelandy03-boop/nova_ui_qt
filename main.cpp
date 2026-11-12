@@ -30,6 +30,21 @@ int main(int argc, char *argv[])
     // 🎨 FORMATO PROFESIONAL DE LOGS EN CONSOLA
     qSetMessagePattern("[%{time hh:mm:ss.zzz}] [%{type}] [%{category}] %{message}");
 
+#if defined(Q_OS_WIN)
+    static FILE *s_logFile = fopen("nova_studio_log.txt", "w");
+    if (s_logFile) {
+        qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &, const QString &msg) {
+            if (s_logFile) {
+                QByteArray localMsg = msg.toLocal8Bit();
+                fprintf(s_logFile, "[%s] %s\n",
+                        type == QtDebugMsg ? "DEBUG" : type == QtWarningMsg ? "WARN" : type == QtCriticalMsg ? "CRIT" : "FATAL",
+                        localMsg.constData());
+                fflush(s_logFile);
+            }
+        });
+    }
+#endif
+
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     qputenv("QML_DISABLE_DISK_CACHE", "1");
 
@@ -60,10 +75,8 @@ int main(int argc, char *argv[])
     qmlRegisterType<NovaSpikeController>("NovaStudio", 1, 0, "SpikeController");
 #endif
 
-    // 🔒 Una sola instancia a la vez.
-    // El motor de audio se conecta al servidor JACK de PipeWire, que es
-    // exclusivo: si otra instancia ya lo tiene, el cliente JACK falla y la
-    // app muere con un error de heap. Se avisa y se sale limpiamente.
+    // 🔒 Una sola instancia a la vez (solo Linux Desktop con JACK/PipeWire).
+#if !defined(Q_OS_WIN) && !defined(Q_OS_ANDROID)
     const QString lockPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
                                  .filePath(QStringLiteral("nova_ui_qt.lock"));
     QLockFile instanceLock(lockPath);
@@ -77,6 +90,7 @@ int main(int argc, char *argv[])
         qCritical() << "   Ciérrala antes de arrancar otra: el servidor de audio no admite dos apps a la vez.";
         return 2;
     }
+#endif
 
     // Instancia de audio Nova / Ardour Bridge
     NovaAudioEngine audioEngine;
