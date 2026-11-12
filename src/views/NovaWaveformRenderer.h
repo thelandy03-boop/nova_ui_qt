@@ -36,6 +36,7 @@ public:
     void setSelection(bool selected, const QColor &selColor);
     void setFadeInOut(double fadeInBeats, double fadeOutBeats, double clipGainDb);
     void setSize(int width, int height);
+    void setIsLiveRecording(bool live);
 
 private:
     void initGL();
@@ -73,6 +74,7 @@ private:
     double m_fadeIn = 0.0;
     double m_fadeOut = 0.0;
     double m_gainDb = 0.0;
+    bool m_isLiveRecording = false;
 
     bool m_dirtyGeometry = true;
     double m_startBeat = 0.0;

@@ -90,7 +90,7 @@ Item {
     
     Binding on width {
         when: !rightHandleArea.pressed && !leftHandleArea.pressed && !fadeInDragArea.pressed && !fadeOutDragArea.pressed
-        value: root.isLiveRecording ? AudioEngine.beatToPixel(root.lengthBeats, root.barWidth) : Math.max(32, AudioEngine.beatToPixel(root.lengthBeats, root.barWidth))
+        value: root.isLiveRecording ? Math.max(16, AudioEngine.beatToPixel(root.lengthBeats, root.barWidth)) : Math.max(32, AudioEngine.beatToPixel(root.lengthBeats, root.barWidth))
     }
 
     // ── CONTENEDOR VISUAL DEL CLIP ──
@@ -270,6 +270,7 @@ Item {
             anchors.bottom: parent.bottom
             regionIndex: model.index
             regionId: model.regionId || ""
+            isLiveRecording: root.isLiveRecording
             peakColor: "#FFFFFF"
             // Ventana temporal: donde se coloca la forma de onda dentro del clip
             startBeat: root.startBeat

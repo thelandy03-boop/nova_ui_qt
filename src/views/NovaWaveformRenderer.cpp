@@ -216,7 +216,10 @@ void NovaWaveformRenderer::rebuildGeometry() {
         maxPeak = std::max(maxPeak, std::max(std::fabs(p.min), std::fabs(p.max)));
     }
     float viewGain = 1.0f;
-    if (maxPeak > 0.0001f) {
+    // 🛡️ En grabación en vivo NO se aplica escalado dinámico de amplitud (viewGain)
+    // para evitar que la forma de onda salte de escala violentamente en cada frame
+    // con variaciones del nivel de entrada o pausas de voz (causa raíz del glitch vertical).
+    if (!m_isLiveRecording && maxPeak > 0.0001f) {
         viewGain = std::min(1.0f / maxPeak, 100.0f);
     }
     gain *= viewGain;
@@ -365,7 +368,18 @@ void NovaWaveformRenderer::uploadGeometry() {
 
 void NovaWaveformRenderer::render() {
     if (!m_glInitialized) initGL();
-    if (!m_glInitialized || !m_program) return;
+    if (!m_glInitialized || !m_program || !m_glFuncs) return;
+
+    if (m_width <= 0 || m_height <= 0) return;
+
+    // 🛡️ Sincronizar explícitamente el viewport de OpenGL con el tamaño del FBO
+    m_glFuncs->glViewport(0, 0, m_width, m_height);
+
+    // 🛡️ Limpieza explícita del buffer de color (alfa = 0 transparente) y profundidad.
+    // Al redimensionar el clip, Qt Quick crea un nuevo FBO. Si no se limpia,
+    // la textura contiene basura sin inicializar de la VRAM (glitches visuales y parpadeos).
+    m_glFuncs->glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    m_glFuncs->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (m_dirtyGeometry) {
         rebuildGeometry();
@@ -374,9 +388,7 @@ void NovaWaveformRenderer::render() {
 
     if (m_vertices.empty()) return;
 
-    // Estado explícito: el FBO no hereda el estado del scene graph. Sin
-    // desactivar BLEND, el núcleo RMS (que se pinta con alfa) podía quedar
-    // blanco sobre blanco y desaparecer según lo que hubiera hecho Qt antes.
+    // Estado explícito: el FBO no hereda el estado del scene graph.
     m_glFuncs->glDisable(GL_BLEND);
     m_glFuncs->glDisable(GL_DEPTH_TEST);
     m_glFuncs->glDisable(GL_CULL_FACE);
@@ -456,6 +468,11 @@ void NovaWaveformRenderer::synchronize(QQuickFramebufferObject *item) {
     if (w > 0 && h > 0 && (w != m_width || h != m_height)) {
         m_width = w;
         m_height = h;
+        changed = true;
+    }
+
+    if (m_isLiveRecording != wf->isLiveRecording()) {
+        m_isLiveRecording = wf->isLiveRecording();
         changed = true;
     }
 
@@ -566,5 +583,11 @@ void NovaWaveformRenderer::setSize(int width, int height) {
     std::lock_guard<std::mutex> lock(m_dataMutex);
     m_width = width;
     m_height = height;
+    m_dirtyGeometry = true;
+}
+
+void NovaWaveformRenderer::setIsLiveRecording(bool live) {
+    std::lock_guard<std::mutex> lock(m_dataMutex);
+    m_isLiveRecording = live;
     m_dirtyGeometry = true;
 }

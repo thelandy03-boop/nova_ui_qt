@@ -1355,7 +1355,7 @@ void NovaRegionModel::updateLiveRecordingClip(double lengthBeats)
     auto &item = m_regions[static_cast<size_t>(m_liveRecordingIndex)];
     item.lengthBeats = lengthBeats;
 
-    Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole, RegionIdRole});
+    Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole});
 }
 
 void NovaRegionModel::updateLiveRecordingClipWithPeaks(double lengthBeats, const PeakData &livePeaks)
@@ -1369,11 +1369,10 @@ void NovaRegionModel::updateLiveRecordingClipWithPeaks(double lengthBeats, const
         PeakData dataCopy = livePeaks;
         dataCopy.sampleRate = m_session ? m_session->sample_rate() : 48000;
         dataCopy.channels = 2;
-        dataCopy.crc32 = crc32_peaks(dataCopy.peaks);
         NovaWaveformCache::setPeaks(item.id, dataCopy);
     }
 
-    Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole, RegionIdRole});
+    Q_EMIT dataChanged(index(m_liveRecordingIndex), index(m_liveRecordingIndex), QList<int>{LengthBeatsRole});
 }
 
 void NovaRegionModel::finalizeLiveRecordingClip()

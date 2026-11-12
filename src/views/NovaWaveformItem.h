@@ -25,6 +25,7 @@ class NovaWaveformItem : public QQuickFramebufferObject {
     Q_PROPERTY(double startBeat READ startBeat WRITE setStartBeat NOTIFY startBeatChanged)
     Q_PROPERTY(double lengthBeats READ lengthBeats WRITE setLengthBeats NOTIFY lengthBeatsChanged)
     Q_PROPERTY(double pixelsPerBeat READ pixelsPerBeat WRITE setPixelsPerBeat NOTIFY pixelsPerBeatChanged)
+    Q_PROPERTY(bool isLiveRecording READ isLiveRecording WRITE setIsLiveRecording NOTIFY isLiveRecordingChanged)
 
 public:
     explicit NovaWaveformItem(QQuickItem *parent = nullptr);
@@ -66,6 +67,9 @@ public:
     double pixelsPerBeat() const { return m_pixelsPerBeat; }
     void setPixelsPerBeat(double px);
 
+    bool isLiveRecording() const { return m_isLiveRecording; }
+    void setIsLiveRecording(bool live);
+
     static void setSession(void *session);
 
 signals:
@@ -80,6 +84,7 @@ signals:
     void startBeatChanged();
     void lengthBeatsChanged();
     void pixelsPerBeatChanged();
+    void isLiveRecordingChanged();
 
 private:
     int m_regionIndex = -1;
@@ -97,6 +102,7 @@ private:
     double m_startBeat = 0.0;
     double m_lengthBeats = 0.0;
     double m_pixelsPerBeat = 80.0;
+    bool m_isLiveRecording = false;
     static inline void *s_session = nullptr;
 };
 

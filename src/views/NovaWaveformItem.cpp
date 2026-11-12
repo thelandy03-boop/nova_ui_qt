@@ -113,6 +113,14 @@ void NovaWaveformItem::setPixelsPerBeat(double px) {
     }
 }
 
+void NovaWaveformItem::setIsLiveRecording(bool live) {
+    if (m_isLiveRecording != live) {
+        m_isLiveRecording = live;
+        emit isLiveRecordingChanged();
+        update();
+    }
+}
+
 void NovaWaveformItem::setSession(void *session) {
     // Not used directly; the session is used by the model to fetch peaks.
     // The renderer gets peaks via setPeaks() called from outside.
