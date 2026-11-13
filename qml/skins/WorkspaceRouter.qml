@@ -7,6 +7,9 @@ Loader {
 
     source: {
         switch (Theme.activeSkin) {
+        case "honeydew":
+        case "flmobile":
+            return Qt.resolvedUrl("honeydew/HoneydewWorkspace.qml")
         case "logic":
             return Qt.resolvedUrl("logic/LogicWorkspace.qml")
         case "bandlab":
@@ -16,7 +19,7 @@ Loader {
         case "draft":
             return Qt.resolvedUrl("draft/DraftWorkspace.qml")
         default:
-            return Qt.resolvedUrl("logic/LogicWorkspace.qml")
+            return Qt.resolvedUrl("honeydew/HoneydewWorkspace.qml")
         }
     }
 }

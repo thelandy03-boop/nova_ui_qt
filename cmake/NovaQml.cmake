@@ -20,6 +20,7 @@ endfunction()
 function(nova_mark_singletons)
     set_source_files_properties(
         qml/theme/Theme.qml
+        qml/skins/honeydew/HoneydewTheme.qml
         PROPERTIES QT_QML_SINGLETON_TYPE TRUE
     )
 endfunction()

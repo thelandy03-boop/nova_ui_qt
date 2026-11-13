@@ -1,4 +1,4 @@
-﻿pragma Singleton
+pragma Singleton
 import QtQuick
 import QtCore
 
@@ -99,7 +99,7 @@ QtObject {
     // ──────────────────────────────────────────────
     // 8. CONTROL DE SKIN DINÁMICO PERSISTENTE (Predeterminado: "logic")
     // ──────────────────────────────────────────────
-    property string activeSkin: settings.value("activeSkin", "logic")
+    property string activeSkin: settings.value("activeSkin", "honeydew")
 
     onActiveSkinChanged: {
         settings.setValue("activeSkin", activeSkin)
