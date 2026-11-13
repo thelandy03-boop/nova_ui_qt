@@ -1,5 +1,37 @@
 {
   "releases": {
+    "1.0.18": {
+      "updateBadge": "✨ ACTUALIZACIÓN",
+      "title": "¿Qué hay de nuevo en Nova?",
+      "description": "Todo lo que cambia desde la versión anterior, contado de forma sencilla:",
+      "buttonText": "¡Entendido, a probar! ➜",
+      "features": [
+        {
+          "category": "NUEVO",
+          "icon": "🎵",
+          "title": "Pon tu Música y Audios en las Pistas",
+          "description": "Ahora puedes tocar el botón de importar en cualquier pista y elegir canciones, pistas de voz o cualquier archivo de sonido de tu teléfono de forma directa, sin que la aplicación se cierre ni dé ningún aviso de error."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "🎙️",
+          "title": "Acepta Grabaciones de Voz y Mensajes",
+          "description": "Ya puedes añadir a tus canciones notas de voz grabadas con el teléfono o audios que te envíen tus amigos. Nova los prepara automáticamente para que suenen al compás perfecto junto a tus instrumentos."
+        },
+        {
+          "category": "NUEVO",
+          "icon": "📦",
+          "title": "Tienda de Efectos de la Comunidad",
+          "description": "Añadimos un explorador donde puedes importar catálogos enteros con cientos de efectos y sintetizadores compartidos por otros músicos, y añadirlos a tu colección con solo pulsar Instalar."
+        },
+        {
+          "category": "MEJORA",
+          "icon": "⚡",
+          "title": "Apertura Rápida de Archivos",
+          "description": "El selector de sonido ahora abre directamente tu carpeta de música de forma limpia, sin pedir permisos innecesarios ni trabarse al tocar la pantalla."
+        }
+      ]
+    },
     "1.0.17": {
       "updateBadge": "✨ ACTUALIZACIÓN",
       "title": "¿Qué hay de nuevo en Nova?",

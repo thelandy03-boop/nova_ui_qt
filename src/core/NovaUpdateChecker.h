@@ -130,7 +130,7 @@ private:
     bool m_updateRequired = false;
     QString m_latestVersion;
     QString m_downloadUrl;
-    QString m_currentVersion = QStringLiteral("1.0.17");
+    QString m_currentVersion = QStringLiteral("1.0.18");
     bool m_checking = false;
     bool m_downloading = false;
     int m_downloadProgress = 0;
