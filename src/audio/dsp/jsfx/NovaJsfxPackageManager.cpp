@@ -431,6 +431,8 @@ void NovaJsfxPackageManager::installPackage(const QString &packageId)
     JsfxPackageItem &item = it->second;
     QString targetPath = localPackagePath(item.category, item.name);
     QString rawUrl = item.downloadUrl;
+    auto extraFiles = item.extraFiles;
+    QDir targetDir = QFileInfo(targetPath).dir();
 
     // Normalizar a raw si es enlace web de GitHub
     if (rawUrl.contains(QStringLiteral("github.com/")) && rawUrl.contains(QStringLiteral("/raw/"))) {
@@ -447,13 +449,39 @@ void NovaJsfxPackageManager::installPackage(const QString &packageId)
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
     QNetworkReply *reply = m_network.get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, packageId, targetPath]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, packageId, targetPath, extraFiles, targetDir]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray scriptBytes = reply->readAll();
             QFile file(targetPath);
             if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
                 file.write(scriptBytes);
                 file.close();
+
+                // Descargar dependencias auxiliares si las hay (ej: ReEQ firhalfband.jsfx-inc, svf_filter.jsfx-inc)
+                for (const auto &extra : extraFiles) {
+                    QString extraPath = targetDir.filePath(extra.relativePath);
+                    QDir().mkpath(QFileInfo(extraPath).dir().absolutePath());
+                    QString extraUrl = extra.url;
+                    if (extraUrl.contains(QStringLiteral("github.com/")) && extraUrl.contains(QStringLiteral("/raw/"))) {
+                        extraUrl.replace(QStringLiteral("github.com/"), QStringLiteral("raw.githubusercontent.com/"));
+                        extraUrl.replace(QStringLiteral("/raw/"), QStringLiteral("/"));
+                    }
+                    extraUrl.replace(QStringLiteral("://.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+                    QNetworkRequest extraReq{QUrl(extraUrl)};
+                    extraReq.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NOVA-Studio-ReaPack/1.0"));
+                    extraReq.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+                    QNetworkReply *extraReply = m_network.get(extraReq);
+                    connect(extraReply, &QNetworkReply::finished, this, [extraReply, extraPath]() {
+                        if (extraReply->error() == QNetworkReply::NoError) {
+                            QFile ef(extraPath);
+                            if (ef.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                                ef.write(extraReply->readAll());
+                                ef.close();
+                            }
+                        }
+                        extraReply->deleteLater();
+                    });
+                }
 
                 auto it = m_packages.find(packageId);
                 if (it != m_packages.end()) {
