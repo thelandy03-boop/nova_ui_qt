@@ -13,6 +13,7 @@
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QCryptographicHash>
+#include <QDirIterator>
 #include <set>
 
 
@@ -280,7 +281,26 @@ void NovaJsfxPackageManager::scanInstalledPackages()
         item.localFilePath = path;
         item.isInstalled = QFile::exists(path);
         if (item.isInstalled) {
-            NovaJsfxManager::instance().registerUserScript(path);
+            NovaJsfxManager::instance().registerUserScript(path, item.category);
+        }
+    }
+
+    // Escaneo de scripts locales presentes en la carpeta JSFX (ej. importados de REAPER)
+    QDirIterator dirIt(jsfxRoot, QDir::Files, QDirIterator::Subdirectories);
+    while (dirIt.hasNext()) {
+        dirIt.next();
+        QFileInfo fi = dirIt.fileInfo();
+        if (fi.suffix() == QLatin1String("xml") || fi.suffix() == QLatin1String("jsfx-inc")) continue;
+
+        QFile rf(fi.filePath());
+        if (rf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QByteArray sample = rf.read(1024);
+            rf.close();
+            if (sample.contains("desc:") || sample.contains("@init") || sample.contains("@sample") || fi.suffix().toLower() == QLatin1String("jsfx")) {
+                QString relCategory = rootDir.relativeFilePath(fi.dir().absolutePath());
+                if (relCategory == QLatin1String(".")) relCategory = QStringLiteral("JSFX");
+                NovaJsfxManager::instance().registerUserScript(fi.filePath(), relCategory);
+            }
         }
     }
 }
@@ -494,14 +514,16 @@ void NovaJsfxPackageManager::installPackage(const QString &packageId)
                 }
 
                 auto it = m_packages.find(packageId);
+                QString pkgCategory;
                 if (it != m_packages.end()) {
                     it->second.isInstalled = true;
                     it->second.localFilePath = targetPath;
+                    pkgCategory = it->second.category;
                 }
 
                 // Registrar en el motor JSFX de NOVA
                 QString regError;
-                bool ok = NovaJsfxManager::instance().registerUserScript(targetPath, &regError);
+                bool ok = NovaJsfxManager::instance().registerUserScript(targetPath, pkgCategory, &regError);
                 if (ok) {
                     qCDebug(novaCore) << "✅ Paquete JSFX instalado y registrado con éxito:" << targetPath;
                     Q_EMIT packageInstallFinished(packageId, true, QString());
@@ -536,4 +558,94 @@ void NovaJsfxPackageManager::uninstallPackage(const QString &packageId)
 
     item.isInstalled = false;
     Q_EMIT packageListChanged();
+}
+
+void NovaJsfxPackageManager::installAllPackages()
+{
+    int toInstall = 0;
+    for (const auto &pair : m_packages) {
+        if (!pair.second.isInstalled) {
+            toInstall++;
+            installPackage(pair.second.id);
+        }
+    }
+    if (toInstall > 0) {
+        m_statusMessage = QStringLiteral("Instalando %1 paquetes...").arg(toInstall);
+        Q_EMIT statusMessageChanged(m_statusMessage);
+    } else {
+        m_statusMessage = QStringLiteral("Todos los paquetes ya están instalados.");
+        Q_EMIT statusMessageChanged(m_statusMessage);
+    }
+}
+
+QString NovaJsfxPackageManager::detectReaperEffectsPath() const
+{
+#if defined(Q_OS_WIN)
+    QString appData = qEnvironmentVariable("APPDATA");
+    if (!appData.isEmpty()) {
+        QString p = appData + QStringLiteral("/REAPER/Effects");
+        if (QDir(p).exists()) return QDir::cleanPath(p);
+    }
+#elif defined(Q_OS_MAC)
+    QString home = QDir::homePath();
+    QString p = home + QStringLiteral("/Library/Application Support/REAPER/Effects");
+    if (QDir(p).exists()) return QDir::cleanPath(p);
+#elif defined(Q_OS_LINUX)
+    QString home = QDir::homePath();
+    QString p = home + QStringLiteral("/.config/REAPER/Effects");
+    if (QDir(p).exists()) return QDir::cleanPath(p);
+#endif
+    return QString();
+}
+
+int NovaJsfxPackageManager::importFromReaperInstallation(const QString &customPath)
+{
+    QString src = customPath.trimmed();
+    if (src.isEmpty()) {
+        src = detectReaperEffectsPath();
+    }
+    if (src.isEmpty() || !QDir(src).exists()) {
+        m_statusMessage = QStringLiteral("No se encontró la carpeta de efectos de REAPER.");
+        Q_EMIT statusMessageChanged(m_statusMessage);
+        return 0;
+    }
+
+    QDir sourceDir(src);
+    QString jsfxRoot = getLocalJsfxRoot();
+    QDirIterator it(src, QDir::Files, QDirIterator::Subdirectories);
+    int count = 0;
+
+    while (it.hasNext()) {
+        it.next();
+        QFileInfo fi = it.fileInfo();
+        if (fi.fileName().startsWith(QLatin1Char('.'))) continue;
+
+        QString relPath = sourceDir.relativeFilePath(fi.filePath());
+        QString destPath = jsfxRoot + QStringLiteral("/REAPER/") + relPath;
+
+        QDir().mkpath(QFileInfo(destPath).dir().absolutePath());
+        if (QFile::exists(destPath)) {
+            QFile::remove(destPath);
+        }
+        if (QFile::copy(fi.filePath(), destPath)) {
+            QFile rf(destPath);
+            if (rf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QByteArray sample = rf.read(1024);
+                rf.close();
+                if (sample.contains("desc:") || sample.contains("@init") || sample.contains("@sample") || fi.suffix().toLower() == QLatin1String("jsfx")) {
+                    QString parentFolder = fi.dir().dirName();
+                    QString cat = parentFolder.isEmpty() ? QStringLiteral("REAPER") : QStringLiteral("REAPER - %1").arg(parentFolder);
+                    if (NovaJsfxManager::instance().registerUserScript(destPath, cat)) {
+                        count++;
+                    }
+                }
+            }
+        }
+    }
+
+    scanInstalledPackages();
+    m_statusMessage = QStringLiteral("Se importaron %1 scripts de REAPER con éxito.").arg(count);
+    Q_EMIT statusMessageChanged(m_statusMessage);
+    Q_EMIT packageListChanged();
+    return count;
 }

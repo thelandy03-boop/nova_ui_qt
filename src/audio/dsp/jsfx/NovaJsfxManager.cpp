@@ -420,6 +420,11 @@ std::shared_ptr<NovaJsfxEffect> NovaJsfxManager::createEffect(const QString& idO
 
 bool NovaJsfxManager::registerUserScript(const QString& filePath, QString* outError)
 {
+    return registerUserScript(filePath, QString(), outError);
+}
+
+bool NovaJsfxManager::registerUserScript(const QString& filePath, const QString& category, QString* outError)
+{
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         if (outError) *outError = QStringLiteral("No se pudo leer el archivo: %1").arg(filePath);
@@ -431,10 +436,15 @@ bool NovaJsfxManager::registerUserScript(const QString& filePath, QString* outEr
 
     QString baseName = QFileInfo(filePath).baseName();
     QString id = QStringLiteral("jsfx:user:%1").arg(baseName);
-    return registerUserScriptContent(id, content, outError);
+    return registerUserScriptContent(id, content, category, outError);
 }
 
 bool NovaJsfxManager::registerUserScriptContent(const QString& id, const QString& content, QString* outError)
+{
+    return registerUserScriptContent(id, content, QString(), outError);
+}
+
+bool NovaJsfxManager::registerUserScriptContent(const QString& id, const QString& content, const QString& category, QString* outError)
 {
     auto tempEffect = std::make_shared<NovaJsfxEffect>();
     if (!tempEffect->loadScript(content, outError)) {
@@ -444,9 +454,10 @@ bool NovaJsfxManager::registerUserScriptContent(const QString& id, const QString
     JsfxPluginInfo p;
     p.id = id;
     p.name = tempEffect->name().isEmpty() ? QFileInfo(id).baseName() : tempEffect->name();
-    p.category = QStringLiteral("JSFX");
+    p.category = category.isEmpty() ? QStringLiteral("JSFX") : category;
     p.description = QStringLiteral("Script JSFX de REAPER cargado por el usuario");
     p.scriptContent = content;
+    p.filePath = id;
 
     m_plugins[id] = p;
     return true;

@@ -270,7 +270,7 @@ Rectangle {
             // PANEL DESPLEGABLE DE REPOSITORIOS
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.showRepoConfig ? (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length > 0 ? 150 : 110) : 0
+                Layout.preferredHeight: root.showRepoConfig ? (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length > 0 ? 180 : 140) : 0
                 visible: root.showRepoConfig
                 clip: true
                 color: "#1E222D"
@@ -386,6 +386,53 @@ Rectangle {
                                 }
                             }
                         }
+                    }
+
+                    // Acciones de integración rápida
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Rectangle {
+                            Layout.preferredHeight: 26
+                            Layout.preferredWidth: impReaperBtnRow.implicitWidth + 14
+                            radius: 3
+                            color: impReaperMouse.containsMouse ? "#0D9488" : "#0F766E"
+
+                            Row {
+                                id: impReaperBtnRow
+                                anchors.centerIn: parent
+                                spacing: 5
+                                Text { text: "📥"; font.pixelSize: 11 }
+                                Text {
+                                    text: "Importar de REAPER instalado"
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: impReaperMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                        var count = AudioEngine.packages.importFromReaperInstallation("")
+                                        if (count > 0) {
+                                            root.lastInstalledNotice = "✅ ¡Se importaron " + count + " scripts de REAPER con éxito!"
+                                        } else {
+                                            root.lastInstalledNotice = "⚠️ No se encontró la carpeta de efectos de REAPER."
+                                        }
+                                        noticeTimer.restart()
+                                        root.refreshPackages()
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
                     }
 
                     // Lista de repositorios añadidos
@@ -562,6 +609,42 @@ Rectangle {
                         onClicked: {
                             root.onlyInstalled = !root.onlyInstalled
                             root.refreshPackages()
+                        }
+                    }
+                }
+
+                // Botón Instalar todos
+                Rectangle {
+                    visible: root.packageList.length > 0 && !root.onlyInstalled
+                    Layout.preferredHeight: 34
+                    Layout.preferredWidth: instAllRow.implicitWidth + 16
+                    radius: 4
+                    color: instAllMouse.containsMouse ? "#2563EB" : "#1D4ED8"
+
+                    Row {
+                        id: instAllRow
+                        anchors.centerIn: parent
+                        spacing: 5
+                        Text { text: "⚡"; font.pixelSize: 11 }
+                        Text {
+                            text: "Instalar todos (" + root.packageList.length + ")"
+                            color: "#FFFFFF"
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: instAllMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                AudioEngine.packages.installAllPackages()
+                                root.lastInstalledNotice = "⚡ Descargando e instalando paquetes..."
+                                noticeTimer.restart()
+                            }
                         }
                     }
                 }
@@ -886,36 +969,79 @@ Rectangle {
                                 width: parent.width
                             }
 
-                            // Botón de acción en estado vacío
-                            Rectangle {
-                                visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing
+                            // Botones de acción en estado vacío
+                            RowLayout {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                width: 200
-                                height: 32
-                                radius: 4
-                                color: emptyBtnMouse.containsMouse ? "#2563EB" : "#1D4ED8"
+                                spacing: 10
 
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0)
-                                          ? "🌐 Configurar Repositorios"
-                                          : "🔄 Sincronizar Catálogo"
-                                    color: "#FFFFFF"
-                                    font.pixelSize: 11
-                                    font.bold: true
+                                Rectangle {
+                                    visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing
+                                    width: 170
+                                    height: 32
+                                    radius: 4
+                                    color: emptyBtnMouse.containsMouse ? "#2563EB" : "#1D4ED8"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0)
+                                              ? "🌐 Configurar Repositorios"
+                                              : "🔄 Sincronizar Catálogo"
+                                        color: "#FFFFFF"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+
+                                    MouseArea {
+                                        id: emptyBtnMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                                if (AudioEngine.packages.repositories.length === 0) {
+                                                    root.showRepoConfig = true
+                                                } else {
+                                                    AudioEngine.packages.syncRepositories()
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
-                                MouseArea {
-                                    id: emptyBtnMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
-                                            if (AudioEngine.packages.repositories.length === 0) {
-                                                root.showRepoConfig = true
-                                            } else {
-                                                AudioEngine.packages.syncRepositories()
+                                Rectangle {
+                                    visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing
+                                    width: 190
+                                    height: 32
+                                    radius: 4
+                                    color: emptyReaperBtnMouse.containsMouse ? "#0D9488" : "#0F766E"
+
+                                    Row {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Text { text: "📥"; font.pixelSize: 11 }
+                                        Text {
+                                            text: "Importar de REAPER instalado"
+                                            color: "#FFFFFF"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: emptyReaperBtnMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                                var c = AudioEngine.packages.importFromReaperInstallation("")
+                                                if (c > 0) {
+                                                    root.lastInstalledNotice = "✅ ¡Se importaron " + c + " scripts de REAPER con éxito!"
+                                                } else {
+                                                    root.lastInstalledNotice = "⚠️ No se encontró la carpeta de efectos de REAPER."
+                                                }
+                                                noticeTimer.restart()
+                                                root.refreshPackages()
                                             }
                                         }
                                     }

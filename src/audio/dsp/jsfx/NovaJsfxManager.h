@@ -34,7 +34,9 @@ public:
 
     // Registra un nuevo script JSFX personalizado cargado por el usuario
     bool registerUserScript(const QString& filePath, QString* outError = nullptr);
+    bool registerUserScript(const QString& filePath, const QString& category, QString* outError = nullptr);
     bool registerUserScriptContent(const QString& id, const QString& content, QString* outError = nullptr);
+    bool registerUserScriptContent(const QString& id, const QString& content, const QString& category, QString* outError = nullptr);
 
 private:
     NovaJsfxManager();

@@ -71,9 +71,12 @@ public:
                                             const QString &category = QString(),
                                             bool onlyInstalled = false) const;
     Q_INVOKABLE void installPackage(const QString &packageId);
+    Q_INVOKABLE void installAllPackages();
     Q_INVOKABLE void uninstallPackage(const QString &packageId);
     Q_INVOKABLE bool isPackageInstalled(const QString &packageId) const;
     Q_INVOKABLE QString getPackageCode(const QString &packageId) const;
+    Q_INVOKABLE QString detectReaperEffectsPath() const;
+    Q_INVOKABLE int importFromReaperInstallation(const QString &customPath = QString());
 
 signals:
     void syncingChanged(bool isSyncing);
