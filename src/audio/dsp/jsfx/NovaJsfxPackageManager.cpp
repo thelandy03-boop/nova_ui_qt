@@ -12,6 +12,7 @@
 #include <QUrl>
 #include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QCryptographicHash>
 #include <set>
 
 
@@ -197,7 +198,8 @@ void NovaJsfxPackageManager::saveCachedIndex(const QByteArray &data, const QStri
 {
     QString cacheDir = getLocalJsfxRoot() + QStringLiteral("/cache");
     QDir().mkpath(cacheDir);
-    QString safeName = QUrl(repoUrl).host() + QStringLiteral("_index.xml");
+    QByteArray hash = QCryptographicHash::hash(repoUrl.toUtf8(), QCryptographicHash::Sha1).toHex();
+    QString safeName = QStringLiteral("repo_%1.xml").arg(QString::fromLatin1(hash));
     QFile f(cacheDir + QStringLiteral("/") + safeName);
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         f.write(data);
@@ -208,6 +210,7 @@ void NovaJsfxPackageManager::saveCachedIndex(const QByteArray &data, const QStri
 void NovaJsfxPackageManager::parseIndexXml(const QByteArray &xmlData, const QString &repoName)
 {
     QXmlStreamReader xml(xmlData);
+    QString effectiveRepoName = repoName;
     QString currentCategory;
 
     while (!xml.atEnd() && !xml.hasError()) {
@@ -215,7 +218,12 @@ void NovaJsfxPackageManager::parseIndexXml(const QByteArray &xmlData, const QStr
 
         if (token == QXmlStreamReader::StartElement) {
             QString elemName = xml.name().toString();
-            if (elemName == QLatin1String("category")) {
+            if (elemName == QLatin1String("index")) {
+                QString attrName = xml.attributes().value(QLatin1String("name")).toString();
+                if (!attrName.isEmpty()) {
+                    effectiveRepoName = attrName;
+                }
+            } else if (elemName == QLatin1String("category")) {
                 currentCategory = xml.attributes().value(QLatin1String("name")).toString();
             } else if (elemName == QLatin1String("reapack")) {
                 auto attrs = xml.attributes();
@@ -225,8 +233,8 @@ void NovaJsfxPackageManager::parseIndexXml(const QByteArray &xmlData, const QStr
                     item.name = attrs.value(QLatin1String("name")).toString();
                     item.description = attrs.value(QLatin1String("desc")).toString();
                     item.category = currentCategory.isEmpty() ? QStringLiteral("Otros") : currentCategory;
-                    item.repositoryName = repoName;
-                    item.id = QStringLiteral("reapack:%1:%2/%3").arg(repoName, item.category, item.name);
+                    item.repositoryName = effectiveRepoName;
+                    item.id = QStringLiteral("reapack:%1:%2/%3").arg(effectiveRepoName, item.category, item.name);
 
                     while (!(xml.tokenType() == QXmlStreamReader::EndElement && xml.name().toString() == QLatin1String("reapack")) && !xml.atEnd()) {
                         xml.readNext();
@@ -235,13 +243,12 @@ void NovaJsfxPackageManager::parseIndexXml(const QByteArray &xmlData, const QStr
                             if (subName == QLatin1String("version")) {
                                 item.author = xml.attributes().value(QLatin1String("author")).toString();
                                 item.version = xml.attributes().value(QLatin1String("name")).toString();
+                                item.extraFiles.clear();
                             } else if (subName == QLatin1String("source")) {
                                 QString fileAttr = xml.attributes().value(QLatin1String("file")).toString();
                                 QString srcUrl = xml.readElementText().trimmed();
                                 if (fileAttr.isEmpty() || fileAttr == item.name) {
-                                    if (item.downloadUrl.isEmpty()) {
-                                        item.downloadUrl = srcUrl;
-                                    }
+                                    item.downloadUrl = srcUrl;
                                 } else {
                                     item.extraFiles.push_back({fileAttr, srcUrl});
                                 }
@@ -299,6 +306,9 @@ void NovaJsfxPackageManager::syncRepositories()
         Q_EMIT packageListChanged();
         return;
     }
+
+    m_packages.clear();
+    m_cachedCategories.clear();
 
     auto repos = m_repositories;
     auto currentRepoIndex = std::make_shared<int>(0);
