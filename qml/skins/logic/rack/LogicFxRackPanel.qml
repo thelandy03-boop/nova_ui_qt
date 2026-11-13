@@ -464,8 +464,8 @@ Rectangle {
         }
 
         Rectangle {
-            width: Math.min(parent.width - 40, 520)
-            height: Math.min(parent.height - 20, 210)
+            width: Math.min(parent.width - 40, 560)
+            height: Math.min(parent.height - 20, 380)
             anchors.centerIn: parent
             radius: 10
             color: "#181A22"
@@ -488,7 +488,7 @@ Rectangle {
                     Layout.fillWidth: true
 
                     Text {
-                        text: "🔌 Insertar Plug-in de Ardour"
+                        text: "🔌 Insertar Plug-in de Efecto"
                         color: "#FFFFFF"
                         font.pixelSize: 13
                         font.bold: true
@@ -558,6 +558,55 @@ Rectangle {
                     }
                 }
 
+                // Campo de filtrado rápido
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    color: "#12141A"
+                    radius: 4
+                    border.color: plugFilterInput.activeFocus ? "#3B82F6" : "#282C3A"
+                    border.width: 1
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Text { text: "🔍"; font.pixelSize: 11; opacity: 0.6 }
+
+                        TextInput {
+                            id: plugFilterInput
+                            Layout.fillWidth: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            color: "#FFFFFF"
+                            font.pixelSize: 11
+                            selectByMouse: true
+                            clip: true
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                text: "Filtrar plug-ins por nombre o categoría (ej. ReEQ, JSFX)..."
+                                color: "#64748B"
+                                font.pixelSize: 11
+                                visible: !plugFilterInput.text && !plugFilterInput.activeFocus
+                            }
+                        }
+
+                        Text {
+                            text: "✕"
+                            color: "#94A3B8"
+                            font.pixelSize: 11
+                            visible: plugFilterInput.text.length > 0
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: plugFilterInput.text = ""
+                            }
+                        }
+                    }
+                }
 
                 // Lista de plug-ins disponibles
                 ListView {
@@ -566,7 +615,17 @@ Rectangle {
                     Layout.fillHeight: true
                     clip: true
                     spacing: 6
-                    model: (typeof AudioEngine !== "undefined" && AudioEngine.tracks) ? AudioEngine.tracks.availablePlugins() : []
+                    model: {
+                        if (typeof AudioEngine === "undefined" || !AudioEngine.tracks) return []
+                        var all = AudioEngine.tracks.availablePlugins()
+                        var q = plugFilterInput.text.trim().toLowerCase()
+                        if (!q) return all
+                        return all.filter(function(p) {
+                            return (p.name && p.name.toLowerCase().indexOf(q) !== -1) ||
+                                   (p.category && p.category.toLowerCase().indexOf(q) !== -1) ||
+                                   (p.description && p.description.toLowerCase().indexOf(q) !== -1)
+                        })
+                    }
 
                     delegate: Rectangle {
                         width: availableView.width
@@ -592,6 +651,7 @@ Rectangle {
                                     if (modelData.category === "DINÁMICA") return "#78350F"
                                     if (modelData.category === "ESPACIO") return "#581C87"
                                     if (modelData.category === "DELAY") return "#064E3B"
+                                    if (modelData.category === "JSFX") return "#0E7490"
                                     return "#1E293B"
                                 }
 
@@ -659,6 +719,14 @@ Rectangle {
                             }
                         }
                     }
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: availableView.count === 0
+                    text: "No se encontraron plug-ins que coincidan con el filtro."
+                    color: "#64748B"
+                    font.pixelSize: 11
                 }
             }
         }

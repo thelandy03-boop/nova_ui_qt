@@ -20,6 +20,14 @@ Rectangle {
     property bool onlyInstalled: false
     property var packageList: []
     property bool showRepoConfig: false
+    property string lastInstalledNotice: ""
+
+    Timer {
+        id: noticeTimer
+        interval: 6000
+        repeat: false
+        onTriggered: root.lastInstalledNotice = ""
+    }
 
     signal openCodeRequested(string code, string name)
 
@@ -59,6 +67,15 @@ Rectangle {
         }
         function onSyncingChanged(isSyncing) {
             if (!isSyncing) root.refreshPackages()
+        }
+        function onPackageInstallFinished(packageId, success, error) {
+            if (success) {
+                root.lastInstalledNotice = "✅ ¡Plugin instalado! Ya puedes encontrarlo e insertarlo en el rack de efectos de cualquier pista (+ Añadir Plug-in)."
+                noticeTimer.restart()
+            } else if (error && error.length > 0) {
+                root.lastInstalledNotice = "❌ Error al instalar plugin: " + error
+                noticeTimer.restart()
+            }
         }
     }
 
@@ -207,6 +224,45 @@ Rectangle {
                 }
             }
 
+            // Banner informativo tras instalación
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: (root.lastInstalledNotice.length > 0) ? 32 : 0
+                visible: root.lastInstalledNotice.length > 0
+                radius: 4
+                color: root.lastInstalledNotice.startsWith("❌") ? "#7F1D1D" : "#064E3B"
+                border.color: root.lastInstalledNotice.startsWith("❌") ? "#DC2626" : "#059669"
+                clip: true
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 8
+
+                    Text {
+                        text: root.lastInstalledNotice
+                        color: root.lastInstalledNotice.startsWith("❌") ? "#FCA5A5" : "#A7F3D0"
+                        font.pixelSize: 11
+                        font.bold: true
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        text: "✕"
+                        color: "#94A3B8"
+                        font.pixelSize: 11
+                        font.bold: true
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.lastInstalledNotice = ""
+                        }
+                    }
+                }
+            }
+
             // PANEL DESPLEGABLE DE REPOSITORIOS
             Rectangle {
                 Layout.fillWidth: true
@@ -231,17 +287,6 @@ Rectangle {
                             font.pixelSize: 11
                             font.bold: true
                             Layout.fillWidth: true
-                        }
-                        Text {
-                            text: "Pegar URL ReaTeam"
-                            color: "#60A5FA"
-                            font.pixelSize: 10
-                            font.underline: true
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: newRepoInput.text = "https://github.com/ReaTeam/JSFX/raw/master/index.xml"
-                            }
                         }
                     }
 
@@ -270,7 +315,7 @@ Rectangle {
                                 Text {
                                     anchors.fill: parent
                                     verticalAlignment: Text.AlignVCenter
-                                    text: "https://github.com/Usuario/Repo/raw/master/index.xml"
+                                    text: "https://ejemplo.com/repo/index.xml"
                                     color: "#64748B"
                                     font.pixelSize: 12
                                     visible: !newRepoInput.text && !newRepoInput.activeFocus
@@ -302,6 +347,7 @@ Rectangle {
                                     if (newRepoInput.text.trim().length > 0 && typeof AudioEngine !== "undefined" && AudioEngine.packages) {
                                         AudioEngine.packages.addRepository(newRepoInput.text.trim())
                                         newRepoInput.text = ""
+                                        root.showRepoConfig = false
                                     }
                                 }
                             }
