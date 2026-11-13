@@ -99,10 +99,10 @@ QtObject {
     // ──────────────────────────────────────────────
     // 8. CONTROL DE SKIN DINÁMICO PERSISTENTE (Predeterminado: "logic")
     // ──────────────────────────────────────────────
-    property string activeSkin: settings.value("activeSkin", "honeydew")
+    property string activeSkin: settings.value("activeSkin_v2", "honeydew")
 
     onActiveSkinChanged: {
-        settings.setValue("activeSkin", activeSkin)
+        settings.setValue("activeSkin_v2", activeSkin)
     }
 
     readonly property Settings settings: Settings {
