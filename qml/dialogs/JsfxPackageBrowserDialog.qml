@@ -126,11 +126,15 @@ Rectangle {
                             if (AudioEngine.packages.repositories.length === 0) {
                                 return "Sin repositorios configurados"
                             }
+                            if (AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) {
+                                return AudioEngine.packages.statusMessage
+                            }
                             return AudioEngine.packages.totalPackagesCount + " plugins disponibles (" + AudioEngine.packages.repositories.length + (AudioEngine.packages.repositories.length === 1 ? " repositorio)" : " repositorios)")
                         }
-                        color: "#94A3B8"
+                        color: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) ? "#F87171" : "#94A3B8"
                         font.pixelSize: 11
                         font.family: "Segoe UI, Inter, Sans-serif"
+                        elide: Text.ElideRight
                     }
                 }
 
@@ -824,13 +828,15 @@ Rectangle {
                         Column {
                             anchors.centerIn: parent
                             spacing: 10
-                            width: Math.min(parent.width - 40, 480)
+                            width: Math.min(parent.width - 40, 500)
 
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.isSyncing)
                                       ? "⏳"
-                                      : ((typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0) ? "🌐" : "📦")
+                                      : ((typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0)
+                                         ? "🌐"
+                                         : ((typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) ? "⚠️" : "📦"))
                                 font.pixelSize: 36
                             }
 
@@ -841,6 +847,12 @@ Rectangle {
                                         if (AudioEngine.packages.isSyncing) return AudioEngine.packages.statusMessage
                                         if (AudioEngine.packages.repositories.length === 0) {
                                             return "No hay repositorios importados"
+                                        }
+                                        if (AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) {
+                                            return "Error al descargar catálogo"
+                                        }
+                                        if (AudioEngine.packages.totalPackagesCount === 0) {
+                                            return "Catálogo vacío o no sincronizado"
                                         }
                                     }
                                     return "No se encontraron plugins con ese criterio"
@@ -857,28 +869,37 @@ Rectangle {
                                     if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
                                         if (AudioEngine.packages.isSyncing) return "Por favor, espera un momento mientras se descarga el catálogo."
                                         if (AudioEngine.packages.repositories.length === 0) {
-                                            return "NOVA Studio no precarga repositorios por defecto.\nPulsa en 'Repositorios' arriba y pega la URL de un repositorio ReaPack (ej: ReaTeam) para importar sus plugins."
+                                            return "NOVA Studio no precarga repositorios por defecto.\nPulsa en 'Repositorios' arriba y pega la URL de un repositorio ReaPack para importar sus plugins."
+                                        }
+                                        if (AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) {
+                                            return AudioEngine.packages.statusMessage + "\nVerifica tu conexión y pulsa 'Sincronizar'."
+                                        }
+                                        if (AudioEngine.packages.totalPackagesCount === 0) {
+                                            return "Pulsa en 'Sincronizar' para descargar el listado de plugins de los repositorios configurados."
                                         }
                                     }
                                     return "Prueba con otra búsqueda o selecciona 'Todas' las categorías."
                                 }
-                                color: "#94A3B8"
+                                color: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.statusMessage && AudioEngine.packages.statusMessage.indexOf("Error") !== -1) ? "#FCA5A5" : "#94A3B8"
                                 font.pixelSize: 12
                                 wrapMode: Text.WordWrap
                                 width: parent.width
                             }
 
+                            // Botón de acción en estado vacío
                             Rectangle {
-                                visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing && AudioEngine.packages.repositories.length === 0
+                                visible: typeof AudioEngine !== "undefined" && AudioEngine.packages && !AudioEngine.packages.isSyncing
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                width: 180
+                                width: 200
                                 height: 32
                                 radius: 4
                                 color: emptyBtnMouse.containsMouse ? "#2563EB" : "#1D4ED8"
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "🌐 Configurar Repositorios"
+                                    text: (typeof AudioEngine !== "undefined" && AudioEngine.packages && AudioEngine.packages.repositories.length === 0)
+                                          ? "🌐 Configurar Repositorios"
+                                          : "🔄 Sincronizar Catálogo"
                                     color: "#FFFFFF"
                                     font.pixelSize: 11
                                     font.bold: true
@@ -889,7 +910,15 @@ Rectangle {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.showRepoConfig = true
+                                    onClicked: {
+                                        if (typeof AudioEngine !== "undefined" && AudioEngine.packages) {
+                                            if (AudioEngine.packages.repositories.length === 0) {
+                                                root.showRepoConfig = true
+                                            } else {
+                                                AudioEngine.packages.syncRepositories()
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

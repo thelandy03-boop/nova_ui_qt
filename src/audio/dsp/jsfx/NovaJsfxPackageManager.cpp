@@ -70,6 +70,18 @@ void NovaJsfxPackageManager::loadRepositoriesSettings()
         return;
     }
     m_repositories = settings.value("repositories").toStringList();
+    bool changed = false;
+    for (int i = 0; i < m_repositories.size(); ++i) {
+        if (m_repositories[i].contains(QStringLiteral("://.githubusercontent.com")) ||
+            m_repositories[i].contains(QStringLiteral(":///.githubusercontent.com"))) {
+            m_repositories[i].replace(QStringLiteral("://.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+            m_repositories[i].replace(QStringLiteral(":///.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+            changed = true;
+        }
+    }
+    if (changed) {
+        saveRepositoriesSettings();
+    }
 }
 
 void NovaJsfxPackageManager::saveRepositoriesSettings()
@@ -87,13 +99,18 @@ QStringList NovaJsfxPackageManager::repositories() const
 void NovaJsfxPackageManager::addRepository(const QString &url)
 {
     QString cleanUrl = url.trimmed();
-    if (cleanUrl.isEmpty() || m_repositories.contains(cleanUrl)) return;
+    if (cleanUrl.isEmpty()) return;
 
     // Normalizar enlaces web estándar de GitHub a enlaces raw
-    if (cleanUrl.contains(QStringLiteral("github.com")) && cleanUrl.contains(QStringLiteral("/raw/"))) {
-        cleanUrl.replace(QStringLiteral("github.com"), QStringLiteral("raw.githubusercontent.com"));
-        cleanUrl.remove(QStringLiteral("/raw"));
+    // Ej: https://github.com/ReaTeam/JSFX/raw/master/index.xml -> https://raw.githubusercontent.com/ReaTeam/JSFX/master/index.xml
+    if (cleanUrl.contains(QStringLiteral("github.com/")) && cleanUrl.contains(QStringLiteral("/raw/"))) {
+        cleanUrl.replace(QStringLiteral("github.com/"), QStringLiteral("raw.githubusercontent.com/"));
+        cleanUrl.replace(QStringLiteral("/raw/"), QStringLiteral("/"));
     }
+    cleanUrl.replace(QStringLiteral("://.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+    cleanUrl.replace(QStringLiteral(":///.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+
+    if (m_repositories.contains(cleanUrl)) return;
 
     m_repositories.append(cleanUrl);
     saveRepositoriesSettings();
@@ -285,13 +302,18 @@ void NovaJsfxPackageManager::syncRepositories()
 
     auto repos = m_repositories;
     auto currentRepoIndex = std::make_shared<int>(0);
+    auto errors = std::make_shared<QStringList>();
 
     auto downloadNext = std::make_shared<std::function<void()>>();
-    *downloadNext = [this, repos, currentRepoIndex, downloadNext]() {
+    *downloadNext = [this, repos, currentRepoIndex, errors, downloadNext]() {
         if (*currentRepoIndex >= repos.size()) {
             m_isSyncing = false;
             m_syncProgress = 100;
-            m_statusMessage = QStringLiteral("Repositorios sincronizados (%1 paquetes disponibles)").arg(m_packages.size());
+            if (m_packages.empty() && !errors->isEmpty()) {
+                m_statusMessage = QStringLiteral("Error: %1").arg(errors->join(QStringLiteral(" | ")));
+            } else {
+                m_statusMessage = QStringLiteral("Sincronizado (%1 paquetes disponibles)").arg(m_packages.size());
+            }
             m_cachedCategories.clear();
             scanInstalledPackages();
             Q_EMIT syncingChanged(false);
@@ -312,14 +334,16 @@ void NovaJsfxPackageManager::syncRepositories()
         req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
         QNetworkReply *reply = m_network.get(req);
-        connect(reply, &QNetworkReply::finished, this, [this, reply, urlStr, downloadNext]() {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, urlStr, errors, downloadNext]() {
             if (reply->error() == QNetworkReply::NoError) {
                 QByteArray data = reply->readAll();
                 saveCachedIndex(data, urlStr);
-                parseIndexXml(data, QStringLiteral("ReaTeam"));
+                parseIndexXml(data, QStringLiteral("ReaPack"));
                 qCDebug(novaCore) << "📦 Índice parseado con éxito:" << urlStr << "Total paquetes:" << m_packages.size();
             } else {
+                QString err = QStringLiteral("%1: %2").arg(QUrl(urlStr).host(), reply->errorString());
                 qCWarning(novaCore) << "❌ Error al descargar repositorio:" << urlStr << reply->errorString();
+                errors->append(err);
             }
             reply->deleteLater();
             (*downloadNext)();
@@ -409,10 +433,12 @@ void NovaJsfxPackageManager::installPackage(const QString &packageId)
     QString rawUrl = item.downloadUrl;
 
     // Normalizar a raw si es enlace web de GitHub
-    if (rawUrl.contains(QStringLiteral("github.com")) && rawUrl.contains(QStringLiteral("/raw/"))) {
-        rawUrl.replace(QStringLiteral("github.com"), QStringLiteral("raw.githubusercontent.com"));
-        rawUrl.remove(QStringLiteral("/raw"));
+    if (rawUrl.contains(QStringLiteral("github.com/")) && rawUrl.contains(QStringLiteral("/raw/"))) {
+        rawUrl.replace(QStringLiteral("github.com/"), QStringLiteral("raw.githubusercontent.com/"));
+        rawUrl.replace(QStringLiteral("/raw/"), QStringLiteral("/"));
     }
+    rawUrl.replace(QStringLiteral("://.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
+    rawUrl.replace(QStringLiteral(":///.githubusercontent.com"), QStringLiteral("://raw.githubusercontent.com"));
 
     qCDebug(novaCore) << "⬇️ Descargando paquete JSFX:" << item.name << "desde:" << rawUrl;
 
