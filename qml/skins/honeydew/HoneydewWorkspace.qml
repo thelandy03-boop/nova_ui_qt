@@ -4,16 +4,19 @@ import QtQuick.Layouts
 import "topbar"
 import "playlist"
 import "rack"
+import "transport"
+import "keyboard"
 import "../logic/dock"
 import "../../dialogs"
 
 Rectangle {
     id: root
     anchors.fill: parent
-    color: HoneydewTheme.bgMain
+    color: HoneydewTheme.background
 
     property bool showFxRack: false
     property bool showJsfxDock: false
+    property bool showKeyboard: true
     property int activeTrackIndex: 0
     property string activeTrackName: "Audio 1"
 
@@ -21,38 +24,9 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
-        // 🍊 ZONA 1: TOP BAR FL STUDIO MOBILE (56px)
-        HoneydewTopBar {
-            id: topBar
-            Layout.fillWidth: true
-            Layout.preferredHeight: 56
-            isFxRackOpen: root.showFxRack
-
-            onHomeRequested: {
-                if (root.parent && root.parent.parent && root.parent.parent.goBack) {
-                    root.parent.parent.goBack()
-                }
-            }
-            onFxRackToggled: {
-                root.showFxRack = !root.showFxRack
-            }
-            onAddTrackRequested: {
-                if (typeof AudioEngine !== "undefined" && AudioEngine.tracks) {
-                    AudioEngine.tracks.addAudioTrack("Audio " + (AudioEngine.tracks.rowCount() + 1))
-                }
-            }
-            onJsfxEditorRequested: {
-                root.showJsfxDock = true
-                if (jsfxDock) {
-                    jsfxDock.openNewScript(root.activeTrackIndex)
-                }
-            }
-            onReapackRequested: {
-                jsfxPackageBrowserDialog.open()
-            }
-        }
-
-        // 🎹 ZONA 2: PLAYLIST TIMELINE + FX RACK DESLIZANTE
+        // ══════════════════════════════════════════════
+        // ZONA 1: PLAYLIST + TIMELINE (ÁREA PRINCIPAL)
+        // ══════════════════════════════════════════════
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -62,7 +36,7 @@ Rectangle {
                 anchors.fill: parent
                 spacing: 0
 
-                // Panel Principal: Playlist & Timeline
+                // Panel Central: Playlist & Timeline
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -130,35 +104,153 @@ Rectangle {
                     }
                 }
             }
+
+            // ══════════════════════════════════════════════
+            // BOTONES FLOTANTES SUPERIORES DE HONEYDEW (CORNER BUTTONS)
+            // (En Rust main_screen.rs: CORNER_W = 2.1 * U, logo, rack tab, detach)
+            // ══════════════════════════════════════════════
+            Row {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.topMargin: 8
+                anchors.rightMargin: 12
+                spacing: 8
+                z: 100
+
+                // Botón Logo / Home
+                Rectangle {
+                    width: 36
+                    height: 36
+                    radius: 18
+                    color: logoMouse.pressed ? HoneydewTheme.background : (logoMouse.containsMouse ? "#3A4248" : HoneydewTheme.moduleFill)
+                    border.color: HoneydewTheme.menuFill
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "🍈"
+                        font.pixelSize: 18
+                    }
+
+                    MouseArea {
+                        id: logoMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (root.parent && root.parent.parent && root.parent.parent.goBack) {
+                                root.parent.parent.goBack()
+                            }
+                        }
+                    }
+                }
+
+                // Botón Pestaña Rack (RackTab ≡)
+                Rectangle {
+                    width: 36
+                    height: 36
+                    radius: 18
+                    color: root.showFxRack ? HoneydewTheme.accent : (rackTabMouse.containsMouse ? "#3A4248" : HoneydewTheme.moduleFill)
+                    border.color: HoneydewTheme.menuFill
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "🎚️"
+                        font.pixelSize: 14
+                    }
+
+                    MouseArea {
+                        id: rackTabMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.showFxRack = !root.showFxRack
+                    }
+                }
+
+                // Botón Editor JSFX (⚡)
+                Rectangle {
+                    width: 36
+                    height: 36
+                    radius: 18
+                    color: jsfxQuickMouse.pressed ? HoneydewTheme.background : (jsfxQuickMouse.containsMouse ? "#3A4248" : HoneydewTheme.moduleFill)
+                    border.color: HoneydewTheme.menuFill
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "⚡"
+                        font.pixelSize: 14
+                    }
+
+                    MouseArea {
+                        id: jsfxQuickMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.showJsfxDock = true
+                            if (jsfxDock) {
+                                jsfxDock.openNewScript(root.activeTrackIndex)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // 📟 ZONA 3: STATUS BAR INFERIOR
-        Rectangle {
+        // ══════════════════════════════════════════════
+        // ZONA 2: BARRA DE TRANSPORTE CANÓNICA (TRANSPORT_H = 1.75 U)
+        // ══════════════════════════════════════════════
+        HoneydewTransportBar {
+            id: transportBar
             Layout.fillWidth: true
-            height: 24
-            color: "#111215"
-            border.color: HoneydewTheme.borderSubtle
-            border.width: 1
+            isKeyboardOpen: root.showKeyboard
+            isFxRackOpen: root.showFxRack
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-
-                Text {
-                    text: "🍈 HONEYDEW ENGINE  •  44.1 kHz / 32-bit float"
-                    color: HoneydewTheme.textMuted
-                    font.pixelSize: 10
+            onTogglePlay: {
+                if (typeof AudioEngine !== "undefined") {
+                    if (AudioEngine.isPlaying) AudioEngine.stop()
+                    else AudioEngine.play()
                 }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: "BPM: " + (typeof AudioEngine !== "undefined" ? AudioEngine.bpm.toFixed(1) : "120.0") + "  |  FL STUDIO MOBILE STYLE"
-                    color: HoneydewTheme.flOrange
-                    font.pixelSize: 10
-                    font.bold: true
+            }
+            onToggleRecord: {
+                if (typeof AudioEngine !== "undefined") {
+                    AudioEngine.toggleRecord()
                 }
+            }
+            onRewindRequested: {
+                if (typeof AudioEngine !== "undefined") {
+                    AudioEngine.locateBeat(0.0)
+                }
+            }
+            onToggleLoop: {
+                if (typeof AudioEngine !== "undefined") {
+                    AudioEngine.toggleLoop()
+                }
+            }
+            onToggleKeyboard: {
+                root.showKeyboard = !root.showKeyboard
+            }
+            onToggleFxRack: {
+                root.showFxRack = !root.showFxRack
+            }
+        }
+
+        // ══════════════════════════════════════════════
+        // ZONA 3: PANEL INFERIOR (TECLADO PIANO / DRUM PADS)
+        // ══════════════════════════════════════════════
+        HoneydewKeyboardPanel {
+            id: keyboardPanel
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.showKeyboard ? 160 : 0
+            visible: root.showKeyboard || height > 0
+            clip: true
+            channelColor: HoneydewTheme.channelColor(root.activeTrackIndex)
+
+            Behavior on Layout.preferredHeight {
+                NumberAnimation { duration: 180; easing.type: Easing.InOutQuad }
             }
         }
     }
