@@ -283,9 +283,6 @@ Rectangle {
                 if (typeof AudioEngine !== "undefined" && AudioEngine.hapticFeedback) {
                     AudioEngine.hapticFeedback();
                 }
-                if (Qt.platform.os === "android" && typeof AudioEngine !== "undefined" && AudioEngine.requestStoragePermission) {
-                    AudioEngine.requestStoragePermission();
-                }
                 fileDialog.open();
             }
         }
@@ -354,12 +351,8 @@ Rectangle {
         title: "Seleccionar archivo de audio para " + model.trackName
         nameFilters: (Qt.platform.os === "android")
             ? [
-                "Todos los archivos (*)",
-                "Archivos de Audio (*.mp3 *.wav *.m4a *.aac *.flac *.ogg *.opus *.wma)",
-                "Audio MP3 (*.mp3)",
-                "Audio WAV (*.wav)",
-                "Audio M4A / AAC (*.m4a *.aac)",
-                "Audio FLAC / OGG (*.flac *.ogg *.opus)"
+                "Archivos de Audio (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.opus)",
+                "Todos los archivos (*)"
               ]
             : [
                 "Archivos de Audio (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.opus *.aiff)",

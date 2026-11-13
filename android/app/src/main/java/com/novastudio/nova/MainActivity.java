@@ -30,6 +30,14 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import android.content.ContentUris;
+import android.database.Cursor;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
+import android.provider.MediaStore;
+import java.nio.ByteBuffer;
+
 import org.qtproject.qt.android.QtActivityBase;
 
 public class MainActivity extends QtActivityBase {
@@ -420,7 +428,9 @@ public class MainActivity extends QtActivityBase {
     /**
      * Copia de forma segura un URI con esquema content:// (del selector de archivos
      * o Storage Access Framework de Android) a un archivo local en la caché de la app,
-     * utilizando ContentResolver. Retorna la ruta absoluta del archivo local o null si falla.
+     * utilizando ContentResolver. Si el formato es AAC/M4A/OPUS u otro no decodificado
+     * directamente por el C++ nativo, lo transcodifica a WAV PCM estándar con MediaCodec.
+     * Retorna la ruta absoluta del archivo local o null si falla.
      */
     public static String copyContentUriToCache(String contentUriStr) {
         if (contentUriStr == null || contentUriStr.isEmpty()) {
@@ -459,7 +469,7 @@ public class MainActivity extends QtActivityBase {
 
             // Deducir el nombre real del archivo mediante OpenableColumns
             String displayName = null;
-            try (android.database.Cursor cursor = resolver.query(uri, null, null, null, null)) {
+            try (Cursor cursor = resolver.query(uri, null, null, null, null)) {
                 if (cursor != null && cursor.moveToFirst()) {
                     int nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
                     if (nameIndex >= 0) {
@@ -476,12 +486,32 @@ public class MainActivity extends QtActivityBase {
 
             // Reemplazar caracteres ilegales en el nombre de archivo
             displayName = displayName.replace('/', '_').replace('\\', '_').replace(':', '_');
-            String uniqueName = System.currentTimeMillis() + "_" + displayName;
 
             File cacheDir = new File(activity.getCacheDir(), "imported_media");
             if (!cacheDir.exists()) {
                 cacheDir.mkdirs();
             }
+
+            String lowerName = displayName.toLowerCase();
+            boolean isDirectAudio = lowerName.endsWith(".wav") || lowerName.endsWith(".mp3")
+                    || lowerName.endsWith(".flac") || lowerName.endsWith(".ogg");
+
+            // Si es un formato no soportado por C++ nativo (.m4a, .aac, .opus, notas de voz, etc.),
+            // decodificarlo directamente a WAV PCM 16-bit con MediaCodec de Android.
+            if (!isDirectAudio) {
+                String baseName = displayName;
+                int dotIdx = baseName.lastIndexOf('.');
+                if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
+                String wavName = System.currentTimeMillis() + "_" + baseName + ".wav";
+                File outWavFile = new File(cacheDir, wavName);
+                if (decodeAudioToWav(activity, uri, outWavFile)) {
+                    Log.i(TAG, "✅ Audio SAF transcodificado a WAV PCM vía MediaCodec: " + outWavFile.getAbsolutePath());
+                    return outWavFile.getAbsolutePath();
+                }
+                Log.w(TAG, "MediaCodec no pudo decodificar el formato; continuando con copia directa como respaldo");
+            }
+
+            String uniqueName = System.currentTimeMillis() + "_" + displayName;
             File outFile = new File(cacheDir, uniqueName);
 
             Log.i(TAG, "Copiando SAF content URI: " + cleanUriStr + " -> " + outFile.getAbsolutePath());
@@ -511,6 +541,7 @@ public class MainActivity extends QtActivityBase {
     /**
      * Copia un archivo desde almacenamiento compartido (/storage/emulated/0/...)
      * al almacenamiento de caché privado de la aplicación si el acceso C++ directo falla.
+     * Soporta Scoped Storage en Android 11+ resolviendo vía MediaStore si File.canRead() da false.
      */
     public static String copyStoragePathToCache(String localFilePath) {
         if (localFilePath == null || localFilePath.isEmpty()) return null;
@@ -519,32 +550,236 @@ public class MainActivity extends QtActivityBase {
             if (activity == null) return null;
 
             File srcFile = new File(localFilePath);
-            if (!srcFile.exists() || !srcFile.canRead()) {
-                Log.w(TAG, "copyStoragePathToCache: archivo de origen no legible directamente: " + localFilePath);
-                return null;
-            }
+            if (srcFile.exists() && srcFile.canRead()) {
+                File cacheDir = new File(activity.getCacheDir(), "imported_media");
+                if (!cacheDir.exists()) cacheDir.mkdirs();
 
-            File cacheDir = new File(activity.getCacheDir(), "imported_media");
-            if (!cacheDir.exists()) cacheDir.mkdirs();
+                String lowerName = srcFile.getName().toLowerCase();
+                boolean isDirectAudio = lowerName.endsWith(".wav") || lowerName.endsWith(".mp3")
+                        || lowerName.endsWith(".flac") || lowerName.endsWith(".ogg");
 
-            String uniqueName = System.currentTimeMillis() + "_" + srcFile.getName();
-            File outFile = new File(cacheDir, uniqueName);
-
-            try (InputStream in = new FileInputStream(srcFile);
-                 OutputStream out = new FileOutputStream(outFile)) {
-                byte[] buf = new byte[65536];
-                int len;
-                while ((len = in.read(buf)) > 0) {
-                    out.write(buf, 0, len);
+                if (!isDirectAudio) {
+                    String baseName = srcFile.getName();
+                    int dotIdx = baseName.lastIndexOf('.');
+                    if (dotIdx > 0) baseName = baseName.substring(0, dotIdx);
+                    String wavName = System.currentTimeMillis() + "_" + baseName + ".wav";
+                    File outWavFile = new File(cacheDir, wavName);
+                    Uri fileUri = Uri.fromFile(srcFile);
+                    if (decodeAudioToWav(activity, fileUri, outWavFile)) {
+                        Log.i(TAG, "✅ Audio local transcodificado a WAV PCM: " + outWavFile.getAbsolutePath());
+                        return outWavFile.getAbsolutePath();
+                    }
                 }
-                out.flush();
+
+                String uniqueName = System.currentTimeMillis() + "_" + srcFile.getName();
+                File outFile = new File(cacheDir, uniqueName);
+
+                try (InputStream in = new FileInputStream(srcFile);
+                     OutputStream out = new FileOutputStream(outFile)) {
+                    byte[] buf = new byte[65536];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                    out.flush();
+                }
+
+                Log.i(TAG, "✅ Copia de archivo local completada: " + outFile.getAbsolutePath());
+                return outFile.getAbsolutePath();
             }
 
-            Log.i(TAG, "✅ Copia de archivo local completada: " + outFile.getAbsolutePath());
-            return outFile.getAbsolutePath();
+            // Si srcFile.canRead() da false debido a Scoped Storage (Android 11+),
+            // intentar resolver la URI en MediaStore mediante ContentResolver
+            Uri mediaUri = findMediaUriForPath(activity, localFilePath);
+            if (mediaUri != null) {
+                Log.i(TAG, "Resolviendo ruta Scoped Storage via MediaStore: " + localFilePath + " -> " + mediaUri);
+                return copyContentUriToCache(mediaUri.toString());
+            }
+
+            Log.w(TAG, "copyStoragePathToCache: no se pudo leer directamente ni por MediaStore: " + localFilePath);
+            return null;
         } catch (Exception e) {
             Log.e(TAG, "copyStoragePathToCache error: " + e.getMessage(), e);
             return null;
+        }
+    }
+
+    /**
+     * Resuelve un URI de MediaStore correspondiente a una ruta absoluta de archivo (/storage/emulated/0/...).
+     */
+    private static Uri findMediaUriForPath(Context context, String path) {
+        if (context == null || path == null) return null;
+        try {
+            android.content.ContentResolver cr = context.getContentResolver();
+            Uri[] baseUris = new Uri[]{
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Files.getContentUri("external")
+            };
+            for (Uri baseUri : baseUris) {
+                String[] projection = new String[]{ MediaStore.MediaColumns._ID };
+                String selection = MediaStore.MediaColumns.DATA + " = ?";
+                String[] selectionArgs = new String[]{ path };
+                try (Cursor cursor = cr.query(baseUri, projection, selection, selectionArgs, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        long id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID));
+                        return ContentUris.withAppendedId(baseUri, id);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "findMediaUriForPath error para " + path, e);
+        }
+        return null;
+    }
+
+    /**
+     * Decodifica cualquier flujo de audio soportado por el framework de Android
+     * (AAC, M4A, OPUS, 3GP, AMR, WMA, etc.) a un archivo estándar WAV PCM 16-bit.
+     */
+    private static boolean decodeAudioToWav(Context context, Uri uri, File outFile) {
+        MediaExtractor extractor = new MediaExtractor();
+        MediaCodec codec = null;
+        File tempPcm = null;
+        try {
+            extractor.setDataSource(context, uri, null);
+            int trackIndex = -1;
+            MediaFormat format = null;
+            String mime = null;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                MediaFormat f = extractor.getTrackFormat(i);
+                String m = f.getString(MediaFormat.KEY_MIME);
+                if (m != null && m.startsWith("audio/")) {
+                    trackIndex = i;
+                    format = f;
+                    mime = m;
+                    break;
+                }
+            }
+            if (trackIndex < 0 || format == null || mime == null) {
+                return false;
+            }
+            extractor.selectTrack(trackIndex);
+            codec = MediaCodec.createDecoderByType(mime);
+            codec.configure(format, null, null, 0);
+            codec.start();
+
+            int sampleRate = format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
+                    ? format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 44100;
+            int channelCount = format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
+                    ? format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
+
+            tempPcm = new File(outFile.getAbsolutePath() + ".raw");
+            long totalPcmBytes = 0;
+            try (FileOutputStream pcmOut = new FileOutputStream(tempPcm)) {
+                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                boolean isEOS = false;
+                final long kTimeoutUs = 5000;
+
+                while (!Thread.interrupted()) {
+                    if (!isEOS) {
+                        int inIndex = codec.dequeueInputBuffer(kTimeoutUs);
+                        if (inIndex >= 0) {
+                            ByteBuffer inBuf = codec.getInputBuffer(inIndex);
+                            int sampleSize = extractor.readSampleData(inBuf, 0);
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                                isEOS = true;
+                            } else {
+                                codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.getSampleTime(), 0);
+                                extractor.advance();
+                            }
+                        }
+                    }
+
+                    int outIndex = codec.dequeueOutputBuffer(info, kTimeoutUs);
+                    if (outIndex >= 0) {
+                        ByteBuffer outBuf = codec.getOutputBuffer(outIndex);
+                        byte[] chunk = new byte[info.size];
+                        outBuf.position(info.offset);
+                        outBuf.limit(info.offset + info.size);
+                        outBuf.get(chunk);
+                        pcmOut.write(chunk);
+                        totalPcmBytes += info.size;
+                        codec.releaseOutputBuffer(outIndex, false);
+
+                        if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            break;
+                        }
+                    } else if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        MediaFormat newFormat = codec.getOutputFormat();
+                        if (newFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                            sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                        }
+                        if (newFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                            channelCount = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                        }
+                    } else if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER && isEOS) {
+                        break;
+                    }
+                }
+            }
+
+            writeWavFile(tempPcm, outFile, sampleRate, channelCount, totalPcmBytes);
+            tempPcm.delete();
+            return outFile.exists() && outFile.length() > 44;
+        } catch (Exception e) {
+            Log.e(TAG, "decodeAudioToWav error: " + e.getMessage(), e);
+            if (tempPcm != null && tempPcm.exists()) tempPcm.delete();
+            if (outFile.exists()) outFile.delete();
+            return false;
+        } finally {
+            if (codec != null) {
+                try { codec.stop(); codec.release(); } catch (Exception ignored) {}
+            }
+            try { extractor.release(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Escribe un encabezado estándar RIFF WAVE de 44 bytes para datos PCM 16-bit.
+     */
+    private static void writeWavFile(File pcmFile, File wavFile, int sampleRate, int channels, long pcmDataLength) throws java.io.IOException {
+        long totalDataLen = pcmDataLength + 36;
+        long byteRate = (long) sampleRate * channels * 2; // 16-bit PCM = 2 bytes por muestra
+        int blockAlign = channels * 2;
+
+        try (FileOutputStream out = new FileOutputStream(wavFile);
+             FileInputStream in = new FileInputStream(pcmFile)) {
+            byte[] header = new byte[44];
+            header[0] = 'R'; header[1] = 'I'; header[2] = 'F'; header[3] = 'F';
+            header[4] = (byte) (totalDataLen & 0xff);
+            header[5] = (byte) ((totalDataLen >> 8) & 0xff);
+            header[6] = (byte) ((totalDataLen >> 16) & 0xff);
+            header[7] = (byte) ((totalDataLen >> 24) & 0xff);
+            header[8] = 'W'; header[9] = 'A'; header[10] = 'V'; header[11] = 'E';
+            header[12] = 'f'; header[13] = 'm'; header[14] = 't'; header[15] = ' ';
+            header[16] = 16; header[17] = 0; header[18] = 0; header[19] = 0; // Subchunk1Size (16 para PCM)
+            header[20] = 1; header[21] = 0; // AudioFormat (1 = PCM)
+            header[22] = (byte) channels; header[23] = 0;
+            header[24] = (byte) (sampleRate & 0xff);
+            header[25] = (byte) ((sampleRate >> 8) & 0xff);
+            header[26] = (byte) ((sampleRate >> 16) & 0xff);
+            header[27] = (byte) ((sampleRate >> 24) & 0xff);
+            header[28] = (byte) (byteRate & 0xff);
+            header[29] = (byte) ((byteRate >> 8) & 0xff);
+            header[30] = (byte) ((byteRate >> 16) & 0xff);
+            header[31] = (byte) ((byteRate >> 24) & 0xff);
+            header[32] = (byte) blockAlign; header[33] = 0;
+            header[34] = 16; header[35] = 0; // BitsPerSample = 16
+            header[36] = 'd'; header[37] = 'a'; header[38] = 't'; header[39] = 'a';
+            header[40] = (byte) (pcmDataLength & 0xff);
+            header[41] = (byte) ((pcmDataLength >> 8) & 0xff);
+            header[42] = (byte) ((pcmDataLength >> 16) & 0xff);
+            header[43] = (byte) ((pcmDataLength >> 24) & 0xff);
+
+            out.write(header, 0, 44);
+
+            byte[] buf = new byte[65536];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            out.flush();
         }
     }
 }

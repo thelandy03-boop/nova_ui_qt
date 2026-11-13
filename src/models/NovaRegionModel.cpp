@@ -502,6 +502,16 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
 
     cleanupImportThreads();
 
+#if defined(Q_OS_ANDROID)
+    // El import en Android delega al motor de audio (Oboe) de NovaAudioEngine,
+    // que decodifica el fichero en un hilo aparte y coloca la región en la pista y posición indicadas.
+    if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
+        Q_EMIT importingChanged(true);
+        return eng->importAudioAndroid(trackIndex, cleanPath, startBeat);
+    }
+    Q_EMIT importFinished(false, QStringLiteral("Motor de audio no disponible"));
+    return false;
+#else
     auto targetTrack = findTrackByIndex(trackIndex);
     if (!targetTrack) {
         qCWarning(novaModel) << "❌ Import: no se encontró la pista" << trackIndex;
@@ -528,16 +538,7 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
     // mantiene la ruta simple de import_files() de los stubs.
     // ─────────────────────────────────────────────────────────────────────
 
-#if defined(Q_OS_ANDROID)
-    // El import en Android delega al motor de audio (Oboe) de NovaAudioEngine,
-    // que decodifica el fichero en un hilo aparte y coloca la región en la pista y posición indicadas.
-    if (auto *eng = qobject_cast<NovaAudioEngine*>(parent())) {
-        Q_EMIT importingChanged(true);
-        return eng->importAudioAndroid(trackIndex, cleanPath, startBeat);
-    }
-    Q_EMIT importFinished(false, QStringLiteral("Motor de audio no disponible"));
-    return false;
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
     {
         auto finishedFlag = std::make_shared<std::atomic<bool>>(false);
         Q_EMIT importingChanged(true);
@@ -846,6 +847,7 @@ bool NovaRegionModel::importAudioFile(int trackIndex, const QString &filePath, d
 
     return true;
 #endif // escritorio (ruta rápida) / móvil (stubs)
+#endif // !Q_OS_ANDROID
 }
 
 bool NovaRegionModel::moveRegion(int regionIndex, double newStartBeat)
